@@ -8,7 +8,7 @@ import sys
 
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from compare import best_compare, find_compares, split_changes
@@ -166,14 +166,16 @@ class MainWindow(QMainWindow):
         title = QLabel("🔍  Сравнение двух списков по ИНН")
         title.setObjectName("cmpTitle")
         cl.addWidget(title)
-        cap = QLabel("Лист для сравнения")
+        cap = QLabel("Что сравнить — выберите лист:")
         cap.setObjectName("muted")
         cl.addWidget(cap)
-        self.cmp_sheet = QComboBox()
-        self.cmp_sheet.setObjectName("bigSelect")
-        self.cmp_sheet.setCursor(Qt.PointingHandCursor)
-        self.cmp_sheet.currentIndexChanged.connect(self._compare_sheet_changed)
-        cl.addWidget(self.cmp_sheet)
+        # варианты — карточки, выбор кликом (понятнее выпадающего списка)
+        self.sheet_opts = QVBoxLayout()
+        self.sheet_opts.setSpacing(8)
+        cl.addLayout(self.sheet_opts)
+        self.sheet_group = QButtonGroup(self)
+        self.sheet_group.setExclusive(True)
+        self.sheet_group.idClicked.connect(self._compare_sheet_changed)
         cards = QHBoxLayout()
         cards.setSpacing(12)
         self.list_cards = []
@@ -376,15 +378,23 @@ class MainWindow(QMainWindow):
             self.go_btn.setEnabled(True)
         self._gib_text = self.found_text.text()
         self.cmp_row.setVisible(bool(plan.compares))
-        self.cmp_sheet.blockSignals(True)
-        self.cmp_sheet.clear()
-        for name, d, a, b in plan.compares:
-            years = " и ".join(y for y in (a.year, b.year) if y)
-            what = "суммы и состав" if d.pairs else "только состав"
-            self.cmp_sheet.addItem(f"📄  {name}" + (f"   —   {years}" if years else "") + f"   ·   {what}")
-        if plan.compares:
-            self.cmp_sheet.setCurrentIndex(plan.compares.index(plan.compare))
-        self.cmp_sheet.blockSignals(False)
+        for btn in self.sheet_group.buttons():
+            self.sheet_group.removeButton(btn)
+            btn.deleteLater()
+        for i, (name, d, a, b) in enumerate(plan.compares):
+            y1 = a.year or "первый список"
+            y2 = b.year or "второй список"
+            if d.pairs:
+                what = f"Сравнить {y1} и {y2} — организации и суммы"
+            else:
+                what = f"Сравнить {y1} и {y2} — только организации (во втором списке нет сумм)"
+            btn = QPushButton(f"📄  {name}\n{what}")
+            btn.setObjectName("sheetOption")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setChecked(plan.compares[i] is plan.compare)
+            self.sheet_group.addButton(btn, i)
+            self.sheet_opts.addWidget(btn)
         self._render_found()
         self.warn_text.setText(self._warnings(plan))
         self.pages.setCurrentIndex(1)
@@ -614,6 +624,10 @@ QLabel#listCard { background: white; border: 1px solid #E2E8F0; border-radius: 1
 QDoubleSpinBox#bigSpin { background: white; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px 10px;
                          font-size: 11pt; min-width: 120px; }
 QDoubleSpinBox#bigSpin:focus { border-color: #2563EB; }
+QPushButton#sheetOption { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
+                          text-align: left; font-size: 10.5pt; color: #334155; }
+QPushButton#sheetOption:hover { border-color: #2563EB; background: #F8FAFF; }
+QPushButton#sheetOption:checked { border: 2px solid #2563EB; background: #EFF6FF; color: #0F172A; font-weight: 600; }
 QComboBox#bigSelect { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
                       font-size: 11pt; color: #0F172A; min-height: 22px; }
 QComboBox#bigSelect:hover { border-color: #2563EB; }
