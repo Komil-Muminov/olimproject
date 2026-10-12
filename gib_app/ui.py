@@ -158,15 +158,42 @@ class MainWindow(QMainWindow):
         self.found_text.setWordWrap(True)
         self.found_text.setTextFormat(Qt.RichText)
         fl.addWidget(self.found_text)
-        self.cmp_row = QWidget()
-        cr = QHBoxLayout(self.cmp_row)
-        cr.setContentsMargins(0, 0, 0, 0)
-        cr.addWidget(QLabel("Какой лист сравнить:"))
+        self.cmp_row = QFrame()
+        self.cmp_row.setObjectName("cmpBox")
+        cl = QVBoxLayout(self.cmp_row)
+        cl.setContentsMargins(18, 16, 18, 16)
+        cl.setSpacing(12)
+        title = QLabel("🔍  Сравнение двух списков по ИНН")
+        title.setObjectName("cmpTitle")
+        cl.addWidget(title)
+        cap = QLabel("Лист для сравнения")
+        cap.setObjectName("muted")
+        cl.addWidget(cap)
         self.cmp_sheet = QComboBox()
-        self.cmp_sheet.setMinimumWidth(260)
+        self.cmp_sheet.setObjectName("bigSelect")
+        self.cmp_sheet.setCursor(Qt.PointingHandCursor)
         self.cmp_sheet.currentIndexChanged.connect(self._compare_sheet_changed)
-        cr.addWidget(self.cmp_sheet)
-        cr.addStretch()
+        cl.addWidget(self.cmp_sheet)
+        cards = QHBoxLayout()
+        cards.setSpacing(12)
+        self.list_cards = []
+        for _ in range(2):
+            card = QLabel()
+            card.setObjectName("listCard")
+            card.setTextFormat(Qt.RichText)
+            card.setAlignment(Qt.AlignCenter)
+            card.setMinimumHeight(110)
+            cards.addWidget(card, 1)
+            self.list_cards.append(card)
+        arrow = QLabel("⇄")
+        arrow.setObjectName("cmpArrow")
+        cards.insertWidget(1, arrow)
+        cl.addLayout(cards)
+        self.cmp_info = QLabel()
+        self.cmp_info.setObjectName("cmpInfo")
+        self.cmp_info.setWordWrap(True)
+        self.cmp_info.setTextFormat(Qt.RichText)
+        cl.addWidget(self.cmp_info)
         fl.addWidget(self.cmp_row)
         self.warn_text = QLabel()
         self.warn_text.setObjectName("warn")
@@ -333,7 +360,9 @@ class MainWindow(QMainWindow):
         self.cmp_sheet.blockSignals(True)
         self.cmp_sheet.clear()
         for name, d, a, b in plan.compares:
-            self.cmp_sheet.addItem(f"{name}   ({len(a.rows)} и {len(b.rows)} орг.)")
+            years = " и ".join(y for y in (a.year, b.year) if y)
+            what = "суммы и состав" if d.pairs else "только состав"
+            self.cmp_sheet.addItem(f"📄  {name}" + (f"   —   {years}" if years else "") + f"   ·   {what}")
         if plan.compares:
             self.cmp_sheet.setCurrentIndex(plan.compares.index(plan.compare))
         self.cmp_sheet.blockSignals(False)
@@ -347,18 +376,27 @@ class MainWindow(QMainWindow):
             self._render_found()
 
     def _render_found(self):
-        parts = [t for t in (self._gib_text, self._compare_text(self.plan) if self.plan.compare else "") if t]
-        self.found_text.setText("<br><br>".join(parts))
-
-    @staticmethod
-    def _compare_text(plan):
-        sheet, d, a, b = plan.compare
-        how = ("сравниваются суммы и состав" if d.pairs
-               else "у второго списка нет сумм — сравнивается только состав организаций")
-        return (f"🔍 Лист «{sheet}» — сравнение двух списков по ИНН, {how}:<br>"
-                f"&nbsp;&nbsp;&nbsp;{a.label(1)}<br>&nbsp;&nbsp;&nbsp;{b.label(2)}<br>"
-                f"<span style='color:#64748B'>Кнопка «Сравнить по ИНН» создаст новый файл с различиями. "
-                f"Исходный файл не изменится.</span>")
+        self.found_text.setText(self._gib_text)
+        self.found_text.setVisible(bool(self._gib_text))
+        if not self.plan.compare:
+            return
+        sheet, d, a, b = self.plan.compare
+        for card, side, n in zip(self.list_cards, (a, b), (1, 2)):
+            year = (f"<div style='font-size:20pt; font-weight:700; color:#0F172A'>{side.year}</div>" if side.year
+                    else "<div style='font-size:12pt; color:#94A3B8; padding:6px'>год не указан</div>")
+            card.setText(f"<div style='color:#64748B'>Список {n}</div>{year}"
+                         f"<div style='color:#334155'><b>{len(side.rows)}</b> организаций</div>")
+        if d.pairs:
+            info = ("Программа найдёт каждую организацию по ИНН в обоих списках и создаст <b>новый файл</b>, где будет видно:"
+                    "<br>&nbsp;🆕 какие организации <b>появились</b> &nbsp;·&nbsp; ❌ какие <b>пропали</b>"
+                    "<br>&nbsp;🔄 у кого <b>изменилась сумма</b> (было → стало) &nbsp;·&nbsp; 👥 какие ИНН <b>повторяются</b>")
+        else:
+            info = ("Программа найдёт каждую организацию по ИНН в обоих списках и создаст <b>новый файл</b>, где будет видно:"
+                    "<br>&nbsp;🆕 какие организации <b>появились</b> &nbsp;·&nbsp; ❌ какие <b>пропали</b>"
+                    " &nbsp;·&nbsp; 👥 какие ИНН <b>повторяются</b>"
+                    "<br><span style='color:#B45309'>⚠ Во втором списке на этом листе нет сумм — "
+                    "суммы сравнить нельзя, только состав организаций.</span>")
+        self.cmp_info.setText(info + "<br><span style='color:#64748B'>Исходный файл не изменится.</span>")
 
     def run_compare(self):
         p = self.plan
@@ -537,6 +575,19 @@ QPushButton#dropZone:hover { border-color: #2563EB; color: #2563EB; background: 
 QPushButton#primary { background: #2563EB; color: white; border: none; padding: 12px 28px; font-weight: 600; font-size: 12pt; }
 QPushButton#primary:hover { background: #1D4ED8; }
 QPushButton#primary:disabled { background: #94A3B8; }
+QFrame#cmpBox { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; }
+QLabel#cmpTitle { font-size: 13pt; font-weight: 700; color: #0F172A; }
+QLabel#cmpInfo { font-size: 10.5pt; color: #0F172A; }
+QLabel#cmpArrow { font-size: 22pt; color: #94A3B8; padding: 0 4px; }
+QLabel#listCard { background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 8px; }
+QComboBox#bigSelect { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
+                      font-size: 11pt; color: #0F172A; min-height: 22px; }
+QComboBox#bigSelect:hover { border-color: #2563EB; }
+QComboBox#bigSelect:on { border-color: #2563EB; }
+QComboBox#bigSelect::drop-down { border: none; width: 34px; }
+QComboBox#bigSelect QAbstractItemView { background: white; border: 1px solid #CBD5E1; border-radius: 8px;
+                                        padding: 6px; outline: none; font-size: 11pt;
+                                        selection-background-color: #DBEAFE; selection-color: #0F172A; }
 QPushButton#secondary { background: white; color: #2563EB; border: 2px solid #2563EB; padding: 10px 18px;
                         font-weight: 600; font-size: 11pt; }
 QPushButton#secondary:hover { background: #EFF6FF; }
