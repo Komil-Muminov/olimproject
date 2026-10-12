@@ -8,10 +8,10 @@ import sys
 
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
-from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
-from compare import find_compare
+from compare import best_compare, find_compares
 from detect import by_header, detect, sheet_score
 from excel_io import Book, WriteError, embed_automation, fill_in_place
 from parser import parse_purpose_ex, to_number
@@ -62,7 +62,9 @@ class Plan:
         self.path = path
         book = Book(path)
         # лист сравнения двух списков по ИНН («Муқоиса», «Сравнение»…) — (лист, Diff, список1, список2)
-        self.compare = find_compare(book.sheets)
+        self.compares = find_compares(book.sheets)
+        best = best_compare(self.compares)
+        self.compare = self.compares[best] if self.compares else None
         # лист, где больше всего назначений с ГИБ
         scores = {n: sheet_score(d) for n, d in book.sheets.items()}
         self.sheet = max(scores, key=scores.get) if scores else None
@@ -116,6 +118,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.backup = None
         self.result_path = None
+        self._gib_text = ""
 
         root = QWidget()
         root.setObjectName("root")
@@ -155,6 +158,16 @@ class MainWindow(QMainWindow):
         self.found_text.setWordWrap(True)
         self.found_text.setTextFormat(Qt.RichText)
         fl.addWidget(self.found_text)
+        self.cmp_row = QWidget()
+        cr = QHBoxLayout(self.cmp_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        cr.addWidget(QLabel("Какой лист сравнить:"))
+        self.cmp_sheet = QComboBox()
+        self.cmp_sheet.setMinimumWidth(260)
+        self.cmp_sheet.currentIndexChanged.connect(self._compare_sheet_changed)
+        cr.addWidget(self.cmp_sheet)
+        cr.addStretch()
+        fl.addWidget(self.cmp_row)
         self.warn_text = QLabel()
         self.warn_text.setObjectName("warn")
         self.warn_text.setWordWrap(True)
@@ -280,7 +293,7 @@ class MainWindow(QMainWindow):
         self.cmp_btn.setVisible(bool(plan.compare))
         self.note.setVisible(gib)
         if not gib and plan.compare:
-            self.found_text.setText(self._compare_text(plan))
+            self.found_text.setText("")
         elif not gib:
             self.found_text.setText("В этом файле не нашлось ни назначений с «ГИБ XXXX-сумма», "
                                     "ни листа для сравнения по ИНН.")
@@ -315,15 +328,34 @@ class MainWindow(QMainWindow):
                          f"{get_column_letter(lay.purpose_col)}, строки {lay.first_row}–{lay.last_row}</span>")
             self.found_text.setText("<br>".join(parts))
             self.go_btn.setEnabled(True)
-        if gib and plan.compare:
-            self.found_text.setText(self.found_text.text() + "<br><br>" + self._compare_text(plan))
+        self._gib_text = self.found_text.text()
+        self.cmp_row.setVisible(bool(plan.compares))
+        self.cmp_sheet.blockSignals(True)
+        self.cmp_sheet.clear()
+        for name, d, a, b in plan.compares:
+            self.cmp_sheet.addItem(f"{name}   ({len(a.rows)} и {len(b.rows)} орг.)")
+        if plan.compares:
+            self.cmp_sheet.setCurrentIndex(plan.compares.index(plan.compare))
+        self.cmp_sheet.blockSignals(False)
+        self._render_found()
         self.warn_text.setText(self._warnings(plan))
         self.pages.setCurrentIndex(1)
+
+    def _compare_sheet_changed(self, i):
+        if self.plan and 0 <= i < len(self.plan.compares):
+            self.plan.compare = self.plan.compares[i]
+            self._render_found()
+
+    def _render_found(self):
+        parts = [t for t in (self._gib_text, self._compare_text(self.plan) if self.plan.compare else "") if t]
+        self.found_text.setText("<br><br>".join(parts))
 
     @staticmethod
     def _compare_text(plan):
         sheet, d, a, b = plan.compare
-        return (f"🔍 Лист «{sheet}» — сравнение двух списков по ИНН:<br>"
+        how = ("сравниваются суммы и состав" if d.pairs
+               else "у второго списка нет сумм — сравнивается только состав организаций")
+        return (f"🔍 Лист «{sheet}» — сравнение двух списков по ИНН, {how}:<br>"
                 f"&nbsp;&nbsp;&nbsp;{a.label(1)}<br>&nbsp;&nbsp;&nbsp;{b.label(2)}<br>"
                 f"<span style='color:#64748B'>Кнопка «Сравнить по ИНН» создаст новый файл с различиями. "
                 f"Исходный файл не изменится.</span>")
@@ -334,7 +366,7 @@ class MainWindow(QMainWindow):
             return
         sheet, d, a, b = p.compare
         try:
-            path = write_compare_report(report_path(p.path), p.path, sheet, d, a, b)
+            path = write_compare_report(report_path(p.path, sheet), p.path, sheet, d, a, b)
         except PermissionError:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
             return
@@ -348,8 +380,8 @@ class MainWindow(QMainWindow):
             f"Создан файл: <b>{os.path.basename(path)}</b>", "",
             f"🆕 Новые: <b>{len(d.only2)}</b>",
             f"❌ Пропавшие: <b>{len(d.only1)}</b>",
-            f"🔄 Изменилась сумма: <b>{changed}</b> орг.",
-            f"✓ Без изменений: <b>{d.same}</b>",
+            *([f"🔄 Изменилась сумма: <b>{changed}</b> орг.", f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
+              else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — у второго списка их нет)"]),
             f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>"]))
         self.result_warn.setText(
             f"Сопоставлено по ИНН: у {d.names_differ} организаций название в двух списках записано по-разному."

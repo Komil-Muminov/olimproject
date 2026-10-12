@@ -19,9 +19,9 @@ DOWN = Font(color="B91C1C", bold=True)    # сумма уменьшилась
 SHEET_FILL = {"Новые": "FEF9C3", "Пропавшие": "FEE2E2", "Изменения": "DBEAFE", "Дубликаты": "F3E8FF"}
 
 
-def report_path(src):
-    """«файл — различия.xlsx» рядом с исходным; если уже есть — «… (2).xlsx»."""
-    base = os.path.splitext(src)[0] + " — различия"
+def report_path(src, sheet):
+    """«файл — различия (лист).xlsx» рядом с исходным; если уже есть — «… (2).xlsx»."""
+    base = f"{os.path.splitext(src)[0]} — различия ({sheet})"
     path, n = base + ".xlsx", 2
     while os.path.exists(path):
         path, n = f"{base} ({n}).xlsx", n + 1

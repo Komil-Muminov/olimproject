@@ -246,15 +246,18 @@ def compare(data):
     return Diff(only1, only2, changed, same, len(common), names_differ, pairs, duplicates, totals), a, b
 
 
-def find_compare(sheets):
-    """Лист сравнения в книге: название с ключевым словом и два списка с ИНН.
-    Если таких листов несколько — тот, где можно сравнить суммы. → (лист, Diff, список1, список2) или None."""
+def find_compares(sheets):
+    """Все листы сравнения в книге (в порядке листов): название с ключевым словом и два списка с ИНН.
+    → [(лист, Diff, список1, список2)]"""
     found = []
     for name, data in sheets.items():
         if compare_keyword(name):
             res = compare(data)
             if res:
                 found.append((name, *res))
-    if not found:
-        return None
-    return max(found, key=lambda f: (len(f[1].pairs), f[0]))
+    return found
+
+
+def best_compare(found):
+    """Какой лист предложить первым: тот, где можно сравнить суммы."""
+    return max(range(len(found)), key=lambda i: (len(found[i][1].pairs), i)) if found else None
