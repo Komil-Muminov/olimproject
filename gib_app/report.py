@@ -12,6 +12,8 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from compare import split_changes
+
 NUM = "#,##0.00"
 THIN = Side(style="thin", color="CBD5E1")
 MED = Side(style="medium", color="64748B")
@@ -23,7 +25,9 @@ SECTIONS = {
     "new": ("🆕 НОВЫЕ", "есть только во 2-м списке", "CA8A04", "FEF9C3"),
     "gone": ("❌ ПРОПАВШИЕ", "были только в 1-м списке", "DC2626", "FEE2E2"),
     "changed": ("🔄 ИЗМЕНИЛАСЬ СУММА", "есть в обоих списках, сумма другая", "2563EB", "DBEAFE"),
+    "small": ("🔸 МЕЛКИЕ ИЗМЕНЕНИЯ", "разница меньше порога", "EA580C", "FFEDD5"),
     "dup": ("👥 ДУБЛИКАТЫ", "один ИНН записан в списке несколько раз", "7C3AED", "EDE9FE"),
+    "names": ("✏ РАЗНЫЕ НАЗВАНИЯ", "один ИНН, а название в списках записано по-разному", "0891B2", "CFFAFE"),
     "same": ("✓ БЕЗ ИЗМЕНЕНИЙ", "есть в обоих списках, суммы совпадают", "16A34A", "DCFCE7"),
     "both": ("✓ ЕСТЬ В ОБОИХ СПИСКАХ", "суммы не сравнивались — во 2-м списке их нет", "16A34A", "DCFCE7"),
 }
@@ -42,7 +46,11 @@ def _fill(color):
     return PatternFill("solid", fgColor=color)
 
 
-def write_compare_report(path, src, sheet, diff, a, b):
+def fmt_num(x):
+    return f"{x:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     y1, y2 = a.year or "Список 1", b.year or "Список 2"
     metrics = [p[0] for p in diff.pairs]
     wb = Workbook()
@@ -82,9 +90,13 @@ def write_compare_report(path, src, sheet, diff, a, b):
     cell(3, 1, f"Список 1{' (' + a.year + ')' if a.year else ''}: {len(a.rows)} организаций   →   "
                f"Список 2{' (' + b.year + ')' if b.year else ''}: {len(b.rows)} организаций",
          font=Font(bold=True, color="334155"))
+    notes = []
+    if threshold > 0 and metrics:
+        notes.append(f"Изменения меньше {fmt_num(threshold)} — в свёрнутом разделе «Мелкие изменения».")
     if diff.names_differ:
-        cell(4, 1, f"Организации сопоставлены по ИНН: у {diff.names_differ} из них название в двух списках "
-                   f"записано по-разному — на результат это не влияет.", font=Font(italic=True, color="64748B"))
+        notes.append(f"Сопоставлено по ИНН: у {diff.names_differ} организаций название записано по-разному — "
+                     f"список в разделе «Разные названия».")
+    cell(4, 1, "   ".join(notes) or None, font=Font(italic=True, color="64748B"))
 
     # шапка таблицы (две строки)
     h1, h2 = 6, 7
@@ -107,10 +119,11 @@ def write_compare_report(path, src, sheet, diff, a, b):
     subtotal_rows, counts, ranges = {}, {}, {}
     diff_cols = [first_val + 3 * i + 2 for i in range(len(metrics))]
 
-    def section(key, items, note=lambda it: ""):
+    def section(key, items, note=lambda it: "", hint=None):
         """items: (ИНН, название, [(было, стало)] по показателям)."""
         nonlocal row
-        title, hint, color, light = SECTIONS[key]
+        title, base_hint, color, light = SECTIONS[key]
+        hint = hint or base_hint
         counts[key] = len(items)
         band(row, f"{title} — {len(items)}   ·   {hint}", color)
         row += 1
@@ -151,23 +164,35 @@ def write_compare_report(path, src, sheet, diff, a, b):
         """значения одного списка → [(было, стало)]"""
         return [(v, None) if side == 1 else (None, v) for v in vals]
 
-    section("new", [(k, n, side_vals(v, 2)) for k, n, v in diff.org_only2])
-    section("gone", [(k, n, side_vals(v, 1)) for k, n, v in diff.org_only1])
+    by_size = lambda o: -sum(abs(v or 0) for pair in o[2] for v in pair)      # крупные суммы сверху
+    section("new", sorted([(k, n, side_vals(v, 2)) for k, n, v in diff.org_only2], key=by_size))
+    section("gone", sorted([(k, n, side_vals(v, 1)) for k, n, v in diff.org_only1], key=by_size))
+    collapsed = []
     if metrics:
-        section("changed", diff.org_changed)
+        big, small = split_changes(diff, threshold)
+        section("changed", big)
+        if threshold > 0:
+            section("small", small, hint=f"все разницы меньше {fmt_num(threshold)} — раскройте «+» слева")
+            collapsed.append("small")
     dup_notes = {(k, n): f"список {i} · строки {', '.join(map(str, rr))} ({len(rr)} раза)"
                  for i, k, n, rr in diff.duplicates}
     section("dup", [(k, n, [(None, None)] * len(metrics)) for _, k, n, _ in diff.duplicates],
             lambda it: dup_notes.get((it[0], it[1]), ""))
-    last = "same" if metrics else "both"
     if metrics:
         section("same", diff.org_same)
+        collapsed.append("same")
     else:
         section("both", [(k, n, []) for k, n, _ in diff.org_same + diff.org_changed])
-    # «Без изменений» / «Есть в обоих» свёрнуты: обычно это неинтересно (раскрыть — «+» слева)
-    s, e = ranges[last]
-    for r in range(s, e + 1):
-        ws.row_dimensions[r].hidden = True
+        collapsed.append("both")
+    names_notes = {k: f"в списке 2: {n2}" for k, _, n2 in diff.org_names}
+    section("names", sorted([(k, n1, [(None, None)] * len(metrics)) for k, n1, _ in diff.org_names],
+                            key=lambda o: o[1]),
+            lambda it: names_notes.get(it[0], ""), hint="один ИНН, название в списке 1 → в списке 2 (справа)")
+    # «Мелкие», «Без изменений» / «Есть в обоих» свёрнуты: обычно это неинтересно (раскрыть — «+» слева)
+    for key in collapsed:
+        s, e = ranges[key]
+        for r in range(s, e + 1):
+            ws.row_dimensions[r].hidden = True
 
     # цвет разницы: рост зелёным, уменьшение красным
     for c in diff_cols:
@@ -195,7 +220,7 @@ def write_compare_report(path, src, sheet, diff, a, b):
                 cell(row + 1, c + j, t)
         row += 2
     top = row
-    for key in [k for k in ("new", "gone", "changed", "dup", "same", "both") if k in counts]:
+    for key in [k for k in ("new", "gone", "changed", "small", "dup", "same", "both") if k in counts]:
         title, hint, color, light = SECTIONS[key]
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
         cell(row, 1, f"{title}   —   {counts[key]}", font=Font(bold=True, size=12, color=color),
@@ -228,6 +253,10 @@ def write_compare_report(path, src, sheet, diff, a, b):
             c = first_val + 3 * i
             cell(row, c, s1, number_format=NUM, font=Font(italic=True, color="64748B"))
             cell(row, c + 1, s2, number_format=NUM, font=Font(italic=True, color="64748B"))
+    if diff.org_names:
+        row += 2
+        cell(row, 1, f"✏ Разные названия при одном ИНН: {len(diff.org_names)} — см. раздел выше "
+                     f"(на суммы не влияет, организации сопоставлены по ИНН).", font=Font(color="0891B2", bold=True))
 
     ws.print_title_rows = f"{h1}:{h2}"
     ws.page_setup.orientation = "landscape"

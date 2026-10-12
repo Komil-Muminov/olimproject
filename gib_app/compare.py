@@ -92,6 +92,7 @@ class Diff:
     org_only2: list = field(default_factory=list)
     org_changed: list = field(default_factory=list)
     org_same: list = field(default_factory=list)
+    org_names: list = field(default_factory=list)    # (ИНН, название в списке 1, в списке 2) — записаны по-разному
 
 
 def find_lists(data):
@@ -233,11 +234,12 @@ def compare(data):
     only2 = [(b.keys[k], name(b, k), values(b, k, [p[2] for p in pairs] or b.value_cols[:2]))
              for k in b.rows if k not in a.rows]
     changed, same, names_differ = [], 0, 0
-    org_changed, org_same = [], []
+    org_changed, org_same, org_names = [], [], []
     common = [k for k in b.rows if k in a.rows]
     for k in common:
         if norm_text(name(a, k)).replace('"', "") != norm_text(name(b, k)).replace('"', ""):
             names_differ += 1
+            org_names.append((b.keys[k], name(a, k), name(b, k)))
         diff_here, vals = False, []
         for title, ca, cb in pairs:
             v1, v2 = num(_cell(data, a.rows[k], ca)) or 0.0, num(_cell(data, b.rows[k], cb)) or 0.0
@@ -256,7 +258,7 @@ def compare(data):
     totals = [(title, round(sum(num(_cell(data, r, ca)) or 0.0 for r in a.rows.values()), 2),
                round(sum(num(_cell(data, r, cb)) or 0.0 for r in b.rows.values()), 2)) for title, ca, cb in pairs]
     return Diff(only1, only2, changed, same, len(common), names_differ, pairs, duplicates, totals,
-                org_only1, org_only2, org_changed, org_same), a, b
+                org_only1, org_only2, org_changed, org_same, org_names), a, b
 
 
 def find_compares(sheets):
@@ -274,3 +276,16 @@ def find_compares(sheets):
 def best_compare(found):
     """Какой лист предложить первым: тот, где можно сравнить суммы."""
     return max(range(len(found)), key=lambda i: (len(found[i][1].pairs), i)) if found else None
+
+
+def max_change(vals):
+    """Наибольшая по модулю разница среди показателей: [(было, стало)] → число."""
+    return max((abs((v2 or 0) - (v1 or 0)) for v1, v2 in vals), default=0.0)
+
+
+def split_changes(diff, threshold):
+    """Изменения → (заметные, мелкие): мелкие — где все разницы меньше порога. Крупные — сверху."""
+    big = [o for o in diff.org_changed if max_change(o[2]) >= threshold]
+    small = [o for o in diff.org_changed if max_change(o[2]) < threshold]
+    key = lambda o: -max_change(o[2])
+    return sorted(big, key=key), sorted(small, key=key)

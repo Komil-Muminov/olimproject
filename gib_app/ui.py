@@ -8,10 +8,10 @@ import sys
 
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
-from compare import best_compare, find_compares
+from compare import best_compare, find_compares, split_changes
 from detect import by_header, detect, sheet_score
 from excel_io import Book, WriteError, embed_automation, fill_in_place
 from parser import parse_purpose_ex, to_number
@@ -189,6 +189,25 @@ class MainWindow(QMainWindow):
         arrow.setObjectName("cmpArrow")
         cards.insertWidget(1, arrow)
         cl.addLayout(cards)
+        thr = QHBoxLayout()
+        self.thr_label = QLabel("Не показывать изменения меньше:")
+        thr.addWidget(self.thr_label)
+        self.threshold = QDoubleSpinBox()
+        self.threshold.setObjectName("bigSpin")
+        self.threshold.setRange(0, 1e12)
+        self.threshold.setDecimals(2)
+        self.threshold.setSingleStep(1)
+        self.threshold.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        self.threshold.setValue(float(self.settings.value("cmp_threshold", 1.0)))
+        self.threshold.setToolTip("Организации, у которых все разницы меньше этой суммы, попадут в свёрнутый\n"
+                                  "раздел «Мелкие изменения». 0 — показывать все изменения.")
+        self.threshold.valueChanged.connect(self._threshold_changed)
+        thr.addWidget(self.threshold)
+        self.thr_hint = QLabel()
+        self.thr_hint.setObjectName("muted")
+        thr.addWidget(self.thr_hint)
+        thr.addStretch()
+        cl.addLayout(thr)
         self.cmp_info = QLabel()
         self.cmp_info.setObjectName("cmpInfo")
         self.cmp_info.setWordWrap(True)
@@ -375,12 +394,21 @@ class MainWindow(QMainWindow):
             self.plan.compare = self.plan.compares[i]
             self._render_found()
 
+    def _threshold_changed(self, v):
+        self.settings.setValue("cmp_threshold", v)
+        self._render_found()
+
     def _render_found(self):
         self.found_text.setText(self._gib_text)
         self.found_text.setVisible(bool(self._gib_text))
         if not self.plan.compare:
             return
         sheet, d, a, b = self.plan.compare
+        for w in (self.thr_label, self.threshold, self.thr_hint):
+            w.setVisible(bool(d.pairs))
+        if d.pairs:
+            big, small = split_changes(d, self.threshold.value())
+            self.thr_hint.setText(f"сейчас: заметных изменений {len(big)}, мелких {len(small)} (в свёрнутом разделе)")
         for card, side, n in zip(self.list_cards, (a, b), (1, 2)):
             year = (f"<div style='font-size:20pt; font-weight:700; color:#0F172A'>{side.year}</div>" if side.year
                     else "<div style='font-size:12pt; color:#94A3B8; padding:6px'>год не указан</div>")
@@ -389,7 +417,8 @@ class MainWindow(QMainWindow):
         if d.pairs:
             info = ("Программа найдёт каждую организацию по ИНН в обоих списках и создаст <b>новый файл</b>, где будет видно:"
                     "<br>&nbsp;🆕 какие организации <b>появились</b> &nbsp;·&nbsp; ❌ какие <b>пропали</b>"
-                    "<br>&nbsp;🔄 у кого <b>изменилась сумма</b> (было → стало) &nbsp;·&nbsp; 👥 какие ИНН <b>повторяются</b>")
+                    "<br>&nbsp;🔄 у кого <b>изменилась сумма</b> (было → стало) &nbsp;·&nbsp; 👥 какие ИНН <b>повторяются</b>"
+                    "<br>&nbsp;✏ у кого <b>название записано по-разному</b> &nbsp;·&nbsp; крупные суммы — сверху")
         else:
             info = ("Программа найдёт каждую организацию по ИНН в обоих списках и создаст <b>новый файл</b>, где будет видно:"
                     "<br>&nbsp;🆕 какие организации <b>появились</b> &nbsp;·&nbsp; ❌ какие <b>пропали</b>"
@@ -404,7 +433,7 @@ class MainWindow(QMainWindow):
             return
         sheet, d, a, b = p.compare
         try:
-            path = write_compare_report(report_path(p.path, sheet), p.path, sheet, d, a, b)
+            path = write_compare_report(report_path(p.path, sheet), p.path, sheet, d, a, b, self.threshold.value())
         except PermissionError:
             QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
             return
@@ -413,17 +442,19 @@ class MainWindow(QMainWindow):
             return
         self.result_path = path
         self._set_head(True, "✓  Сравнение готово")
-        changed = len({c[0] for c in d.changed})
+        big, small = split_changes(d, self.threshold.value())
+        changed = len(big)
         self.result_text.setText("<br>".join([
             f"Создан файл: <b>{os.path.basename(path)}</b>", "",
             f"🆕 Новые: <b>{len(d.only2)}</b>",
             f"❌ Пропавшие: <b>{len(d.only1)}</b>",
-            *([f"🔄 Изменилась сумма: <b>{changed}</b> орг.", f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
+            *([f"🔄 Изменилась сумма: <b>{changed}</b> орг."
+               + (f" &nbsp;(ещё {len(small)} с мелкими изменениями — в свёрнутом разделе)" if small else ""),
+               f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
               else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — у второго списка их нет)"]),
-            f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>"]))
-        self.result_warn.setText(
-            f"Сопоставлено по ИНН: у {d.names_differ} организаций название в двух списках записано по-разному."
-            if d.names_differ else "")
+            f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>",
+            f"✏ Разные названия при одном ИНН: <b>{len(d.org_names)}</b>"]))
+        self.result_warn.setText("")
         self.backup = None
         self.backup_label.setText("Исходный файл не изменён.")
         self.backup_btn.setVisible(False)
@@ -580,6 +611,9 @@ QLabel#cmpTitle { font-size: 13pt; font-weight: 700; color: #0F172A; }
 QLabel#cmpInfo { font-size: 10.5pt; color: #0F172A; }
 QLabel#cmpArrow { font-size: 22pt; color: #94A3B8; padding: 0 4px; }
 QLabel#listCard { background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 8px; }
+QDoubleSpinBox#bigSpin { background: white; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px 10px;
+                         font-size: 11pt; min-width: 120px; }
+QDoubleSpinBox#bigSpin:focus { border-color: #2563EB; }
 QComboBox#bigSelect { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
                       font-size: 11pt; color: #0F172A; min-height: 22px; }
 QComboBox#bigSelect:hover { border-color: #2563EB; }
