@@ -19,7 +19,8 @@
 Option Explicit
 
 ' Цвет подсветки назначений, в которых не найден ГИБ или сумма
-Private Const FLAG_COLOR As Long = 13551615        ' RGB(255, 199, 206)
+Private Const FLAG_COLOR As Long = 13290238        ' RGB(254, 202, 202) — заметный красный
+Private Const FLAG_FONT As Long = 1776537           ' RGB(153, 27, 27) — тёмно-красный текст
 ' Цвет подсветки назначений, где в ГИБ больше 4 цифр (взяты первые 4) - проверить
 Private Const CHECK_COLOR As Long = 9105662         ' RGB(254, 240, 138)
 ' Область, в которой ищется строка заголовков таблицы
@@ -1263,8 +1264,10 @@ End Function
 Private Sub SetFlag(ByVal c As Range, ByVal flagOn As Boolean)
     If flagOn Then
         If c.Interior.Color <> FLAG_COLOR Then c.Interior.Color = FLAG_COLOR
+        If c.Font.Color <> FLAG_FONT Then c.Font.Color = FLAG_FONT
     ElseIf c.Interior.Color = FLAG_COLOR Then
         c.Interior.Pattern = xlNone
+        If c.Font.Color = FLAG_FONT Then c.Font.ColorIndex = xlColorIndexAutomatic
     End If
 End Sub
 

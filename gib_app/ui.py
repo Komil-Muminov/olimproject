@@ -423,7 +423,8 @@ class MainWindow(QMainWindow):
         w = []
         if plan.no_gib:
             w.append(f"⚠ Нет ГИБ в назначении — {rows_list(plan.no_gib)}. "
-                     + ("Пропущено, заполните вручную." if after else "Программа это пропустит."))
+                     + ("В Excel эти ячейки красные — заполните вручную." if after
+                        else "Программа это пропустит и выделит красным."))
         if plan.mismatch:
             w.append(f"⚠ Сумма ГИБ не равна сумме платежа — {rows_list(plan.mismatch)}. Проверьте.")
         if plan.long_codes:
@@ -441,7 +442,7 @@ class MainWindow(QMainWindow):
             return
         self._busy(True)
         self.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items,
-                             p.layout.first_row, p.layout.last_row, [r for r, _ in p.long_codes])
+                             p.layout.first_row, p.layout.last_row, [r for r, _ in p.long_codes], p.no_gib)
         self.worker.progress.connect(lambda v, t: (self.progress.setValue(v), self.progress.setFormat(f"{t}  %p%")))
         self.worker.done.connect(self._done)
         self.worker.failed.connect(self._failed)

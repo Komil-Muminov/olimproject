@@ -20,6 +20,9 @@ XL_OPENXML = 51
 XL_XLSM = 52
 XL_GREEN = 220 + 252 * 256 + 231 * 65536   # светло-зелёный (#DCFCE7), Excel хранит как BGR
 XL_YELLOW = 254 + 240 * 256 + 138 * 65536  # жёлтый (#FEF08A) — строку нужно проверить
+XL_NO_GIB = 254 + 202 * 256 + 202 * 65536  # красный (#FECACA) — в назначении нет ГИБ
+XL_NO_GIB_FONT = 153 + 27 * 256 + 27 * 65536   # тёмно-красный текст (#991B1B)
+NO_GIB_NOTE = "Нет ГИБ в назначении — заполните сумму в столбце ГИБ вручную."
 
 CELL_RE = re.compile(r"^\s*([A-Za-z]{1,3})\s*(\d+)\s*$")
 GIB_HEADER_RE = re.compile(r"^\s*(\d{4})(?!\d)")
@@ -100,7 +103,7 @@ class WriteError(Exception):
 
 
 def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=None, last_row=None,
-                  check_rows=(), progress=lambda p, t: None):
+                  check_rows=(), no_gib_rows=(), progress=lambda p, t: None):
     """Режим «Заполнить ГИБ в файле»: суммы ставятся в те же строки, где стоят назначения.
 
     items: список (строка, {код_ГИБ: сумма}).
@@ -142,6 +145,7 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
             header_row = first
             items = [(r + 1, g) for r, g in items]
             check_rows = [r + 1 for r in check_rows]
+            no_gib_rows = [r + 1 for r in no_gib_rows]
             header_inserted = True
             first_row = first_row + 1 if first_row else None
             last_row = last_row + 1 if last_row else None
@@ -158,6 +162,7 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
         progress(50, "Ставлю суммы…")
         gib_cols = _gib_columns(ws, header_row)
         check = set(check_rows)
+        _mark_no_gib(ws, purpose_col, no_gib_rows, [r for r, _ in items])
         for r in check:
             ws.Cells(r, purpose_col).Interior.Color = XL_YELLOW   # в ГИБ больше 4 цифр — взяты первые 4
         r1 = min(r for r, _ in items)
@@ -464,6 +469,30 @@ def _num_or_none(v):
         return None
 
 
+def _mark_no_gib(ws, col, no_gib_rows, gib_rows):
+    """Назначения без ГИБ — красная заливка, тёмно-красный текст и примечание.
+    Если назначение исправили (ГИБ появился) — наша подсветка и примечание снимаются."""
+    for r in no_gib_rows:
+        c = ws.Cells(r, col)
+        c.Interior.Color = XL_NO_GIB
+        c.Font.Color = XL_NO_GIB_FONT
+        try:
+            c.ClearComments()
+            c.AddComment(NO_GIB_NOTE)
+        except Exception:
+            pass
+    for r in gib_rows:
+        c = ws.Cells(r, col)
+        if int(c.Interior.Color) == XL_NO_GIB:
+            c.Interior.Pattern = -4142          # xlNone
+            c.Font.ColorIndex = -4105           # автоматический цвет
+            try:
+                if c.Comment is not None and c.Comment.Text() == NO_GIB_NOTE:
+                    c.ClearComments()
+            except Exception:
+                pass
+
+
 def _verify_rows(ws, items, header_row, last_row):
     """Сверка после записи: читаем ячейки обратно из Excel.
 
@@ -515,8 +544,8 @@ def _open_workbook(win32, pywintypes, path):
         for wb in running.Workbooks:
             if os.path.normcase(wb.FullName) == full:
                 return running, wb, False
-    except pywintypes.com_error:
-        pass
+    except (pywintypes.com_error, AttributeError):
+        pass        # Excel не запущен или занят (открыт диалог) — откроем файл сами
     try:
         xl = win32.DispatchEx("Excel.Application")
     except pywintypes.com_error:
