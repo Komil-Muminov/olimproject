@@ -383,9 +383,11 @@ class MainWindow(QMainWindow):
         if not self.plan.compare:
             return
         sheet, d, a, b = self.plan.compare
-        what = ("кто появился, кто пропал, у кого изменилась сумма, дубликаты ИНН и разные названия" if d.pairs
-                else "кто появился, кто пропал, дубликаты ИНН и разные названия")
-        self.cmp_info.setText(f"Результат — новый Excel-файл: {what}. Исходный файл не меняется.")
+        sheets = ("Итого · Новые · Пропавшие · Изменения · Без изменений · Дубликаты · Разные названия" if d.pairs and a.year and b.year
+                  else "Итого · Только справа · Только слева · " + ("Изменения · Без изменений" if d.pairs else "Есть в обоих")
+                  + " · Дубликаты · Разные названия")
+        self.cmp_info.setText(f"Результат — новый Excel-файл, каждая категория на своём листе: {sheets}. "
+                              f"Исходный файл не меняется.")
 
     def run_compare(self):
         p = self.plan
