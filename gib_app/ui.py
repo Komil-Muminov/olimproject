@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
                 parts.append("Все нужные столбцы ГИБ уже есть")
             if plan.done:
                 parts.append(f"<span style='color:#64748B'>Уже заполнено раньше: {len(plan.done)} — их не трогаем</span>")
+            parts.append("Для сверки с выпиской будут столбцы «Расходы» и «Разница»")
             parts.append(f"<span style='color:#64748B'>Лист «{plan.sheet}», назначения в столбце "
                          f"{get_column_letter(lay.purpose_col)}, строки {lay.first_row}–{lay.last_row}</span>")
             self.found_text.setText("<br>".join(parts))
@@ -309,7 +310,8 @@ class MainWindow(QMainWindow):
         if not p or not p.items:
             return
         self._busy(True)
-        self.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items)
+        self.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items,
+                             p.layout.first_row, p.layout.last_row)
         self.worker.progress.connect(lambda v, t: (self.progress.setValue(v), self.progress.setFormat(f"{t}  %p%")))
         self.worker.done.connect(self._done)
         self.worker.failed.connect(self._failed)
@@ -351,10 +353,12 @@ class MainWindow(QMainWindow):
         if p.items:
             lines.append(f"Сразу заполнено назначений: <b>{len(p.items)}</b>"
                          + (f", созданы столбцы: <b>{', '.join(p.new_codes)}</b>" if p.new_codes else ""))
+        lines.append("Добавлены столбцы «Расходы» и «Разница» — для сверки с выпиской.")
         lines += ["",
                   "<b>Как работать дальше:</b>",
                   "1. Откройте этот файл в Excel и нажмите «Включить содержимое» на жёлтой панели.",
                   "2. Вставляйте назначения в столбец назначений — ГИБ проставятся сами.",
+                  "   Суммы из выписки вставляйте в «Расходы» — «Разница» покажет, где не сходится.",
                   "3. Кнопка «Пересчитать ГИБ» вверху листа — заново пройтись по всем назначениям."]
         self.result_text.setText("<br>".join(lines))
         self.result_warn.setText("Исходный файл не изменён." + (
@@ -387,8 +391,16 @@ class MainWindow(QMainWindow):
         lines.append("Всё, что вписала программа, подсвечено <span style='background:#DCFCE7'>&nbsp;зелёным&nbsp;</span>.")
         if res.get("left_open"):
             lines.append("Файл был открыт в Excel — изменения уже в нём и сохранены.")
+        recon = check.get("recon")
+        if recon and recon["empty"]:
+            lines.append("📋 Сверка: вставьте суммы из выписки в столбец «Расходы» — «Разница» посчитается сама.")
+        elif recon and not recon["bad_rows"]:
+            lines.append("✓ Сверка с выпиской: все суммы совпали, разница 0.")
         self.result_text.setText("<br>".join(lines))
         warn = [self._warnings(self.plan, after=True)] if self._warnings(self.plan) else []
+        if recon and recon["bad_rows"] and not recon["empty"]:
+            warn.append(f"⚠ Сверка с выпиской: не сходится — {rows_list(recon['bad_rows'])}, "
+                        f"общая разница {fmt(recon['total_diff'])}. В столбце «Разница» такие строки подсвечены красным.")
         bad = [g for g in check["gibs"] if not (g["written_ok"] and g["total_ok"])]
         for g in bad:
             warn.append(f"⚠ ГИБ {g['code']}: итог «{fmt(g['total'] or 0)}» не равен сумме столбца {fmt(g['column_sum'])}")

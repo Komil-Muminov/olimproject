@@ -98,7 +98,8 @@ class WriteError(Exception):
     pass
 
 
-def fill_in_place(path, sheet_name, purpose_col, header_row, items, progress=lambda p, t: None):
+def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=None, last_row=None,
+                  progress=lambda p, t: None):
     """Режим «Заполнить ГИБ в файле»: суммы ставятся в те же строки, где стоят назначения.
 
     items: список (строка, {код_ГИБ: сумма}).
@@ -140,6 +141,13 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, progress=lam
             header_row = first
             items = [(r + 1, g) for r, g in items]
             header_inserted = True
+            first_row = first_row + 1 if first_row else None
+            last_row = last_row + 1 if last_row else None
+        first_row = min([first_row or 10 ** 9] + [r for r, _ in items])
+        last_row = max([last_row or 0] + [r for r, _ in items])
+
+        progress(10, "Добавляю сверку с выпиской…")
+        recon = _setup_reconciliation(ws, header_row, purpose_col, first_row, last_row)
 
         progress(15, "Проверяю столбцы ГИБ…")
         needed = sorted({code for _, gibs in items for code in gibs})
@@ -167,12 +175,15 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, progress=lam
         for code in created:
             ws.Cells(header_row, gib_cols[code]).Interior.Color = XL_GREEN
 
+        _fill_total_formulas(ws, header_row, recon["total"], first_row, last_row)
+
         if old_calc is not None:
             xl.Calculation = old_calc
             old_calc = None
         xl.Calculate()
         progress(90, "Сверяю итоги…")
         check = _verify_rows(ws, items, header_row, r2)
+        check["recon"] = _read_reconciliation(ws, header_row, first_row, last_row)
         progress(95, "Сохраняю…")
         wb.Save()
         progress(100, "Готово")
@@ -242,6 +253,8 @@ def embed_automation(src, dst, template, sheet_name, header_row, purpose_col, pr
         if ws.Rows(1).RowHeight < 30:
             ws.Rows(1).RowHeight = 30
 
+        _setup_reconciliation(ws, header_row, purpose_col, header_row + 1, None)
+
         for name, value in (("GIB_ON", 1), ("GIB_HDR", header_row), ("GIB_COL", purpose_col)):
             ws.Names.Add(Name=name, RefersTo=f"={value}", Visible=False)
 
@@ -304,6 +317,134 @@ def _add_controls(ws):
         warn.DrawingObject.PrintObject = False
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------- сверка с выпиской
+
+TOTAL_HEADERS = ("ҳамагӣ", "хамаги", "ҳамаги", "хамагӣ", "всего", "итого")
+SUM_ROW_LABELS = ("чамъ", "ҷамъ", "итого", "всего", "обороты", "остаток")
+RED_FILL = 254 + 226 * 256 + 226 * 65536      # #FEE2E2 (BGR)
+RED_FONT = 185 + 28 * 256 + 28 * 65536        # #B91C1C (BGR)
+
+
+def _norm(v):
+    return " ".join(str(v or "").split()).lower()
+
+
+def _find_header(ws, header_row, after_col, prefixes):
+    _, last_col = _used_bounds(ws)
+    for c, v in enumerate(_row_values(ws, header_row, last_col), 1):
+        if c > after_col and _norm(v).startswith(prefixes):
+            return c
+    return None
+
+
+def _insert_column(ws, header_row, pos, title):
+    ws.Columns(pos).Insert(Shift=XL_TO_RIGHT, CopyOrigin=XL_FORMAT_FROM_LEFT_OR_ABOVE)
+    ws.Cells(header_row, pos).Value = title
+    ws.Columns(pos).ColumnWidth = max(ws.Columns(pos).ColumnWidth, 13)
+
+
+def _sum_row_below(ws, last_row, purpose_col):
+    """Строка итогов под таблицей: «Чамъ», «Итого», «Обороты за период»…"""
+    used_last, _ = _used_bounds(ws)
+    if used_last <= last_row:
+        return None
+    block = ws.Range(ws.Cells(last_row + 1, 1), ws.Cells(used_last, purpose_col)).Value
+    rows = block if isinstance(block, tuple) else ((block,),)
+    for i, row in enumerate(rows):
+        if any(_norm(v).startswith(SUM_ROW_LABELS) for v in row):
+            return last_row + 1 + i
+    return None
+
+
+def _setup_reconciliation(ws, header_row, purpose_col, first_row, last_row):
+    """Столбцы сверки: «Расходы» (сумма платежа из выписки) и «Разница» = «Ҳамагӣ» − «Расходы».
+
+    Порядок: … | Расходы | Разница | Ҳамагӣ | столбцы ГИБ — «Ҳамагӣ» суммирует только ГИБ справа от себя.
+    Нет «Ҳамагӣ» (как в выписке) — создаётся. Уже есть «Расходы» (в выписке) — используется.
+    Ненулевая «Разница» подсвечивается красным; в строке итогов — общая разница.
+    """
+    total = _find_header(ws, header_row, purpose_col, TOTAL_HEADERS)
+    rash = _find_header(ws, header_row, purpose_col, ("расход",))
+    diff = _find_header(ws, header_row, purpose_col, ("разниц",))
+    total_created = total is None
+    if total is None:
+        total = (rash or purpose_col) + 1
+        _insert_column(ws, header_row, total, "Ҳамагӣ")
+    if rash is None:
+        _insert_column(ws, header_row, total, "Расходы")
+        rash, total = total, total + 1
+    if diff is None:
+        _insert_column(ws, header_row, total, "Разница")
+        diff, total = total, total + 1
+
+    if last_row is None:
+        sr = _sum_row_below(ws, first_row, purpose_col)
+        last_row = sr - 1 if sr else first_row
+    sum_row = _sum_row_below(ws, last_row, purpose_col)
+
+    rng = ws.Range(ws.Cells(first_row, diff), ws.Cells(last_row, diff))
+    current = _col_values(ws, diff, first_row, last_row, "Formula")
+    out = [f if f not in ("", None) else
+           f"=ROUND({cell_name(first_row + i, total)}-{cell_name(first_row + i, rash)},2)"
+           for i, f in enumerate(current)]
+    rng.Formula = [(v,) for v in out]
+    try:
+        rng.NumberFormat = "0.00"
+    except Exception:
+        pass        # некоторые выгрузки (1С, банк) не дают менять формат — не критично
+    try:
+        fc = rng.FormatConditions.Add(Type=1, Operator=4, Formula1="=0")     # значение ≠ 0
+        fc.Interior.Color = RED_FILL
+        fc.Font.Color = RED_FONT
+        fc.Font.Bold = True
+    except Exception:
+        pass
+
+    if sum_row:
+        for col in (rash, diff) + ((total,) if total_created else ()):
+            cell = ws.Cells(sum_row, col)
+            if cell.Formula in ("", None):
+                cell.Formula = f"=SUM({cell_name(first_row, col)}:{cell_name(last_row, col)})"
+    return {"total": total, "rash": rash, "diff": diff, "total_created": total_created, "sum_row": sum_row}
+
+
+SIMPLE_SUM_RE = re.compile(r"^=SUM\(\$?([A-Z]+)\$?\d+:\$?([A-Z]+)\$?\d+\)$", re.IGNORECASE)
+
+
+def _fill_total_formulas(ws, header_row, total, first_row, last_row):
+    """«Ҳамагӣ» = сумма столбцов ГИБ строки. Свою простую формулу СУММ расширяем на новые столбцы ГИБ,
+    другие формулы не трогаем."""
+    cols = sorted(_gib_columns(ws, header_row).values())
+    if not cols:
+        return
+    rng = ws.Range(ws.Cells(first_row, total), ws.Cells(last_row, total))
+    out = []
+    for r, f in zip(range(first_row, last_row + 1), _col_values(ws, total, first_row, last_row, "Formula")):
+        a, b = cols[0], cols[-1]
+        m = SIMPLE_SUM_RE.match(str(f or ""))
+        if f not in ("", None) and not m:
+            out.append(f)
+            continue
+        if m:
+            a = min(a, column_index_from_string(m.group(1).upper()))
+            b = max(b, column_index_from_string(m.group(2).upper()))
+        out.append(f"=SUM({get_column_letter(a)}{r}:{get_column_letter(b)}{r})")
+    rng.Formula = [(v,) for v in out]
+
+
+def _read_reconciliation(ws, header_row, first_row, last_row):
+    """Итог сверки: строки, где «Разница» ≠ 0, и пуст ли столбец «Расходы»."""
+    rash = _find_header(ws, header_row, 0, ("расход",))
+    diff = _find_header(ws, header_row, 0, ("разниц",))
+    if not (rash and diff):
+        return None
+    paid = _col_values(ws, rash, first_row, last_row)
+    diffs = _col_values(ws, diff, first_row, last_row)
+    bad = [first_row + i for i, d in enumerate(diffs) if abs(_num(d)) > 0.005]
+    return {"empty": all(v in (None, "") for v in paid), "bad_rows": bad,
+            "total_diff": round(sum(_num(d) for d in diffs), 2)}
 
 
 def _num(v):

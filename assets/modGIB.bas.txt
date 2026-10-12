@@ -32,6 +32,8 @@ Private Type TLayout
     NameCol As Long         ' столбец "Номгуи корхонахо"
     NumCol As Long          ' столбец "р/т" (0 - нет)
     TotalCol As Long        ' столбец "Хамаги" (0 - нет)
+    RashCol As Long         ' столбец "Расходы" - сумма платежа из выписки (0 - нет)
+    DiffCol As Long         ' столбец "Разница" = "Хамаги" - "Расходы" (0 - нет)
     FirstRow As Long        ' первая строка данных
     LastRow As Long         ' последняя строка данных
     SumRow As Long          ' строка итогов "Чамъ" (0 - нет)
@@ -452,6 +454,7 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
     Dim hdrRows As Long, fixedHdr As Long, fixedCol As Long
 
     L.HdrRow = 0: L.NameCol = 0: L.NumCol = 0: L.TotalCol = 0
+    L.RashCol = 0: L.DiffCol = 0
     L.FirstRow = 0: L.LastRow = 0: L.SumRow = 0
     L.AreaFirst = 0: L.AreaLast = -1: L.CodeCount = 0
     ReDim L.codes(1 To 1)
@@ -497,6 +500,8 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
             If L.NumCol = 0 And (k = "RT" Or k = "PP" Or k = "NPP") Then L.NumCol = c
         ElseIf c > L.NameCol Then
             If L.TotalCol = 0 And (k = "HAMAGI" Or k = "VSEGO" Or k = "ITOGO") Then L.TotalCol = c
+            If L.RashCol = 0 And Left$(k, 6) = "RASHOD" Then L.RashCol = c
+            If L.DiffCol = 0 And Left$(k, 5) = "RAZNI" Then L.DiffCol = c
         End If
     Next c
 
@@ -702,7 +707,7 @@ End Sub
 ' Нумерация "р/т", формулы "Хамаги" в строках и итоги в строке "Чамъ".
 Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
     Dim i As Long, r As Long, c As Long, c1 As Long, nRows As Long
-    Dim arr As Variant, f As String, want As String
+    Dim arr As Variant, f As String, want As String, extra As Variant
 
     If L.SumRow = 0 Or L.LastRow < L.FirstRow Then Exit Sub
     nRows = L.LastRow - L.FirstRow + 1
@@ -727,6 +732,22 @@ Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
         Next i
     End If
 
+    ' 2а) сверка с выпиской: "Разница" = "Хамаги" - "Расходы" в каждой строке
+    '     (формула ставится в пустые ячейки и обновляется, если сдвинулись столбцы)
+    If L.DiffCol > 0 And L.TotalCol > 0 And L.RashCol > 0 Then
+        arr = ColArray(ws, L.FirstRow, L.LastRow, L.DiffCol, True)
+        For i = 1 To nRows
+            r = L.FirstRow + i - 1
+            f = SafeStr(arr(i))
+            want = "=ROUND(" & A1(ws, r, L.TotalCol) & "-" & A1(ws, r, L.RashCol) & ",2)"
+            If Len(f) = 0 Or UCase$(Left$(f, 7)) = "=ROUND(" Then
+                If StrComp(Replace(f, "$", ""), want, vbTextCompare) <> 0 Then
+                    ws.Cells(r, L.DiffCol).Formula = want
+                End If
+            End If
+        Next i
+    End If
+
     ' 3) итоги "Чамъ" по всем строкам данных
     If L.TotalCol > 0 Then c1 = L.TotalCol Else c1 = L.AreaFirst
     If L.AreaLast >= c1 Then
@@ -741,6 +762,20 @@ Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
             End If
         Next c
     End If
+
+    ' 4) итоги "Расходы" и "Разница" (общая разница: 0 - все суммы совпали)
+    For Each extra In Array(L.RashCol, L.DiffCol)
+        c = extra
+        If c > 0 Then
+            f = SafeStr(ws.Cells(L.SumRow, c).Formula)
+            If Len(f) = 0 Or IsSimpleSum(f) Then
+                want = "=SUM(" & A1(ws, L.FirstRow, c) & ":" & A1(ws, L.LastRow, c) & ")"
+                If StrComp(Replace(f, "$", ""), want, vbTextCompare) <> 0 Then
+                    ws.Cells(L.SumRow, c).Formula = want
+                End If
+            End If
+        End If
+    Next extra
 End Sub
 
 ' Формула "Хамаги" в строке r: сумма по всей области сумм. Ставится, если
