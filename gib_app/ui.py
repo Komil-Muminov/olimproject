@@ -11,9 +11,11 @@ from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
+from compare import find_compare
 from detect import by_header, detect, sheet_score
 from excel_io import Book, WriteError, embed_automation, fill_in_place
 from parser import parse_purpose_ex, to_number
+from report import report_path, write_compare_report
 
 EXCEL_EXT = (".xlsx", ".xlsm", ".xls")
 
@@ -59,6 +61,8 @@ class Plan:
     def __init__(self, path):
         self.path = path
         book = Book(path)
+        # лист сравнения двух списков по ИНН («Муқоиса», «Сравнение»…) — (лист, Diff, список1, список2)
+        self.compare = find_compare(book.sheets)
         # лист, где больше всего назначений с ГИБ
         scores = {n: sheet_score(d) for n, d in book.sheets.items()}
         self.sheet = max(scores, key=scores.get) if scores else None
@@ -123,7 +127,7 @@ class MainWindow(QMainWindow):
         title.setObjectName("appTitle")
         title.setAlignment(Qt.AlignCenter)
         lay.addWidget(title)
-        sub = QLabel("Суммы из назначений ставятся в столбцы ГИБ этой же строки. Файл сохраняется на месте.")
+        sub = QLabel("Заполнение столбцов ГИБ по назначениям и сравнение списков по ИНН.")
         sub.setObjectName("muted")
         sub.setAlignment(Qt.AlignCenter)
         lay.addWidget(sub)
@@ -157,7 +161,7 @@ class MainWindow(QMainWindow):
         self.warn_text.setTextFormat(Qt.RichText)
         fl.addWidget(self.warn_text)
         fl.addStretch()
-        note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» рядом с ним.")
+        self.note = note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» рядом с ним.")
         note.setObjectName("muted")
         note.setWordWrap(True)
         fl.addWidget(note)
@@ -178,6 +182,12 @@ class MainWindow(QMainWindow):
                                   "когда вы вставляете назначения прямо в Excel.")
         self.embed_btn.clicked.connect(self.embed)
         btns.addWidget(self.embed_btn)
+        self.cmp_btn = QPushButton("🔍  Сравнить по ИНН")
+        self.cmp_btn.setObjectName("primary")
+        self.cmp_btn.setToolTip("Создаёт новый файл с различиями двух списков: новые, пропавшие,\n"
+                                "изменившиеся суммы и дубликаты. Исходный файл не меняется.")
+        self.cmp_btn.clicked.connect(self.run_compare)
+        btns.addWidget(self.cmp_btn)
         self.go_btn = QPushButton("Заполнить ГИБ")
         self.go_btn.setObjectName("primary")
         self.go_btn.clicked.connect(self.run)
@@ -210,7 +220,7 @@ class MainWindow(QMainWindow):
         self.backup_label.setWordWrap(True)
         rl.addWidget(self.backup_label)
         rb = QHBoxLayout()
-        again = QPushButton("Заполнить другой файл")
+        again = QPushButton("Открыть другой файл")
         again.clicked.connect(self.choose_file)
         rb.addWidget(again)
         rb.addStretch()
@@ -263,8 +273,19 @@ class MainWindow(QMainWindow):
         self.file_label.setText("📄  " + os.path.basename(path))
         self.warn_text.setText("")
         lay = plan.layout
-        self.embed_btn.setEnabled(bool(lay or plan.header_only))
-        if not lay and plan.header_only:
+        gib = bool(lay or plan.header_only)
+        self.embed_btn.setEnabled(gib)
+        self.embed_btn.setVisible(gib)
+        self.go_btn.setVisible(bool(lay))
+        self.cmp_btn.setVisible(bool(plan.compare))
+        self.note.setVisible(gib)
+        if not gib and plan.compare:
+            self.found_text.setText(self._compare_text(plan))
+        elif not gib:
+            self.found_text.setText("В этом файле не нашлось ни назначений с «ГИБ XXXX-сумма», "
+                                    "ни листа для сравнения по ИНН.")
+            self.go_btn.setEnabled(False)
+        elif not lay and plan.header_only:
             h = plan.header_only
             self.found_text.setText(
                 f"Назначений с ГИБ в файле пока нет.<br><br>"
@@ -294,8 +315,49 @@ class MainWindow(QMainWindow):
                          f"{get_column_letter(lay.purpose_col)}, строки {lay.first_row}–{lay.last_row}</span>")
             self.found_text.setText("<br>".join(parts))
             self.go_btn.setEnabled(True)
+        if gib and plan.compare:
+            self.found_text.setText(self.found_text.text() + "<br><br>" + self._compare_text(plan))
         self.warn_text.setText(self._warnings(plan))
         self.pages.setCurrentIndex(1)
+
+    @staticmethod
+    def _compare_text(plan):
+        sheet, d, a, b = plan.compare
+        return (f"🔍 Лист «{sheet}» — сравнение двух списков по ИНН:<br>"
+                f"&nbsp;&nbsp;&nbsp;{a.label(1)}<br>&nbsp;&nbsp;&nbsp;{b.label(2)}<br>"
+                f"<span style='color:#64748B'>Кнопка «Сравнить по ИНН» создаст новый файл с различиями. "
+                f"Исходный файл не изменится.</span>")
+
+    def run_compare(self):
+        p = self.plan
+        if not p or not p.compare:
+            return
+        sheet, d, a, b = p.compare
+        try:
+            path = write_compare_report(report_path(p.path), p.path, sheet, d, a, b)
+        except PermissionError:
+            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
+            return
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"{type(e).__name__}: {e}")
+            return
+        self.result_path = path
+        self._set_head(True, "✓  Сравнение готово")
+        changed = len({c[0] for c in d.changed})
+        self.result_text.setText("<br>".join([
+            f"Создан файл: <b>{os.path.basename(path)}</b>", "",
+            f"🆕 Новые: <b>{len(d.only2)}</b>",
+            f"❌ Пропавшие: <b>{len(d.only1)}</b>",
+            f"🔄 Изменилась сумма: <b>{changed}</b> орг.",
+            f"✓ Без изменений: <b>{d.same}</b>",
+            f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>"]))
+        self.result_warn.setText(
+            f"Сопоставлено по ИНН: у {d.names_differ} организаций название в двух списках записано по-разному."
+            if d.names_differ else "")
+        self.backup = None
+        self.backup_label.setText("Исходный файл не изменён.")
+        self.backup_btn.setVisible(False)
+        self.pages.setCurrentIndex(2)
 
     @staticmethod
     def _warnings(plan, after=False):
