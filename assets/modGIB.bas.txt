@@ -20,6 +20,8 @@ Option Explicit
 
 ' Цвет подсветки назначений, в которых не найден ГИБ или сумма
 Private Const FLAG_COLOR As Long = 13551615        ' RGB(255, 199, 206)
+' Цвет подсветки назначений, где в ГИБ больше 4 цифр (взяты первые 4) - проверить
+Private Const CHECK_COLOR As Long = 9105662         ' RGB(254, 240, 138)
 ' Область, в которой ищется строка заголовков таблицы
 Private Const HDR_MAX_ROWS As Long = 60
 Private Const HDR_MAX_COLS As Long = 400
@@ -51,6 +53,8 @@ Private Type TReport
     newCodes As String      ' созданные столбцы ГИБ
     ProblemRows As String   ' номера строк без ГИБ или без суммы
     ProblemCount As Long
+    CheckRows As String     ' номера строк, где в ГИБ больше 4 цифр
+    CheckCount As Long
 End Type
 
 ' Сохраненные настройки Excel на время обработки
@@ -243,15 +247,16 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
     Dim hasText() As Boolean, missAmt() As Boolean
     Dim itemFirst() As Long, itemCnt() As Long
     Dim itCode() As String, itAmt() As Double, itTotal As Long
-    Dim pc() As String, pa() As Double, pn As Long, pm As Boolean
+    Dim pc() As String, pa() As Double, pn As Long, pm As Boolean, pl As Boolean
     Dim newCodes() As String, newCnt As Long
-    Dim needFlag As Boolean
+    Dim needFlag As Boolean, longRow() As Boolean
 
     If n < 1 Then Exit Sub
     If Not GetLayout(ws, L) Then Exit Sub
 
     ReDim hasText(1 To n)
     ReDim missAmt(1 To n)
+    ReDim longRow(1 To n)
     ReDim itemFirst(1 To n)
     ReDim itemCnt(1 To n)
     ReDim itCode(1 To 32)
@@ -265,8 +270,9 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
         itemFirst(i) = itTotal + 1
         If hasText(i) Then
             rep.TextRows = rep.TextRows + 1
-            pn = ParseGib(txt, pc, pa, pm)
+            pn = ParseGib(txt, pc, pa, pm, pl)
             missAmt(i) = pm
+            longRow(i) = pl
             itemCnt(i) = pn
             For k = 1 To pn
                 itTotal = itTotal + 1
@@ -320,8 +326,9 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
                 needFlag = Not RowHasAmounts(ws, L, r)
             End If
         End If
-        SetFlag ws.Cells(r, L.NameCol), needFlag
+        SetMark ws.Cells(r, L.NameCol), needFlag, longRow(i) And itemCnt(i) > 0
         If needFlag Then AddProblem rep, r
+        If longRow(i) And itemCnt(i) > 0 Then AddCheck rep, r
     Next i
 
     ' 4. Нумерация, формулы "Хамаги" и итоги "Чамъ"
@@ -387,7 +394,7 @@ End Function
 ' снимается, как только в строке появилась сумма.
 Private Sub RefreshFlags(ByVal ws As Worksheet, L As TLayout, ByVal areaHit As Range)
     Dim rowList() As Long, n As Long, i As Long, r As Long
-    Dim txt As String, pc() As String, pa() As Double, pn As Long, pm As Boolean
+    Dim txt As String, pc() As String, pa() As Double, pn As Long, pm As Boolean, pl As Boolean
     Dim needFlag As Boolean
 
     n = CollectRows(areaHit, rowList)
@@ -396,10 +403,10 @@ Private Sub RefreshFlags(ByVal ws As Worksheet, L As TLayout, ByVal areaHit As R
         txt = CellText(ws.Cells(r, L.NameCol))
         needFlag = False
         If Len(Trim$(txt)) > 0 Then
-            pn = ParseGib(txt, pc, pa, pm)
+            pn = ParseGib(txt, pc, pa, pm, pl)
             If pn = 0 Then needFlag = Not RowHasAmounts(ws, L, r)
         End If
-        SetFlag ws.Cells(r, L.NameCol), needFlag
+        SetMark ws.Cells(r, L.NameCol), needFlag, pl And pn > 0
     Next i
 End Sub
 
@@ -909,7 +916,7 @@ End Function
 ' "ГИБ:2211-1 500,50", "гиб2211-140.5", "ГИБ 2211-1.500,00" и несколько
 ' ГИБ в одном тексте.
 Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double, _
-                          missingAmt As Boolean) As Long
+                          missingAmt As Boolean, Optional longCode As Boolean) As Long
     Dim t As String, ch As String, code As String
     Dim n As Long, i As Long, p As Long, q As Long, k As Long, cnt As Long, pEnd As Long
     Dim amt As Double, hasSep As Boolean, ok As Boolean
@@ -917,6 +924,7 @@ Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double
     ReDim codes(1 To 4)
     ReDim amts(1 To 4)
     missingAmt = False
+    longCode = False
     t = ParseNorm(s)
     n = Len(t)
     i = InStr(1, t, "GIB", vbBinaryCompare)
@@ -933,14 +941,16 @@ Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double
                 Exit Do
             End If
         Loop
-        ' код ГИБ: от 3 до 8 цифр
+        ' код ГИБ: 4 цифры; если цифр больше (до 8) - берутся первые 4,
+        ' а строка подсвечивается для проверки
         q = p
         Do While q <= n
             If Not IsDigitChar(Mid$(t, q, 1)) Then Exit Do
             q = q + 1
         Loop
-        If q - p >= 3 And q - p <= 8 Then
-            code = Mid$(t, p, q - p)
+        If q - p >= 4 And q - p <= 8 Then
+            code = Mid$(t, p, 4)
+            If q - p > 4 Then longCode = True
             ' разделитель между кодом и суммой: тире, двоеточие, "=" или пробел
             p = q
             Do While p <= n
@@ -1258,6 +1268,26 @@ Private Sub SetFlag(ByVal c As Range, ByVal flagOn As Boolean)
     End If
 End Sub
 
+' Подсветка назначения: розовая - нет ГИБ/суммы, желтая - в ГИБ больше 4 цифр.
+Private Sub SetMark(ByVal c As Range, ByVal flagOn As Boolean, ByVal checkOn As Boolean)
+    If flagOn Then
+        SetFlag c, True
+    ElseIf checkOn Then
+        If c.Interior.Color <> CHECK_COLOR Then c.Interior.Color = CHECK_COLOR
+    Else
+        SetFlag c, False
+        If c.Interior.Color = CHECK_COLOR Then c.Interior.Pattern = xlNone
+    End If
+End Sub
+
+Private Sub AddCheck(rep As TReport, ByVal r As Long)
+    rep.CheckCount = rep.CheckCount + 1
+    If rep.CheckCount <= MAX_LIST Then
+        If Len(rep.CheckRows) > 0 Then rep.CheckRows = rep.CheckRows & ", "
+        rep.CheckRows = rep.CheckRows & CStr(r)
+    End If
+End Sub
+
 Private Sub AddProblem(rep As TReport, ByVal r As Long)
     rep.ProblemCount = rep.ProblemCount + 1
     If rep.ProblemCount <= MAX_LIST Then
@@ -1275,6 +1305,9 @@ Private Sub ReportResult(rep As TReport)
     If Len(rep.newCodes) > 0 Then s = s & "; новые столбцы: " & rep.newCodes
     If rep.ProblemCount > 0 Then
         s = s & "; без ГИБ/суммы: " & rep.ProblemCount & " (строки " & rep.ProblemRows & ")"
+    End If
+    If rep.CheckCount > 0 Then
+        s = s & "; ГИБ больше 4 цифр, проверьте: " & rep.CheckCount & " (строки " & rep.CheckRows & ")"
     End If
     mLastReport = s
     If rep.TextRows > 0 Or Len(rep.newCodes) > 0 Then SetStatus s

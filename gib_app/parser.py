@@ -7,8 +7,8 @@
 import re
 from dataclasses import dataclass, field
 
-# «ГИБ» (или GIB), до 4 разделителей, код из 4 цифр, затем тире/двоеточие/«=» или пробел
-GIB_RE = re.compile(r"(?:ГИБ|GIB)[ :.\-#№]{0,4}(\d{4})(?!\d)( *[-:=] *| +)(?=\d)", re.IGNORECASE)
+# «ГИБ» (или GIB), до 4 разделителей, код (4–8 цифр; ГИБ — первые 4), затем тире/двоеточие/«=» или пробел
+GIB_RE = re.compile(r"(?:ГИБ|GIB)[ :.\-#№]{0,4}(\d{4,8})(?!\d)( *[-:=] *| +)(?=\d)", re.IGNORECASE)
 SPACES = dict.fromkeys(map(ord, "\t\r\n           "
                                 " ​  　﻿"), " ")
 DASHES = dict.fromkeys(map(ord, "­‐‑‒–—―−﹣－"), "-")
@@ -62,14 +62,27 @@ def read_amount(t: str, p: int):
     return round(float(whole + "." + (frac or "0")), 2), q
 
 
-def parse_purpose(text: str) -> dict:
-    """Возвращает {код_ГИБ: сумма}. Один и тот же ГИБ в строке суммируется."""
+def parse_purpose_ex(text: str):
+    """→ ({код_ГИБ: сумма}, [длинные коды]). Один и тот же ГИБ в строке суммируется.
+
+    Если после «ГИБ» больше 4 цифр (например, 22110), ГИБ — первые 4 (2211),
+    а сам длинный код возвращается отдельно: такую строку нужно проверить.
+    """
     t = str(text or "").translate(SPACES).translate(DASHES)
-    result, pos = {}, 0
+    result, long_codes, pos = {}, [], 0
     while m := GIB_RE.search(t, pos):
+        raw = m.group(1)
+        code = raw[:4]
+        if len(raw) > 4:
+            long_codes.append(raw)
         amount, pos = read_amount(t, m.end())
-        result[m.group(1)] = round(result.get(m.group(1), 0.0) + amount, 2)
-    return result
+        result[code] = round(result.get(code, 0.0) + amount, 2)
+    return result, long_codes
+
+
+def parse_purpose(text: str) -> dict:
+    """Возвращает {код_ГИБ: сумма}."""
+    return parse_purpose_ex(text)[0]
 
 
 def normalize(text) -> str:

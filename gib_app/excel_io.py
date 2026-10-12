@@ -19,6 +19,7 @@ XL_CALC_MANUAL = -4135
 XL_OPENXML = 51
 XL_XLSM = 52
 XL_GREEN = 220 + 252 * 256 + 231 * 65536   # светло-зелёный (#DCFCE7), Excel хранит как BGR
+XL_YELLOW = 254 + 240 * 256 + 138 * 65536  # жёлтый (#FEF08A) — строку нужно проверить
 
 CELL_RE = re.compile(r"^\s*([A-Za-z]{1,3})\s*(\d+)\s*$")
 GIB_HEADER_RE = re.compile(r"^\s*(\d{4})(?!\d)")
@@ -99,7 +100,7 @@ class WriteError(Exception):
 
 
 def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=None, last_row=None,
-                  progress=lambda p, t: None):
+                  check_rows=(), progress=lambda p, t: None):
     """Режим «Заполнить ГИБ в файле»: суммы ставятся в те же строки, где стоят назначения.
 
     items: список (строка, {код_ГИБ: сумма}).
@@ -140,6 +141,7 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
             ws.Rows(first).Insert(Shift=XL_DOWN)
             header_row = first
             items = [(r + 1, g) for r, g in items]
+            check_rows = [r + 1 for r in check_rows]
             header_inserted = True
             first_row = first_row + 1 if first_row else None
             last_row = last_row + 1 if last_row else None
@@ -155,6 +157,9 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
 
         progress(50, "Ставлю суммы…")
         gib_cols = _gib_columns(ws, header_row)
+        check = set(check_rows)
+        for r in check:
+            ws.Cells(r, purpose_col).Interior.Color = XL_YELLOW   # в ГИБ больше 4 цифр — взяты первые 4
         r1 = min(r for r, _ in items)
         r2 = max(r for r, _ in items)
         replaced = 0
@@ -171,7 +176,8 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
                 out[r - r1] = amount
             ws.Range(ws.Cells(r1, col), ws.Cells(r2, col)).Formula = [(v,) for v in out]
             for r in mine:
-                ws.Cells(r, col).Interior.Color = XL_GREEN      # видно, что вписала программа
+                # видно, что вписала программа; жёлтым — строки, которые нужно проверить
+                ws.Cells(r, col).Interior.Color = XL_YELLOW if r in check else XL_GREEN
         for code in created:
             ws.Cells(header_row, gib_cols[code]).Interior.Color = XL_GREEN
 

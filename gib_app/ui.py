@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWi
 
 from detect import by_header, detect, sheet_score
 from excel_io import Book, WriteError, embed_automation, fill_in_place
-from parser import parse_purpose, to_number
+from parser import parse_purpose_ex, to_number
 
 EXCEL_EXT = (".xlsx", ".xlsm", ".xls")
 
@@ -65,6 +65,7 @@ class Plan:
         data = book.sheets.get(self.sheet, [])
         self.layout = detect(data) if self.sheet else None
         self.items, self.no_gib, self.done, self.mismatch = [], [], [], []
+        self.long_codes = []          # (строка, ["22110", …]) — в ГИБ больше 4 цифр, взяты первые 4
         self.codes, self.new_codes, self.total = [], [], 0.0
         # назначений ещё нет (пустой Бучет) — автоматику всё равно можно встроить по заголовку
         self.header_only = None
@@ -80,7 +81,9 @@ class Plan:
             v = Book.value(data, r, lay.purpose_col)
             if not isinstance(v, str) or not v.strip():
                 continue
-            gibs = parse_purpose(v)
+            gibs, longs = parse_purpose_ex(v)
+            if longs:
+                self.long_codes.append((r, longs))
             if not gibs:
                 self.no_gib.append(r)
                 continue
@@ -302,6 +305,12 @@ class MainWindow(QMainWindow):
                      + ("Пропущено, заполните вручную." if after else "Программа это пропустит."))
         if plan.mismatch:
             w.append(f"⚠ Сумма ГИБ не равна сумме платежа — {rows_list(plan.mismatch)}. Проверьте.")
+        if plan.long_codes:
+            shown = ", ".join(f"строка {r} ({', '.join(f'{c} → {c[:4]}' for c in codes)})"
+                              for r, codes in plan.long_codes[:6])
+            more = f" и ещё {len(plan.long_codes) - 6}" if len(plan.long_codes) > 6 else ""
+            w.append(f"⚠ В ГИБ больше 4 цифр — взяты первые 4: {shown}{more}. Проверьте"
+                     + (" (в Excel эти строки жёлтые)." if after else "."))
         return "<br>".join(w)
 
     # ------------------------------------------------------------ заполнение
@@ -311,7 +320,7 @@ class MainWindow(QMainWindow):
             return
         self._busy(True)
         self.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items,
-                             p.layout.first_row, p.layout.last_row)
+                             p.layout.first_row, p.layout.last_row, [r for r, _ in p.long_codes])
         self.worker.progress.connect(lambda v, t: (self.progress.setValue(v), self.progress.setFormat(f"{t}  %p%")))
         self.worker.done.connect(self._done)
         self.worker.failed.connect(self._failed)
