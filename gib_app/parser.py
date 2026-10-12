@@ -1,14 +1,17 @@
-"""Разбор назначения платежа: поиск всех «ГИБ XXXX-сумма»."""
+"""Разбор назначения платежа: поиск всех «ГИБ XXXX-сумма».
+
+Правила те же, что у макроса в Excel (assets/modGIB.bas.txt, ParseGib/ReadAmount),
+чтобы программа и встроенная автоматика понимали назначения одинаково.
+ИНН, ГВБ, номера заявок и прочие числа без слова «ГИБ» перед ними пропускаются.
+"""
 import re
 from dataclasses import dataclass, field
 
-# ГИБ 2211-140,00 | ГИБ:2211 - 1 200,50 | гиб 2211–140
-GIB_RE = re.compile(
-    r"ГИБ[\s:№.]*(\d{4})\s*[-–—]\s*"
-    r"(\d{1,3}(?:[  ]\d{3})+|\d+)"   # целая часть, допускаем пробел-разделитель тысяч
-    r"(?:[.,](\d{1,2}))?",                # копейки
-    re.IGNORECASE,
-)
+# «ГИБ» (или GIB), до 4 разделителей, код из 4 цифр, затем тире/двоеточие/«=» или пробел
+GIB_RE = re.compile(r"(?:ГИБ|GIB)[ :.\-#№]{0,4}(\d{4})(?!\d)( *[-:=] *| +)(?=\d)", re.IGNORECASE)
+SPACES = dict.fromkeys(map(ord, "\t\r\n           "
+                                " ​  　﻿"), " ")
+DASHES = dict.fromkeys(map(ord, "­‐‑‒–—―−﹣－"), "-")
 
 
 @dataclass
@@ -37,12 +40,35 @@ class ParsedRow:
         return "OK"
 
 
+def read_amount(t: str, p: int):
+    """Сумма с позиции p (там цифра) → (сумма, позиция после неё).
+
+    Тысячи: пробел/точка/запятая перед группой ровно из 3 цифр («1 500,50», «1.500,50»),
+    только если до неё не больше 3 цифр. Копейки: 1–2 цифры после запятой или точки.
+    Поэтому «ГИБ 2211-140 020012345» — это 140, а не 140 020.
+    """
+    m = re.match(r"\d+", t[p:])
+    whole, q = m.group(), p + m.end()
+    first_len, frac = len(whole), ""
+    while q < len(t) and t[q] in " .,":
+        run = re.match(r"\d*", t[q + 1:]).group()
+        if t[q] in ".," and len(run) in (1, 2):
+            frac, q = run, q + 1 + len(run)
+            break
+        if len(run) == 3 and first_len <= 3:
+            whole, q = whole + run, q + 4
+            continue
+        break
+    return round(float(whole + "." + (frac or "0")), 2), q
+
+
 def parse_purpose(text: str) -> dict:
     """Возвращает {код_ГИБ: сумма}. Один и тот же ГИБ в строке суммируется."""
-    result = {}
-    for code, whole, frac in GIB_RE.findall(text or ""):
-        amount = float(whole.replace(" ", "").replace(" ", "") + "." + (frac or "0"))
-        result[code] = round(result.get(code, 0.0) + amount, 2)
+    t = str(text or "").translate(SPACES).translate(DASHES)
+    result, pos = {}, 0
+    while m := GIB_RE.search(t, pos):
+        amount, pos = read_amount(t, m.end())
+        result[m.group(1)] = round(result.get(m.group(1), 0.0) + amount, 2)
     return result
 
 
@@ -56,7 +82,7 @@ def to_number(value) -> float | None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    s = str(value).replace(" ", "").replace(" ", "").replace(",", ".")
+    s = str(value).replace(" ", "").replace(" ", "").replace(",", ".")
     try:
         return float(s)
     except ValueError:
