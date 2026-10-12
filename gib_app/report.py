@@ -12,7 +12,7 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from compare import split_changes
+from compare import sorted_changes
 
 NUM = "#,##0.00"
 THIN = Side(style="thin", color="CBD5E1")
@@ -25,7 +25,6 @@ SECTIONS = {
     "new": ("🆕 НОВЫЕ", "есть только во 2-м списке", "CA8A04", "FEF9C3"),
     "gone": ("❌ ПРОПАВШИЕ", "были только в 1-м списке", "DC2626", "FEE2E2"),
     "changed": ("🔄 ИЗМЕНИЛАСЬ СУММА", "есть в обоих списках, сумма другая", "2563EB", "DBEAFE"),
-    "small": ("🔸 МЕЛКИЕ ИЗМЕНЕНИЯ", "разница меньше порога", "EA580C", "FFEDD5"),
     "dup": ("👥 ДУБЛИКАТЫ", "один ИНН записан в списке несколько раз", "7C3AED", "EDE9FE"),
     "names": ("✏ РАЗНЫЕ НАЗВАНИЯ", "один ИНН, а название в списках записано по-разному", "0891B2", "CFFAFE"),
     "same": ("✓ БЕЗ ИЗМЕНЕНИЙ", "есть в обоих списках, суммы совпадают", "16A34A", "DCFCE7"),
@@ -46,11 +45,7 @@ def _fill(color):
     return PatternFill("solid", fgColor=color)
 
 
-def fmt_num(x):
-    return f"{x:,.2f}".replace(",", " ").replace(".", ",")
-
-
-def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
+def write_compare_report(path, src, sheet, diff, a, b):
     y1, y2 = a.year or "Список 1", b.year or "Список 2"
     in1 = f"в {a.year}" if a.year else "в первом списке"
     in2 = f"в {b.year}" if b.year else "во втором списке"
@@ -58,7 +53,6 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
         "new": f"есть {in2}, не было {in1}",
         "gone": f"были {in1}, нет {in2}",
         "changed": f"есть и {in1}, и {in2} — сумма другая",
-        "small": f"есть и {in1}, и {in2} — разница совсем небольшая",
         "dup": "один ИНН записан в списке несколько раз",
         "same": f"есть и {in1}, и {in2} — суммы совпадают",
         "both": f"есть и {in1}, и {in2} (суммы не сравнивались — {in2} их нет)",
@@ -103,8 +97,6 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
                f"{b.year or 'второй список'}: {len(b.rows)} организаций",
          font=Font(bold=True, color="334155"))
     notes = []
-    if threshold > 0 and metrics:
-        notes.append(f"Изменения меньше {fmt_num(threshold)} — в свёрнутом разделе «Мелкие изменения».")
     if diff.names_differ:
         notes.append(f"Сопоставлено по ИНН: у {diff.names_differ} организаций название записано по-разному — "
                      f"список в разделе «Разные названия».")
@@ -181,12 +173,7 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     section("gone", sorted([(k, n, side_vals(v, 1)) for k, n, v in diff.org_only1], key=by_size))
     collapsed = []
     if metrics:
-        big, small = split_changes(diff, threshold)
-        section("changed", big)
-        if threshold > 0:
-            section("small", small, hint=f"есть и {in1}, и {in2}, разница меньше {fmt_num(threshold)} "
-                                           f"— раскройте «+» слева")
-            collapsed.append("small")
+        section("changed", sorted_changes(diff))
     dup_notes = {(k, n): f"список {i} · строки {', '.join(map(str, rr))} ({len(rr)} раза)"
                  for i, k, n, rr in diff.duplicates}
     section("dup", [(k, n, [(None, None)] * len(metrics)) for _, k, n, _ in diff.duplicates],
@@ -202,7 +189,7 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
                             key=lambda o: o[1]),
             lambda it: names_notes.get(it[0], ""),
             hint=f"один ИНН: слева — как записано {in1}, справа в «Примечании» — как {in2}")
-    # «Мелкие», «Без изменений» / «Есть в обоих» свёрнуты: обычно это неинтересно (раскрыть — «+» слева)
+    # «Без изменений» / «Есть в обоих» свёрнуты: обычно это неинтересно (раскрыть — «+» слева)
     for key in collapsed:
         s, e = ranges[key]
         for r in range(s, e + 1):
@@ -234,7 +221,7 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
                 cell(row + 1, c + j, t)
         row += 2
     top = row
-    for key in [k for k in ("new", "gone", "changed", "small", "dup", "same", "both") if k in counts]:
+    for key in [k for k in ("new", "gone", "changed", "dup", "same", "both") if k in counts]:
         title, _, color, light = SECTIONS[key]
         hint = hints[key]
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)

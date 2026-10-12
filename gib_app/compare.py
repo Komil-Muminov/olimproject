@@ -283,9 +283,6 @@ def max_change(vals):
     return max((abs((v2 or 0) - (v1 or 0)) for v1, v2 in vals), default=0.0)
 
 
-def split_changes(diff, threshold):
-    """Изменения → (заметные, мелкие): мелкие — где все разницы меньше порога. Крупные — сверху."""
-    big = [o for o in diff.org_changed if max_change(o[2]) >= threshold]
-    small = [o for o in diff.org_changed if max_change(o[2]) < threshold]
-    key = lambda o: -max_change(o[2])
-    return sorted(big, key=key), sorted(small, key=key)
+def sorted_changes(diff):
+    """Организации с изменившейся суммой — крупные разницы сверху."""
+    return sorted(diff.org_changed, key=lambda o: -max_change(o[2]))
