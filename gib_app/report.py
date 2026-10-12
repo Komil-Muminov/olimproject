@@ -46,9 +46,10 @@ def _fill(color):
 
 
 def write_compare_report(path, src, sheet, diff, a, b):
-    y1, y2 = a.year or "Левая таблица", b.year or "Правая таблица"
-    in1 = f"в {a.year}" if a.year else "в левой таблице"
-    in2 = f"в {b.year}" if b.year else "в правой таблице"
+    # списки называем годом, а если года нет — столбцами, где список стоит в исходном листе
+    y1, y2 = a.year or f"Столбцы {a.span}", b.year or f"Столбцы {b.span}"
+    in1 = f"в {a.year}" if a.year else f"в столбцах {a.span}"
+    in2 = f"в {b.year}" if b.year else f"в столбцах {b.span}"
     hints = {
         "new": f"есть {in2}, не было {in1}",
         "gone": f"были {in1}, нет {in2}",
@@ -58,6 +59,13 @@ def write_compare_report(path, src, sheet, diff, a, b):
         "both": f"есть и {in1}, и {in2} (суммы не сравнивались — {in2} их нет)",
         "names": f"один ИНН, а название {in1} и {in2} записано по-разному",
     }
+    # без годов «новые/пропавшие» — догадка; честнее «только в …»
+    titles = {k: v[0] for k, v in SECTIONS.items()}
+    if not (a.year and b.year):
+        titles["new"] = f"🆕 ТОЛЬКО {in2.upper()}"
+        titles["gone"] = f"❌ ТОЛЬКО {in1.upper()}"
+        hints["new"] = f"есть {in2}, нет {in1}"
+        hints["gone"] = f"есть {in1}, нет {in2}"
     metrics = [p[0] for p in diff.pairs]
     wb = Workbook()
     ws = wb.active
@@ -93,8 +101,7 @@ def write_compare_report(path, src, sheet, diff, a, b):
     ws.row_dimensions[1].height = 28
     cell(2, 1, f"Файл: {os.path.basename(src)}   ·   лист «{sheet}»   ·   создано {datetime.now():%d.%m.%Y %H:%M}",
          font=Font(color="64748B"))
-    cell(3, 1, f"{a.year or 'Левая таблица'}: {len(a.rows)} организаций   →   "
-               f"{b.year or 'правая таблица'}: {len(b.rows)} организаций",
+    cell(3, 1, f"Сравниваются: {a.where()}   →   {b.where()}",
          font=Font(bold=True, color="334155"))
     notes = []
     if diff.names_differ:
@@ -126,7 +133,8 @@ def write_compare_report(path, src, sheet, diff, a, b):
     def section(key, items, note=lambda it: "", hint=None):
         """items: (ИНН, название, [(было, стало)] по показателям)."""
         nonlocal row
-        title, _, color, light = SECTIONS[key]
+        _, _, color, light = SECTIONS[key]
+        title = titles[key]
         hint = hint or hints[key]
         counts[key] = len(items)
         band(row, f"{title} — {len(items)}   ·   {hint}", color)
@@ -222,7 +230,8 @@ def write_compare_report(path, src, sheet, diff, a, b):
         row += 2
     top = row
     for key in [k for k in ("new", "gone", "changed", "dup", "same", "both") if k in counts]:
-        title, _, color, light = SECTIONS[key]
+        _, _, color, light = SECTIONS[key]
+        title = titles[key]
         hint = hints[key]
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
         cell(row, 1, f"{title}   —   {counts[key]}", font=Font(bold=True, size=12, color=color),

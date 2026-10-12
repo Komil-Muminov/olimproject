@@ -69,6 +69,17 @@ class SideList:
     keys: dict = field(default_factory=dict)   # ключ сравнения -> ИНН как в файле
     all_rows: dict = field(default_factory=dict)   # ключ сравнения -> все строки (для дубликатов)
     year: str | None = None
+    block: list = field(default_factory=list)   # столбцы самого списка (№, название, ИНН…) — для подписи
+
+    @property
+    def span(self):
+        """«A–C» — где список виден в Excel."""
+        return f"{get_column_letter(min(self.block))}–{get_column_letter(max(self.block))}"
+
+    def where(self):
+        """«столбцы A–C (2024, 381 орг.)»"""
+        year = f"{self.year}, " if self.year else ""
+        return f"столбцы {self.span} ({year}{len(self.rows)} орг.)"
 
     def label(self, i):
         span = f"{get_column_letter(min(self.cols))}–{get_column_letter(max(self.cols))}"
@@ -140,7 +151,7 @@ def find_lists(data):
     sides = []
     for k in key_cols:
         block = next(b for b in blocks if k in b)
-        sides.append(SideList(k, None, list(block), []))
+        sides.append(SideList(k, None, list(block), [], block=list(block)))
     # блоки без ИНН (суммы отдельно от списка) — к списку с той же длиной
     for b in blocks:
         if any(k in b for k in key_cols):

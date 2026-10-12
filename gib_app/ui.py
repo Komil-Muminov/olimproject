@@ -346,13 +346,13 @@ class MainWindow(QMainWindow):
             btn.deleteLater()
         self.opt_texts = []
         for i, (name, d, a, b) in enumerate(plan.compares):
-            counts = f"{len(a.rows)} → {len(b.rows)} орг."
             if d.pairs:
-                what = (f"Кто появился, кто пропал и у кого изменилась сумма  ·  "
-                        f"{a.year or 'левая таблица'} → {b.year or 'правая таблица'}  ·  {counts}")
+                what = (f"Сравнить {a.where()} и {b.where()}:\n"
+                        f"      кто появился, кто пропал и у кого изменилась сумма")
             else:
-                left = f"левая таблица ({a.year})" if a.year else "левая таблица"
-                what = f"Кто появился и кто пропал  ·  {left} → правая  ·  {counts}  ·  в правой таблице нет сумм"
+                what = (f"Сравнить {a.where()} и {b.where()}:\n"
+                        f"      какие организации есть только в одном из списков. "
+                        f"В столбцах {b.span} нет сумм — суммы не сравниваются")
             self.opt_texts.append((name, what))
             btn = QPushButton()
             btn.setObjectName("sheetOption")
@@ -405,11 +405,13 @@ class MainWindow(QMainWindow):
         changed = len(d.org_changed)
         self.result_text.setText("<br>".join([
             f"Создан файл: <b>{os.path.basename(path)}</b>", "",
-            f"🆕 Новые: <b>{len(d.only2)}</b>",
-            f"❌ Пропавшие: <b>{len(d.only1)}</b>",
+            (f"🆕 Новые: <b>{len(d.only2)}</b>" if a.year and b.year
+             else f"🆕 Только в {b.year or 'столбцах ' + b.span}: <b>{len(d.only2)}</b>"),
+            (f"❌ Пропавшие: <b>{len(d.only1)}</b>" if a.year and b.year
+             else f"❌ Только в {a.year or 'столбцах ' + a.span}: <b>{len(d.only1)}</b>"),
             *([f"🔄 Изменилась сумма: <b>{changed}</b> орг.",
                f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
-              else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — в правой таблице их нет)"]),
+              else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — во втором списке их нет)"]),
             f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>",
             f"✏ Разные названия при одном ИНН: <b>{len(d.org_names)}</b>"]))
         self.result_warn.setText("")
