@@ -52,6 +52,18 @@ def fmt_num(x):
 
 def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     y1, y2 = a.year or "Список 1", b.year or "Список 2"
+    in1 = f"в {a.year}" if a.year else "в первом списке"
+    in2 = f"в {b.year}" if b.year else "во втором списке"
+    hints = {
+        "new": f"есть {in2}, не было {in1}",
+        "gone": f"были {in1}, нет {in2}",
+        "changed": f"есть и {in1}, и {in2} — сумма другая",
+        "small": f"есть и {in1}, и {in2} — разница совсем небольшая",
+        "dup": "один ИНН записан в списке несколько раз",
+        "same": f"есть и {in1}, и {in2} — суммы совпадают",
+        "both": f"есть и {in1}, и {in2} (суммы не сравнивались — {in2} их нет)",
+        "names": f"один ИНН, а название {in1} и {in2} записано по-разному",
+    }
     metrics = [p[0] for p in diff.pairs]
     wb = Workbook()
     ws = wb.active
@@ -87,8 +99,8 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     ws.row_dimensions[1].height = 28
     cell(2, 1, f"Файл: {os.path.basename(src)}   ·   лист «{sheet}»   ·   создано {datetime.now():%d.%m.%Y %H:%M}",
          font=Font(color="64748B"))
-    cell(3, 1, f"Список 1{' (' + a.year + ')' if a.year else ''}: {len(a.rows)} организаций   →   "
-               f"Список 2{' (' + b.year + ')' if b.year else ''}: {len(b.rows)} организаций",
+    cell(3, 1, f"{a.year or 'Первый список'}: {len(a.rows)} организаций   →   "
+               f"{b.year or 'второй список'}: {len(b.rows)} организаций",
          font=Font(bold=True, color="334155"))
     notes = []
     if threshold > 0 and metrics:
@@ -122,8 +134,8 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     def section(key, items, note=lambda it: "", hint=None):
         """items: (ИНН, название, [(было, стало)] по показателям)."""
         nonlocal row
-        title, base_hint, color, light = SECTIONS[key]
-        hint = hint or base_hint
+        title, _, color, light = SECTIONS[key]
+        hint = hint or hints[key]
         counts[key] = len(items)
         band(row, f"{title} — {len(items)}   ·   {hint}", color)
         row += 1
@@ -172,7 +184,8 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
         big, small = split_changes(diff, threshold)
         section("changed", big)
         if threshold > 0:
-            section("small", small, hint=f"все разницы меньше {fmt_num(threshold)} — раскройте «+» слева")
+            section("small", small, hint=f"есть и {in1}, и {in2}, разница меньше {fmt_num(threshold)} "
+                                           f"— раскройте «+» слева")
             collapsed.append("small")
     dup_notes = {(k, n): f"список {i} · строки {', '.join(map(str, rr))} ({len(rr)} раза)"
                  for i, k, n, rr in diff.duplicates}
@@ -184,10 +197,11 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
     else:
         section("both", [(k, n, []) for k, n, _ in diff.org_same + diff.org_changed])
         collapsed.append("both")
-    names_notes = {k: f"в списке 2: {n2}" for k, _, n2 in diff.org_names}
+    names_notes = {k: f"{in2}: {n2}" for k, _, n2 in diff.org_names}
     section("names", sorted([(k, n1, [(None, None)] * len(metrics)) for k, n1, _ in diff.org_names],
                             key=lambda o: o[1]),
-            lambda it: names_notes.get(it[0], ""), hint="один ИНН, название в списке 1 → в списке 2 (справа)")
+            lambda it: names_notes.get(it[0], ""),
+            hint=f"один ИНН: слева — как записано {in1}, справа в «Примечании» — как {in2}")
     # «Мелкие», «Без изменений» / «Есть в обоих» свёрнуты: обычно это неинтересно (раскрыть — «+» слева)
     for key in collapsed:
         s, e = ranges[key]
@@ -221,7 +235,8 @@ def write_compare_report(path, src, sheet, diff, a, b, threshold=0.0):
         row += 2
     top = row
     for key in [k for k in ("new", "gone", "changed", "small", "dup", "same", "both") if k in counts]:
-        title, hint, color, light = SECTIONS[key]
+        title, _, color, light = SECTIONS[key]
+        hint = hints[key]
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
         cell(row, 1, f"{title}   —   {counts[key]}", font=Font(bold=True, size=12, color=color),
              alignment=Alignment(vertical="center", indent=1))
