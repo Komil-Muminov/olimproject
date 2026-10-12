@@ -15,7 +15,8 @@ from compare import best_compare, find_compares
 from detect import by_header, detect, sheet_score
 from excel_io import Book, WriteError, embed_automation, fill_in_place
 from parser import parse_purpose_ex, to_number
-from report import report_path, write_compare_report
+from inn_check import check_inn
+from report import check_report_path, report_path, write_check_report, write_compare_report
 
 EXCEL_EXT = (".xlsx", ".xlsm", ".xls")
 
@@ -63,6 +64,8 @@ class Plan:
         book = Book(path)
         # лист сравнения двух списков по ИНН («Муқоиса», «Сравнение»…) — (лист, Diff, список1, список2)
         self.compares = find_compares(book.sheets)
+        # все таблицы с ИНН на всех листах — для проверки (дубликаты, названия, неправильные ИНН)
+        self.inn = check_inn(book.sheets)
         best = best_compare(self.compares)
         self.compare = self.compares[best] if self.compares else None
         # лист, где больше всего назначений с ГИБ
@@ -212,6 +215,12 @@ class MainWindow(QMainWindow):
                                 "изменившиеся суммы и дубликаты. Исходный файл не меняется.")
         self.cmp_btn.clicked.connect(self.run_compare)
         btns.addWidget(self.cmp_btn)
+        self.chk_btn = QPushButton("🧾  Проверить ИНН")
+        self.chk_btn.setObjectName("secondary")
+        self.chk_btn.setToolTip("Создаёт новый файл: дубликаты ИНН, один ИНН — разные названия,\n"
+                                "неправильные ИНН. Проверяются все таблицы с ИНН на всех листах.")
+        self.chk_btn.clicked.connect(self.run_check)
+        btns.addWidget(self.chk_btn)
         self.go_btn = QPushButton("Заполнить ГИБ")
         self.go_btn.setObjectName("primary")
         self.go_btn.clicked.connect(self.run)
@@ -302,12 +311,13 @@ class MainWindow(QMainWindow):
         self.embed_btn.setVisible(gib)
         self.go_btn.setVisible(bool(lay))
         self.cmp_btn.setVisible(bool(plan.compare))
+        self.chk_btn.setVisible(bool(plan.inn))
         self.note.setVisible(gib)
-        if not gib and plan.compare:
+        if not gib and (plan.compare or plan.inn):
             self.found_text.setText("")
         elif not gib:
             self.found_text.setText("В этом файле не нашлось ни назначений с «ГИБ XXXX-сумма», "
-                                    "ни листа для сравнения по ИНН.")
+                                    "ни таблиц с ИНН.")
             self.go_btn.setEnabled(False)
         elif not lay and plan.header_only:
             h = plan.header_only
@@ -378,8 +388,14 @@ class MainWindow(QMainWindow):
             btn.setText(f"{'●' if btn.isChecked() else '○'}   {name}\n      {what}")
 
     def _render_found(self):
-        self.found_text.setText(self._gib_text)
-        self.found_text.setVisible(bool(self._gib_text))
+        parts = [self._gib_text] if self._gib_text else []
+        if self.plan.inn:
+            tabs = self.plan.inn.tables
+            parts.append(f"🧾 Таблиц с ИНН: <b>{len(tabs)}</b>"
+                         f"<span style='color:#64748B'> — кнопка «Проверить ИНН» найдёт дубликаты, "
+                         f"разные названия одного ИНН и неправильные ИНН (пустые, не те цифры, буквы).</span>")
+        self.found_text.setText("<br><br>".join(parts))
+        self.found_text.setVisible(bool(parts))
         if not self.plan.compare:
             return
         sheet, d, a, b = self.plan.compare
@@ -388,6 +404,33 @@ class MainWindow(QMainWindow):
                   + " · Дубликаты · Разные названия")
         self.cmp_info.setText(f"Результат — новый Excel-файл, каждая категория на своём листе: {sheets}. "
                               f"Исходный файл не меняется.")
+
+    def run_check(self):
+        p = self.plan
+        if not p or not p.inn:
+            return
+        try:
+            path = write_check_report(check_report_path(p.path), p.path, p.inn)
+        except PermissionError:
+            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
+            return
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"{type(e).__name__}: {e}")
+            return
+        r = p.inn
+        self.result_path = path
+        self._set_head(True, "✓  Проверка готова — всё в порядке" if not r.problems else "✓  Проверка готова")
+        self.result_text.setText("<br>".join([
+            f"Создан файл: <b>{os.path.basename(path)}</b>", "",
+            f"Проверено таблиц с ИНН: <b>{len(r.tables)}</b>",
+            f"👥 Дубликаты ИНН: <b>{len(r.duplicates)}</b>",
+            f"✏ Один ИНН — разные названия: <b>{len(r.names)}</b>",
+            f"⚠ Неправильные ИНН: <b>{len(r.invalid)}</b>"]))
+        self.result_warn.setText("")
+        self.backup = None
+        self.backup_label.setText("Исходный файл не изменён.")
+        self.backup_btn.setVisible(False)
+        self.pages.setCurrentIndex(2)
 
     def run_compare(self):
         p = self.plan

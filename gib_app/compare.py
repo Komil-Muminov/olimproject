@@ -71,6 +71,8 @@ class SideList:
     year: str | None = None
     block: list = field(default_factory=list)   # столбцы самого списка (№, название, ИНН…) — для подписи
     side: str = ""                               # «левая часть» / «правая часть» листа
+    header: int = 0                              # строка шапки
+    last_row: int = 0                            # последняя заполненная строка таблицы
 
     @property
     def span(self):
@@ -113,7 +115,18 @@ class Diff:
 
 
 def find_lists(data):
-    """Два списка на листе: столбцы, где почти все значения — ИНН/РМА."""
+    """Два списка на листе (для сравнения) — первые два из find_tables."""
+    found = find_tables(data)
+    if not found or len(found[1]) < 2:
+        return None
+    header, sides = found
+    sides = sides[:2]
+    sides[0].side, sides[1].side = "левая часть", "правая часть"
+    return header, sides
+
+
+def find_tables(data):
+    """Все таблицы с ИНН на листе: столбцы, где почти все значения — ИНН/РМА. → (шапка, [SideList])"""
     width = max((len(r) for r in data), default=0)
     key_cols = []
     for c in range(1, width + 1):
@@ -121,9 +134,8 @@ def find_lists(data):
         keys = [v for v in vals if key_of(v)]
         if len(keys) >= 10 and len(keys) >= 0.6 * len(vals):
             key_cols.append(c)
-    if len(key_cols) < 2:
+    if not key_cols:
         return None
-    key_cols = key_cols[:2]
 
     first = min(r for r, row in enumerate(data, 1) for c in key_cols
                 if c - 1 < len(row) and key_of(row[c - 1]))
@@ -167,8 +179,9 @@ def find_lists(data):
         target.cols.extend(b)
 
     sides.sort(key=lambda s: min(s.block))
-    sides[0].side, sides[1].side = "левая часть", "правая часть"
     for s in sides:
+        s.header = header
+        s.last_row = last_row(s.block)
         s.cols.sort()
         texts = Counter()
         for c in s.cols:
