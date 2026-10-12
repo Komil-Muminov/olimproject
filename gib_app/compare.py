@@ -87,6 +87,11 @@ class Diff:
     pairs: list          # [(показатель, столбец1, столбец2)]
     duplicates: list = field(default_factory=list)   # (номер списка, ИНН, название, [строки])
     totals: list = field(default_factory=list)       # (показатель, итог списка 1, итог списка 2)
+    # по организациям, значения в порядке pairs: (ИНН, название, [значения]) / (ИНН, название, [(было, стало)])
+    org_only1: list = field(default_factory=list)
+    org_only2: list = field(default_factory=list)
+    org_changed: list = field(default_factory=list)
+    org_same: list = field(default_factory=list)
 
 
 def find_lists(data):
@@ -228,22 +233,30 @@ def compare(data):
     only2 = [(b.keys[k], name(b, k), values(b, k, [p[2] for p in pairs] or b.value_cols[:2]))
              for k in b.rows if k not in a.rows]
     changed, same, names_differ = [], 0, 0
+    org_changed, org_same = [], []
     common = [k for k in b.rows if k in a.rows]
     for k in common:
         if norm_text(name(a, k)).replace('"', "") != norm_text(name(b, k)).replace('"', ""):
             names_differ += 1
-        diff_here = False
+        diff_here, vals = False, []
         for title, ca, cb in pairs:
             v1, v2 = num(_cell(data, a.rows[k], ca)) or 0.0, num(_cell(data, b.rows[k], cb)) or 0.0
+            vals.append((v1, v2))
             if abs(v2 - v1) > 0.005:
                 changed.append((b.keys[k], name(b, k) or name(a, k), title, v1, v2, round(v2 - v1, 2)))
                 diff_here = True
+        (org_changed if diff_here else org_same).append((b.keys[k], name(b, k) or name(a, k), vals))
         same += not diff_here
+    org_only1 = [(a.keys[k], name(a, k), [num(_cell(data, a.rows[k], p[1])) for p in pairs])
+                 for k in a.rows if k not in b.rows]
+    org_only2 = [(b.keys[k], name(b, k), [num(_cell(data, b.rows[k], p[2])) for p in pairs])
+                 for k in b.rows if k not in a.rows]
     duplicates = [(i, side.keys[k], name(side, k), rows)
                   for i, side in ((1, a), (2, b)) for k, rows in side.all_rows.items() if len(rows) > 1]
     totals = [(title, round(sum(num(_cell(data, r, ca)) or 0.0 for r in a.rows.values()), 2),
                round(sum(num(_cell(data, r, cb)) or 0.0 for r in b.rows.values()), 2)) for title, ca, cb in pairs]
-    return Diff(only1, only2, changed, same, len(common), names_differ, pairs, duplicates, totals), a, b
+    return Diff(only1, only2, changed, same, len(common), names_differ, pairs, duplicates, totals,
+                org_only1, org_only2, org_changed, org_same), a, b
 
 
 def find_compares(sheets):
