@@ -46,9 +46,9 @@ def _fill(color):
 
 
 def write_compare_report(path, src, sheet, diff, a, b):
-    y1, y2 = a.year or "Список 1", b.year or "Список 2"
-    in1 = f"в {a.year}" if a.year else "в первом списке"
-    in2 = f"в {b.year}" if b.year else "во втором списке"
+    y1, y2 = a.year or "Левая таблица", b.year or "Правая таблица"
+    in1 = f"в {a.year}" if a.year else "в левой таблице"
+    in2 = f"в {b.year}" if b.year else "в правой таблице"
     hints = {
         "new": f"есть {in2}, не было {in1}",
         "gone": f"были {in1}, нет {in2}",
@@ -93,8 +93,8 @@ def write_compare_report(path, src, sheet, diff, a, b):
     ws.row_dimensions[1].height = 28
     cell(2, 1, f"Файл: {os.path.basename(src)}   ·   лист «{sheet}»   ·   создано {datetime.now():%d.%m.%Y %H:%M}",
          font=Font(color="64748B"))
-    cell(3, 1, f"{a.year or 'Первый список'}: {len(a.rows)} организаций   →   "
-               f"{b.year or 'второй список'}: {len(b.rows)} организаций",
+    cell(3, 1, f"{a.year or 'Левая таблица'}: {len(a.rows)} организаций   →   "
+               f"{b.year or 'правая таблица'}: {len(b.rows)} организаций",
          font=Font(bold=True, color="334155"))
     notes = []
     if diff.names_differ:
