@@ -347,12 +347,12 @@ class MainWindow(QMainWindow):
         self.opt_texts = []
         for i, (name, d, a, b) in enumerate(plan.compares):
             if d.pairs:
-                what = (f"Сравнить {a.where()} и {b.where()}:\n"
+                what = (f"{a.where()[:1].upper() + a.where()[1:]}  ↔  {b.where()}\n"
                         f"      кто появился, кто пропал и у кого изменилась сумма")
             else:
-                what = (f"Сравнить {a.where()} и {b.where()}:\n"
-                        f"      какие организации есть только в одном из списков. "
-                        f"В столбцах {b.span} нет сумм — суммы не сравниваются")
+                what = (f"{a.where()[:1].upper() + a.where()[1:]}  ↔  {b.where()}\n"
+                        f"      какие организации есть только в одной части. "
+                        f"В правой части нет сумм — суммы не сравниваются")
             self.opt_texts.append((name, what))
             btn = QPushButton()
             btn.setObjectName("sheetOption")
@@ -406,9 +406,9 @@ class MainWindow(QMainWindow):
         self.result_text.setText("<br>".join([
             f"Создан файл: <b>{os.path.basename(path)}</b>", "",
             (f"🆕 Новые: <b>{len(d.only2)}</b>" if a.year and b.year
-             else f"🆕 Только в {b.year or 'столбцах ' + b.span}: <b>{len(d.only2)}</b>"),
+             else f"🆕 Только в правой части ({b.span}): <b>{len(d.only2)}</b>"),
             (f"❌ Пропавшие: <b>{len(d.only1)}</b>" if a.year and b.year
-             else f"❌ Только в {a.year or 'столбцах ' + a.span}: <b>{len(d.only1)}</b>"),
+             else f"❌ Только в левой части ({a.span}): <b>{len(d.only1)}</b>"),
             *([f"🔄 Изменилась сумма: <b>{changed}</b> орг.",
                f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
               else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — во втором списке их нет)"]),

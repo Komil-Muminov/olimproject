@@ -47,9 +47,11 @@ def _fill(color):
 
 def write_compare_report(path, src, sheet, diff, a, b):
     # списки называем годом, а если года нет — столбцами, где список стоит в исходном листе
-    y1, y2 = a.year or f"Столбцы {a.span}", b.year or f"Столбцы {b.span}"
-    in1 = f"в {a.year}" if a.year else f"в столбцах {a.span}"
-    in2 = f"в {b.year}" if b.year else f"в столбцах {b.span}"
+    # годы — если они есть у обеих частей, иначе «левая / правая часть» (как видно в исходном листе)
+    years = bool(a.year and b.year)
+    y1, y2 = (a.year, b.year) if years else (f"Левая ({a.span})", f"Правая ({b.span})")
+    in1 = f"в {a.year}" if years else f"в левой части ({a.span})"
+    in2 = f"в {b.year}" if years else f"в правой части ({b.span})"
     hints = {
         "new": f"есть {in2}, не было {in1}",
         "gone": f"были {in1}, нет {in2}",

@@ -70,6 +70,7 @@ class SideList:
     all_rows: dict = field(default_factory=dict)   # ключ сравнения -> все строки (для дубликатов)
     year: str | None = None
     block: list = field(default_factory=list)   # столбцы самого списка (№, название, ИНН…) — для подписи
+    side: str = ""                               # «левая часть» / «правая часть» листа
 
     @property
     def span(self):
@@ -77,9 +78,14 @@ class SideList:
         return f"{get_column_letter(min(self.block))}–{get_column_letter(max(self.block))}"
 
     def where(self):
-        """«столбцы A–C (2024, 381 орг.)»"""
+        """«левая часть — столбцы A–C (2024, 381 орг.)»"""
         year = f"{self.year}, " if self.year else ""
-        return f"столбцы {self.span} ({year}{len(self.rows)} орг.)"
+        return f"{self.side} ({self.span}, {year}{len(self.rows)} орг.)"
+
+    @property
+    def short(self):
+        """Короткое имя для подписей: год, а если года нет — «правой части (E–G)»."""
+        return self.year or f"{self.side} ({self.span})"
 
     def label(self, i):
         span = f"{get_column_letter(min(self.cols))}–{get_column_letter(max(self.cols))}"
@@ -160,6 +166,8 @@ def find_lists(data):
         target = min(sides, key=lambda s: abs(last_row([s.key_col]) - lr))
         target.cols.extend(b)
 
+    sides.sort(key=lambda s: min(s.block))
+    sides[0].side, sides[1].side = "левая часть", "правая часть"
     for s in sides:
         s.cols.sort()
         texts = Counter()
