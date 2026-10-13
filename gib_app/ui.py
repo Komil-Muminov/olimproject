@@ -2,7 +2,7 @@
 import os
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QLabel, QMainWindow, QMessageBox,
+    QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QStackedWidget, QVBoxLayout, QWidget
 )
 
