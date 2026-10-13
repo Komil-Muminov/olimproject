@@ -52,6 +52,7 @@ class Registry:
         self._month_rows = []
 
     def start_file(self, path: str, sheet: str) -> int:
+        """Новый источник: файл (или лист файла, если реестров в нём несколько)."""
         self.files.append(FileInfo(path, sheet))
         self._month_rows.append(defaultdict(list))
         return len(self.files) - 1
@@ -68,9 +69,11 @@ class Registry:
         info = self.files[f]
         info.rows += 1
         info.total += p.amount
-        self._party(self.payers, p.payer_inn, p.payer, f, p.amount)
-        self._party(self.recs, p.rec_inn, p.rec, f, p.amount)
-        for side, inn in (("плательщик", p.payer_inn), ("получатель", p.rec_inn)):
+        for book, side, inn, name in ((self.payers, "плательщик", p.payer_inn, p.payer),
+                                      (self.recs, "получатель", p.rec_inn, p.rec)):
+            if inn is None:             # в документе нет этой стороны
+                continue
+            self._party(book, inn, name, f, p.amount)
             if not INN_RE.match(inn):
                 self.bad_inn.append((f, p, side, inn))
         key = hash((p.doc, p.date, p.payer_inn, p.rec_inn, p.amount))

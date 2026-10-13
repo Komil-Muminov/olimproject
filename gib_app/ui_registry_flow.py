@@ -1,7 +1,7 @@
 """Глубокий анализ реестров платежей: чтение в фоне, «Свод по ИНН», поиск и выгрузка по ИНН."""
 import os
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from registry_analysis import search
 from registry_scan import scan_registries
@@ -9,6 +9,7 @@ from registry_stats import period_label
 from report_inn import write_inn_payments
 from report_paths import inn_report_path, registry_report_path
 from report_registry import write_registry_report
+from ui_column_dialog import ColumnDialog
 from ui_registry_found import show_found
 from ui_result import show_result
 from utils import format_money
@@ -45,18 +46,46 @@ def _idle(win):
 
 def start_scan(win, paths: list):
     """Файлы из «Глубокого анализа»: реестры читаются в фоне; один обычный файл — по-старому."""
-    win.registry, win.reg_paths = None, list(paths)
+    win.registry, win.reg_paths, win.reg_mappings = None, list(paths), {}
     win.reg_inn.clear()
     win.reg_found_box.setVisible(False)
-    win.reg_info.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths)
-                         + "<br>Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
     win.reg_export_btn.setVisible(False)
     win.pages.setCurrentIndex(REGISTRY_PAGE)
-    _run(win, scan_registries, win.reg_paths, done=lambda res: _scanned(win, res))
+    _scan(win)
+
+
+def _scan(win):
+    win.reg_info.setText("📚  " + ",  ".join(os.path.basename(p) for p in win.reg_paths)
+                         + "<br>Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
+    _run(win, scan_registries, win.reg_paths, win.reg_mappings, done=lambda res: _scanned(win, res))
+
+
+def _ask_columns(win, path: str, guess: dict):
+    """Реестр не узнан: пользователь сам указывает столбцы (один файл — сначала спросить)."""
+    single = len(win.reg_paths) == 1
+    if single:
+        q = QMessageBox(QMessageBox.Question, "Реестр платежей?", f"«{os.path.basename(path)}» похож на реестр "
+                        "платежей, но программа узнала не все столбцы.", parent=win)
+        manual = q.addButton("Указать столбцы", QMessageBox.AcceptRole)
+        q.addButton("Открыть как обычный файл", QMessageBox.RejectRole)
+        q.exec()
+        if q.clickedButton() is not manual:
+            win.load(path)          # сравнение и проверка ИНН, как раньше
+            return
+    dlg = ColumnDialog(win, path, guess)
+    if dlg.exec() != QDialog.Accepted:
+        win.pages.setCurrentIndex(0)
+        return
+    win.reg_mappings[path] = dlg.mapping()
+    _scan(win)
 
 
 def _scanned(win, res):
     win.worker = None
+    if "needs_mapping" in res:
+        _idle(win)
+        _ask_columns(win, res["needs_mapping"], res["guess"])
+        return
     if "not_registry" in res:
         path = res["not_registry"]
         _idle(win)
@@ -70,12 +99,19 @@ def _scanned(win, res):
         return
     reg = win.registry = res["registry"]
     lines = [f"{reg.files[f].label}: <b>{_int(reg.files[f].rows)}</b> платежей на <b>{format_money(reg.files[f].total)}</b>"
-             f"<span style='color:#64748B'> · {os.path.basename(reg.files[f].path)}</span>" for f in reg.order]
+             f"<span style='color:#64748B'> · {_source(reg, f)}</span>" for f in reg.order]
     lines.append(f"Всего: <b>{_int(sum(i.rows for i in reg.files))}</b> платежей на "
                  f"<b>{format_money(sum(i.total for i in reg.files))}</b> · плательщиков {_int(len(reg.payers))}, "
                  f"получателей {_int(len(reg.recs))}")
     win.reg_info.setText("<br>".join(lines))
     _idle(win)
+
+
+def _source(reg, f) -> str:
+    """Имя файла; если в файле несколько листов-реестров — ещё и лист."""
+    info = reg.files[f]
+    many = sum(i.path == info.path for i in reg.files) > 1
+    return os.path.basename(info.path) + (f" · лист «{info.sheet}»" if many else "")
 
 
 def report(win):
@@ -109,7 +145,7 @@ def export(win):
     if not inn or win.worker:
         return
     path = inn_report_path(inn)
-    _run(win, write_inn_payments, path, win.reg_paths, inn, done=lambda res: _exported(win, res))
+    _run(win, write_inn_payments, path, win.reg_paths, inn, win.reg_mappings, done=lambda res: _exported(win, res))
 
 
 def _exported(win, res):

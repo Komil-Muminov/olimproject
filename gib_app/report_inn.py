@@ -11,10 +11,10 @@ HEAD = ["№", "Файл", "Строка", "№ док.", "Дата", "Плат�
 WIDTHS = [7, 14, 9, 13, 12, 36, 12, 36, 12, 16, 60]
 
 
-def write_inn_payments(path: str, paths: list, inn: str, progress=lambda p, t: None) -> dict:
+def write_inn_payments(path: str, paths: list, inn: str, mappings=None, progress=lambda p, t: None) -> dict:
     """Два листа: где ИНН платил и где получал. → {"path", "paid", "got"}."""
     by_date = lambda x: (x[1].date.toordinal() if x[1].date else 10 ** 7, x[1].row)      # без даты — в конце
-    found = sorted(payments_of(paths, inn, progress), key=by_date)
+    found = sorted(payments_of(paths, inn, mappings, progress), key=by_date)
     progress(90, "Сохраняю…")
     rows = lambda side: [[i, os.path.basename(f), p.row, p.doc, p.date, p.payer, p.payer_inn, p.rec, p.rec_inn,
                           p.amount, p.purpose] for i, (f, p) in enumerate(side, 1)]

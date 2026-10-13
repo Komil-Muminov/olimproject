@@ -2,13 +2,8 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from utils import find_col, norm_text, to_number
-
-COLS = {"doc": ("№ док", "номер док", "№док"), "date": ("дата док",), "payer": ("плательщик",),
-        "payer_inn": ("инн плат",), "amount": ("сумма",), "rec": ("получатель",), "rec_inn": ("инн получ",),
-        "purpose": ("основание", "назначение")}
-REQUIRED = ("payer", "payer_inn", "amount", "rec", "rec_inn")
-HEAD_ROWS = 20
+from registry_columns import HEAD_ROWS, guess_header, registry_columns
+from utils import to_number
 
 
 @dataclass
@@ -18,20 +13,11 @@ class Payment:
     doc: str
     date: date | None
     payer: str
-    payer_inn: str
+    payer_inn: str | None       # None — в документе нет такого столбца (только одна сторона)
     rec: str
-    rec_inn: str
+    rec_inn: str | None
     amount: float
     purpose: str = ""
-
-
-def registry_columns(head) -> dict | None:
-    """Столбцы реестра по заголовкам (0-based) или None, если это не реестр."""
-    heads = [norm_text(v) for v in head]
-    cols = {k: find_col(heads, p) for k, p in COLS.items()}
-    if not all(cols[k] for k in REQUIRED):
-        return None
-    return {k: (c - 1 if c else None) for k, c in cols.items()}
 
 
 def inn_text(v) -> str:
@@ -70,7 +56,8 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
     def get(k):
         c = cols.get(k)
         return values[c] if c is not None and c < len(values) else None
-    pinn, rinn = inn_text(get("payer_inn")), inn_text(get("rec_inn"))
+    side = lambda k: inn_text(get(k)) if cols.get(k) is not None else None
+    pinn, rinn = side("payer_inn"), side("rec_inn")
     payer, rec = _text(get("payer")), _text(get("rec"))
     if not (pinn or rinn or payer or rec):
         return None
@@ -78,29 +65,40 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
                    round(to_number(get("amount")) or 0.0, 2), _text(get("purpose")))
 
 
-def read_registry(path: str, progress=lambda done: None):
-    """Платежи из первого листа-реестра файла. → (имя листа, всего строк, генератор Payment)
-    или (None, 0, None). progress(строк_прочитано) вызывается каждые 50 000 строк."""
+def read_registry(path: str, mapping: dict | None = None):
+    """Все листы-реестры файла. → (листы [(имя, всего строк, генератор Payment)], догадка).
+    Если ни один лист не узнан, догадка — самый похожий на реестр лист и его шапка (для окна выбора
+    столбцов): {"sheet", "head", "heads", "cols", "score"}. mapping — столбцы, указанные пользователем:
+    {"sheet", "head", "cols"}."""
     from python_calamine import CalamineWorkbook
 
     wb = CalamineWorkbook.from_path(path)
+    sheets, guess = [], None
     for name in wb.sheet_names:
+        if mapping and name != mapping["sheet"]:
+            continue
         sheet = wb.get_sheet_by_name(name)
         start = (sheet.start or (0, 0))[0]       # строки до первой заполненной calamine пропускает
         rows = sheet.iter_rows()
+        head = []
         for i, values in enumerate(rows):
-            cols = registry_columns(values)
+            head.append(values)
+            cols = mapping["cols"] if mapping and i == mapping["head"] else (None if mapping else registry_columns(values))
             if cols:
-                return name, sheet.height, _payments(rows, cols, start + i + 2, progress)
+                sheets.append((name, sheet.height, _payments(rows, cols, start + i + 2)))
+                break
             if i >= HEAD_ROWS:
                 break
-    return None, 0, None
+        if not sheets and head:
+            row0, col0 = sheet.start or (0, 0)
+            g = dict(guess_header(head), sheet=name, row0=row0, col0=col0)
+            if guess is None or g["score"] > guess["score"]:
+                guess = g
+    return sheets, (None if sheets else guess)
 
 
-def _payments(rows, cols, first_row, progress):
+def _payments(rows, cols, first_row):
     for i, values in enumerate(rows):
         p = to_payment(first_row + i, values, cols)
         if p:
             yield p
-        if i % 50000 == 0:
-            progress(i)

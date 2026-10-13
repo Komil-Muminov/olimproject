@@ -6,7 +6,12 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
 from registry_analysis import gone_and_new, jumps, party_rows, search  # noqa: E402
-from registry_read import Payment, inn_text, registry_columns, to_payment  # noqa: E402
+import tempfile  # noqa: E402
+
+from openpyxl import Workbook  # noqa: E402
+
+from registry_columns import guess_header, registry_columns  # noqa: E402
+from registry_read import Payment, inn_text, read_registry, to_payment  # noqa: E402
 from registry_stats import Registry, period_label  # noqa: E402
 from app_paths import ANALYSIS_FOLDER  # noqa: E402
 from report_paths import registry_report_path  # noqa: E402
@@ -37,6 +42,57 @@ class TestRegistryRead(unittest.TestCase):
         self.assertIsNone(to_payment(5, [None] * 6 + [3219817.0] + [None] * 8, cols))
         p = to_payment(2, ["1", date(2024, 1, 4), None, "А", "010002120", None, 200, None, "Б", "251010603"], cols)
         self.assertEqual((p.row, p.amount, p.rec_inn), (2, 200.0, "251010603"))
+
+
+class TestOtherDocuments(unittest.TestCase):
+    def test_tajik_and_other_headers(self):
+        cols = registry_columns(["№", "Сана", "Номи пардохткунанда", "РМА пардохткунанда", "Маблағ",
+                                 "Гиранда", "РМА гиранда"])
+        self.assertEqual((cols["payer_inn"], cols["amount"], cols["rec_inn"], cols["date"]), (3, 4, 6, 1))
+        cols = registry_columns(["Наименование плательщика", "ИНН плательщика", "Сумма платежа"])
+        self.assertEqual((cols["payer"], cols["payer_inn"], cols["amount"], cols["rec_inn"]), (0, 1, 2, None))
+
+    def test_one_side_document(self):
+        cols = registry_columns(["Получатель", "ИНН получ", "Сумма"])
+        p = to_payment(2, ["Орг", "040000011", 100], cols)
+        self.assertEqual((p.payer_inn, p.rec_inn), (None, "040000011"))
+        r = Registry()
+        f = r.start_file("x.xlsx", "Лист1")
+        r.add(f, p)
+        self.assertEqual((list(r.recs), r.payers, r.bad_inn), (["040000011"], {}, []))
+
+    def test_guess_header(self):
+        g = guess_header([["Отчёт"], [None], ["Колонка1", "Сумма", "Колонка3"], [1, 100, "x"]])
+        self.assertEqual((g["head"], g["cols"]["amount"], g["heads"][0]), (2, 1, "Колонка1"))
+
+    def _book(self, sheets):
+        path = os.path.join(tempfile.mkdtemp(), "t.xlsx")
+        wb = Workbook()
+        wb.remove(wb.active)
+        for name, rows in sheets:
+            ws = wb.create_sheet(name)
+            for row in rows:
+                ws.append(row)
+        wb.save(path)
+        return path
+
+    def test_all_registry_sheets_are_read(self):
+        head = ["Плательщик", "ИНН Плат", "Сумма", "Получатель", "ИНН получ"]
+        path = self._book([("Январь", [head, ["А", "111111111", 10, "Б", "222222222"]]),
+                           ("Свод", [["Итого", 10]]),
+                           ("Февраль", [head, ["А", "111111111", 20, "Б", "222222222"]])])
+        sheets, guess = read_registry(path)
+        self.assertEqual(([s[0] for s in sheets], guess), (["Январь", "Февраль"], None))
+        self.assertEqual([p.amount for _, _, rows in sheets for p in rows], [10.0, 20.0])
+
+    def test_user_columns(self):
+        path = self._book([("Лист1", [["К1", "К2", "К3"], ["111111111", "Орг", 55]])])
+        sheets, guess = read_registry(path)
+        self.assertEqual((sheets, guess["sheet"], guess["head"]), ([], "Лист1", 0))
+        mapping = {"sheet": "Лист1", "head": 0, "cols": {"payer_inn": 0, "payer": 1, "amount": 2}}
+        sheets, _ = read_registry(path, mapping)
+        p = next(sheets[0][2])
+        self.assertEqual((p.payer_inn, p.payer, p.amount, p.rec_inn, p.row), ("111111111", "Орг", 55.0, None, 2))
 
 
 class TestRegistryStats(unittest.TestCase):
