@@ -83,14 +83,17 @@ def read_statement(path: str):
 
 def target_sheets(path: str) -> list:
     """Листы, куда можно перенести: [(имя, Layout)], подходящие — первыми
-    (есть столбцы ГИБ, «Расходы», в названии «буҷет»)."""
-    found = []
+    (есть столбцы ГИБ, «Расходы», в названии «буҷет»). Таблицы нет — пустые листы с Layout=None:
+    там программа создаст таблицу сама."""
+    found, empty = [], []
     for i, (name, data) in enumerate(Book(path).sheets.items()):
         lay = by_header(data)
         if not lay:
+            if not any(v not in (None, "") for row in data for v in row):
+                empty.append((name, None))
             continue
         heads = [norm_text(v) for v in data[lay.header_row - 1]]
         score = (100 if lay.gib_cols else 0) + (50 if any(h.startswith("расход") for h in heads) else 0)
         score += 20 if any(w in name.lower() for w in BUDGET_WORDS) else 0
         found.append((-score, i, name, lay))
-    return [(name, lay) for _, _, name, lay in sorted(found, key=lambda x: x[:2])]
+    return [(name, lay) for _, _, name, lay in sorted(found, key=lambda x: x[:2])] or empty

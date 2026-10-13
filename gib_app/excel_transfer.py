@@ -5,7 +5,7 @@ from datetime import datetime
 from excel_com import WriteError, make_backup, open_workbook
 from excel_writer import fill_in_place
 from statement import doc_text, read_statement
-from target_layout import existing_keys, locate, make_room, payment_key
+from target_layout import create_table, existing_keys, locate, make_room, payment_key
 
 
 def _put(ws, col, r1, values, text=False):
@@ -57,6 +57,8 @@ def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpo
             ws = wb.Worksheets(sheet_name)
         except pywintypes.com_error:
             raise WriteError(f"Лист «{sheet_name}» не найден.")
+        if header_row is None:          # пустой лист — сначала создаём таблицу
+            header_row, purpose_col = create_table(ws)
         t = locate(ws, header_row, purpose_col)
         use_doc = bool(t.doc) and any(p.doc not in (None, "") for p in payments)
         seen = existing_keys(ws, t, use_doc)

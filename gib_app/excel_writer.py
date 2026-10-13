@@ -5,6 +5,7 @@ from excel_com import WriteError, make_backup, open_workbook
 from excel_reconcile import (
     fill_total_formulas, read_reconciliation, setup_reconciliation, update_balance_notes
 )
+from excel_reader import cell_name
 from excel_verify import mark_no_gib, verify_rows
 from utils import to_number
 
@@ -103,6 +104,11 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
                     ws.Cells(r, col).Interior.Pattern = -4142      # наша подсветка больше не нужна
         for code in created:
             ws.Cells(header_row, gib_cols[code]).Interior.Color = XL_GREEN
+        if recon["sum_row"]:        # итог «Чамъ» у столбцов ГИБ, где его ещё нет
+            for col in gib_cols.values():
+                cell = ws.Cells(recon["sum_row"], col)
+                if cell.Formula in ("", None):
+                    cell.Formula = f"=SUM({cell_name(first_row, col)}:{cell_name(recon['sum_row'] - 1, col)})"
 
         fill_total_formulas(ws, header_row, recon["total"], first_row, last_row, recon["rash"])
 

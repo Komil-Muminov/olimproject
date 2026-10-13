@@ -79,9 +79,13 @@ def update_fill_info(win):
             ok = False
     if win.tg_path:
         if not sheets:
-            lines.append("<span style='color:#DC2626'>Во втором файле не нашлось таблицы "
-                         "со столбцом «Номгӯи корхонаҳо» / «Основание».</span>")
+            lines.append("<span style='color:#DC2626'>Во втором файле нет таблицы со столбцом «Номгӯи корхонаҳо» / "
+                         "«Основание» и нет пустого листа, где её можно создать.</span>")
             ok = False
+        elif sheets[0][1] is None:
+            lines.append(("Лист пустой" if multi else f"Лист «{sheets[0][0]}» пустой")
+                         + " — программа создаст таблицу: р/т, Номгӯи корхонаҳо, № ҳуҷҷат, Сана, Ҳамагӣ, "
+                           "Расходы, столбцы ГИБ и строку «Чамъ»")
         elif not multi:
             lines.append(f"Заполнится лист «{sheets[0][0]}»")
     if win.st_path and win.st_path == win.tg_path:
@@ -101,7 +105,8 @@ def run_fill(win):
     win.fill_btn.setEnabled(False)
     win.fill_progress.setVisible(True)
     win.fill_progress.setValue(0)
-    win.worker = Worker(transfer_and_fill, win.st_path, win.tg_path, name, lay.header_row, lay.purpose_col)
+    win.worker = Worker(transfer_and_fill, win.st_path, win.tg_path, name,
+                        lay.header_row if lay else None, lay.purpose_col if lay else None)
     win.worker.progress.connect(lambda v, t: (win.fill_progress.setValue(v), win.fill_progress.setFormat(f"{t}  %p%")))
     win.worker.done.connect(win._filled)
     win.worker.failed.connect(win._failed)

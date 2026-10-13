@@ -89,6 +89,28 @@ def make_room(ws, t: Target, count: int) -> int:
     return start
 
 
+NEW_HEADERS = ("р/т", "Номгӯи корхонаҳо", "№ ҳуҷҷат", "Сана", "Ҳамагӣ", "Расходы")
+NEW_WIDTHS = (6, 60, 12, 12, 14, 14)
+
+
+def create_table(ws) -> tuple:
+    """Пустой лист → таблица как в Бучете: шапка (строка 1), одна пустая строка, «Чамъ».
+    Возвращает (строка шапки, столбец назначений)."""
+    n = len(NEW_HEADERS)
+    ws.Range(ws.Cells(1, 1), ws.Cells(1, n)).Value = [NEW_HEADERS]
+    ws.Cells(3, 1).Value = "Чамъ"
+    for c in (5, 6):
+        L = get_column_letter(c)
+        ws.Cells(3, c).Formula = f"=SUM({L}2:{L}2)"
+    for c, w in enumerate(NEW_WIDTHS, 1):
+        ws.Columns(c).ColumnWidth = w
+    ws.Columns(2).WrapText = True
+    ws.Range(ws.Cells(1, 1), ws.Cells(1, n)).Font.Bold = True
+    ws.Range(ws.Cells(3, 1), ws.Cells(3, n)).Font.Bold = True
+    ws.Range(ws.Cells(1, 1), ws.Cells(3, n)).Borders.LineStyle = 1
+    return 1, 2
+
+
 def extend_sum_row(ws, t: Target):
     """Итоги «Чамъ» вида =SUM(G6:G9) растягиваются на всю таблицу (с новыми строками)."""
     _, last_col = used_bounds(ws)
