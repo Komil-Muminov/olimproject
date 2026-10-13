@@ -33,7 +33,8 @@ class TestMainWindow(unittest.TestCase):
 
     def test_registry_inn_selector(self):
         from ui import MainWindow
-        from ui_registry_inn import clean_inn_query, populate_inn_view
+        from registry_index import clean_inn_query
+        from ui_registry_inn import populate_inn_view
         from registry_stats import Registry, Party
         w = MainWindow()
         self.assertTrue(hasattr(w, "reg_table"))

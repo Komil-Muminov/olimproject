@@ -6,6 +6,7 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
 from registry_analysis import gone_and_new, jumps, party_rows, search  # noqa: E402
+from registry_index import build_index, matching  # noqa: E402
 from registry_read import Payment, inn_text, registry_columns, to_payment  # noqa: E402
 from registry_stats import Registry, period_label  # noqa: E402
 from app_paths import ANALYSIS_FOLDER  # noqa: E402
@@ -78,6 +79,13 @@ class TestRegistryStats(unittest.TestCase):
         res = search(self.reg, "11111111")
         self.assertEqual(res["payer"].sums, [2000.0, 2000.0])
         self.assertIsNone(res["rec"])
+
+    def test_filter_by_inn_or_name(self):
+        idx = build_index(self.reg)["payer"]
+        self.assertEqual([r.inn for r in matching(idx, "2222")], ["222222222"])
+        self.assertEqual([r.inn for r in matching(idx, "орг 3")], ["333333333"])     # по названию
+        self.assertEqual(len(matching(idx, "")), len(self.reg.payers))
+        self.assertEqual(matching(idx, "нет такого"), [])
 
     def test_inn_in_name(self):
         self.assertEqual(inn_in_name("Сарраесати хазинадори ИНН 010010058"), "010010058")

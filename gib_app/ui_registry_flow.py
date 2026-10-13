@@ -9,7 +9,9 @@ from registry_stats import period_label
 from report_inn import write_inn_payments
 from report_paths import inn_report_path, registry_report_path
 from report_registry import write_registry_report
-from ui_registry_inn import clean_inn_query, populate_inn_view, reset_inn_view
+from registry_index import clean_inn_query
+from ui_registry_found import show_found
+from ui_registry_inn import populate_inn_view, reset_inn_view
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -49,7 +51,6 @@ def start_scan(win, paths: list):
     reset_inn_view(win)
     win.reg_files.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths))
     win.reg_info.setText("Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
-    win.reg_found.setText("")
     win.reg_export_btn.setVisible(False)
     win.pages.setCurrentIndex(REGISTRY_PAGE)
     _run(win, scan_registries, win.reg_paths, done=lambda res: _scanned(win, res))
@@ -98,14 +99,6 @@ def _reported(win, res):
     win.back_page = REGISTRY_PAGE
 
 
-def _party_text(title, r, labels):
-    if not r:
-        return f"<b>{title}:</b> не найден"
-    parts = " · ".join(f"{lab}: {format_money(s)}" for lab, s in zip(labels, r.sums))
-    return (f"<b>{title}:</b> {r.name}<br>&nbsp;&nbsp;{parts}<br>&nbsp;&nbsp;всего <b>{format_money(r.total)}</b>, "
-            f"платежей {sum(r.counts)}" + (f" · {r.status}" if r.status else ""))
-
-
 def find(win, inn_val=None):
     reg = win.registry
     raw = (inn_val or win.reg_inn.text()).strip()
@@ -113,14 +106,7 @@ def find(win, inn_val=None):
         return
     inn = clean_inn_query(raw, reg)
     win.reg_inn.setText(inn)
-    res = search(reg, inn)
-    labels = [reg.files[f].label for f in reg.order]
-    hit = res["payer"] or res["rec"]
-    win.reg_found_inn = hit.inn if hit else None
-    win.reg_found.setText(f"ИНН <b>{hit.inn}</b><br>" + _party_text("Как плательщик", res["payer"], labels) + "<br>"
-                          + _party_text("Как получатель", res["rec"], labels) if hit
-                          else f"ИНН «{raw}» не найден ни среди плательщиков, ни среди получателей.")
-    win.reg_export_btn.setVisible(bool(hit))
+    show_found(win, search(reg, inn), [reg.files[f].label for f in reg.order], raw)
 
 
 def export(win):
