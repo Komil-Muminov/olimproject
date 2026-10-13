@@ -5,12 +5,21 @@
 '  выписки) в столбец "Номгуи корхонахо" листа, в названии которого есть
 '  слово "бучет" (например, "2024 бучет"). Для каждой измененной строки:
 '    1) в тексте находятся все фрагменты вида "ГИБ 2211-140,00";
+'       у 5-значного кода 5-я цифра - подпункт, учитываются первые
+'       4 цифры ("ГИБ 22111" и "ГИБ 22112" - это смета 2211);
 '    2) ищется столбец, в заголовке которого стоит этот код ГИБ;
 '       если такого столбца нет - он создается (по возрастанию кодов)
 '       с тем же оформлением и итоговой формулой в строке "Чамъ";
 '    3) сумма записывается в столбец своего ГИБ в той же строке.
 '  Дополнительно поддерживаются нумерация "р/т", формула "Хамаги"
 '  в новых строках и диапазоны итоговых формул строки "Чамъ".
+'  Проверочный столбец "Расходы" стоит сразу за "Хамаги" и в область
+'  сумм ГИБ не входит: вставленная в него сумма из выписки заменяется
+'  формулой баланса =ROUND(Хамаги - сумма; 2) - 0, если суммы совпали.
+'  Если вставка не помещается в таблицу, недостающие строки
+'  добавляются перед строкой "Чамъ" автоматически. Строка "Чамъ" и
+'  подписи под ней, на которые легла вставка, восстанавливаются из
+'  снимка на скрытом листе gibSnapshot (без Application.Undo).
 '
 '  Сравнение текста выполняется после транслитерации в латиницу
 '  (функции NormKey и ParseNorm), поэтому логика не зависит
@@ -19,15 +28,29 @@
 Option Explicit
 
 ' Цвет подсветки назначений, в которых не найден ГИБ или сумма
-Private Const FLAG_COLOR As Long = 13290238        ' RGB(254, 202, 202) — заметный красный
-Private Const FLAG_FONT As Long = 1776537           ' RGB(153, 27, 27) — тёмно-красный текст
-' Цвет подсветки назначений, где в ГИБ больше 4 цифр (взяты первые 4) - проверить
+Private Const FLAG_COLOR As Long = 13290238        ' RGB(254, 202, 202) - заметный красный
+Private Const FLAG_FONT As Long = 1776537           ' RGB(153, 27, 27) - тёмно-красный текст
+' Код ГИБ из 5+ цифр: взяты первые 4 - строку стоит проверить
 Private Const CHECK_COLOR As Long = 9105662         ' RGB(254, 240, 138)
 ' Область, в которой ищется строка заголовков таблицы
 Private Const HDR_MAX_ROWS As Long = 60
 Private Const HDR_MAX_COLS As Long = 400
 ' Сколько номеров проблемных строк перечислять в сообщениях
 Private Const MAX_LIST As Long = 20
+' Значащих цифр в коде сметы (остальные - подпункт)
+Private Const CODE_LEN As Long = 4
+' Наибольшее число строк, добавляемых за один раз
+Private Const MAX_ADD_ROWS As Long = 5000
+' Формат ячейки назначения, которым помечена зафиксированная строка:
+' выглядит как обычный, но отличается от текстового "@" и переезжает
+' вместе со строкой при сортировке. Незафиксированные назначения - "@".
+Private Const FROZEN_FMT As String = "General;-General;General;@"
+Private Const NAME_FMT As String = "@"
+' Скрытый лист со снимком строки "Чамъ" и всего, что ниже нее
+Private Const SNAP_SHEET As String = "gibSnapshot"
+Private Const SNAP_INFO As String = "gibSnapInfo"
+Private Const SNAP_MAX_ROWS As Long = 5000
+Private Const SNAP_MAX_COLS As Long = 1000
 
 ' Расположение таблицы на листе
 Private Type TLayout
@@ -35,8 +58,7 @@ Private Type TLayout
     NameCol As Long         ' столбец "Номгуи корхонахо"
     NumCol As Long          ' столбец "р/т" (0 - нет)
     TotalCol As Long        ' столбец "Хамаги" (0 - нет)
-    RashCol As Long         ' столбец "Расходы" - сумма платежа из выписки (0 - нет)
-    DiffCol As Long         ' столбец "Разница" = "Хамаги" - "Расходы" (0 - нет)
+    ExpCol As Long          ' проверочный столбец "Расходы" (0 - нет)
     FirstRow As Long        ' первая строка данных
     LastRow As Long         ' последняя строка данных
     SumRow As Long          ' строка итогов "Чамъ" (0 - нет)
@@ -51,11 +73,22 @@ End Type
 Private Type TReport
     TextRows As Long        ' строк с непустым назначением
     FilledRows As Long      ' строк, в которые записаны суммы
+    addedRows As Long       ' строк, добавленных под вставку
     newCodes As String      ' созданные столбцы ГИБ
     ProblemRows As String   ' номера строк без ГИБ или без суммы
     ProblemCount As Long
-    CheckRows As String     ' номера строк, где в ГИБ больше 4 цифр
-    CheckCount As Long
+End Type
+
+' Снимок низа таблицы: строки SumRow..LastRow, столбцы 1..LastCol листа
+' SheetName лежат на листе gibSnapshot по тем же адресам. FmtOK = False -
+' оформление снимка устарело (верны только содержимое и формулы).
+Private Type TSnap
+    Valid As Boolean
+    FmtOK As Boolean
+    SumRow As Long
+    LastRow As Long
+    LastCol As Long
+    SheetName As String
 End Type
 
 ' Сохраненные настройки Excel на время обработки
@@ -79,8 +112,9 @@ Public Sub GIB_HandleChange(ByVal Sh As Object, ByVal Target As Range)
     Dim L As TLayout
     Dim rep As TReport
     Dim st As TAppState
-    Dim hit As Range, areaHit As Range
+    Dim hit As Range, areaHit As Range, chkHit As Range
     Dim rowList() As Long, n As Long
+    Dim pasted As Variant, addr As String
     Dim structural As Boolean, started As Boolean, errText As String
 
     If mBusy Then Exit Sub
@@ -93,18 +127,63 @@ Public Sub GIB_HandleChange(ByVal Sh As Object, ByVal Target As Range)
     If L.LastRow < L.FirstRow Then Exit Sub
 
     structural = (Target.Columns.Count = ws.Columns.Count) Or (Target.Rows.Count = ws.Rows.Count)
+
+    ' Вставка длиннее таблицы легла на строку "Чамъ" и подписи под ней:
+    ' запоминаем вставленное, возвращаем низ таблицы из снимка, добавляем
+    ' строки и записываем данные заново - уже внутрь таблицы. Без снимка
+    ' (например, лист защищен) - прежний путь через отмену вставки.
+    If Not structural Then
+        SnapFixSumRow ws, L, Target
+        If OverflowRows(ws, L, Target) > 0 Then
+            pasted = PastedData(Target)
+            addr = Target.Address
+            If SnapUsable(ws, L) Then
+                BeginWork st
+                started = True
+                ClearStatus
+                RestoreFooter ws, Target
+            Else
+                If Not UndoLastAction() Then
+                    mLastReport = "ERROR: undo"
+                    ShowMsg "Вставленные данные не поместились в таблицу, и добавить строки " & _
+                            "автоматически не удалось." & vbCrLf & vbCrLf & _
+                            "Отмените вставку (Ctrl+Z), добавьте строки кнопкой ""Добавить строки"" " & _
+                            "и вставьте данные снова.", vbExclamation
+                    Exit Sub
+                End If
+                BeginWork st
+                started = True
+                ClearStatus
+            End If
+            Set Target = RepasteWithRows(ws, addr, pasted, rep.addedRows)
+            If Not GetLayout(ws, L) Then
+                EndWork st
+                Exit Sub
+            End If
+        End If
+    End If
+
     Set hit = Intersect(Target, ws.Range(ws.Cells(L.FirstRow, L.NameCol), ws.Cells(L.LastRow, L.NameCol)))
     If L.AreaLast >= L.AreaFirst Then
         Set areaHit = Intersect(Target, ws.Range(ws.Cells(L.FirstRow, L.AreaFirst), ws.Cells(L.LastRow, L.AreaLast)))
     End If
-    If hit Is Nothing And areaHit Is Nothing And Not structural Then
+    Set chkHit = CheckColsHit(ws, L, Target)
+    If hit Is Nothing And areaHit Is Nothing And chkHit Is Nothing And Not structural And Not started Then
         ' изменение вне таблицы; строка заголовков - только обновить итоги
-        If Intersect(Target, ws.Rows(L.HdrRow)) Is Nothing Then Exit Sub
+        If Intersect(Target, ws.Rows(L.HdrRow)) Is Nothing Then
+            ' правка строки "Чамъ" или подписей - обновить снимок
+            If L.SumRow > 0 Then
+                If Target.Row + Target.Rows.Count - 1 >= L.SumRow Then SnapTake ws, False
+            End If
+            Exit Sub
+        End If
     End If
 
-    BeginWork st
-    started = True
-    ClearStatus
+    If Not started Then
+        BeginWork st
+        started = True
+        ClearStatus
+    End If
     If Not hit Is Nothing Then
         n = CollectRows(hit, rowList)
         ProcessRows ws, rowList, n, Not structural, rep
@@ -112,10 +191,12 @@ Public Sub GIB_HandleChange(ByVal Sh As Object, ByVal Target As Range)
         If Not areaHit Is Nothing Then RefreshFlags ws, L, areaHit
         MaintainStructure ws, L
     End If
+    If Not chkHit Is Nothing And Not structural Then FixCheckCells ws, chkHit
+    SnapTake ws, structural
     EndWork st
     started = False
 
-    If Not hit Is Nothing Then
+    If Not hit Is Nothing Or rep.addedRows > 0 Then
         ReportResult rep
         If rep.TextRows > 1 And rep.ProblemCount > 0 Then
             ShowMsg "Обработано назначений: " & rep.TextRows & "." & vbCrLf & vbCrLf & _
@@ -128,6 +209,7 @@ Public Sub GIB_HandleChange(ByVal Sh As Object, ByVal Target As Range)
 Fail:
     errText = Err.Description
     If started Then EndWork st
+    Application.EnableEvents = True
     mBusy = False
     mLastReport = "ERROR: " & errText
     ShowMsg "Ошибка автоматической обработки ГИБ:" & vbCrLf & errText, vbExclamation
@@ -157,6 +239,7 @@ Public Sub GIB_RecalcSheet()
     started = True
     ClearStatus
     ProcessRows ws, rowList, n, False, rep
+    SnapTake ws, False
     EndWork st
     started = False
 
@@ -203,6 +286,116 @@ Public Sub GIB_AddRowsN(ByVal rowCount As Long)
 End Sub
 
 ' Текст последнего отчета (для проверки работы).
+' Кнопка "Зафиксировать распределение": все строки, в которых уже есть суммы
+' по статьям, помечаются как зафиксированные. После этого изменение текста
+' назначения в них не стирает и не пересчитывает суммы (ни при правке,
+' ни кнопкой "Пересчитать ГИБ"). Суммы в таких строках можно править вручную.
+Public Sub GIB_FreezeDistribution()
+    Dim ws As Worksheet
+    Dim L As TLayout
+    Dim st As TAppState
+    Dim r As Long, cnt As Long
+    Dim started As Boolean, errText As String
+
+    On Error GoTo Fail
+    If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
+    Set ws = ActiveSheet
+    If Not CheckSheet(ws, L) Then Exit Sub
+
+    BeginWork st
+    started = True
+    ClearStatus
+    For r = L.FirstRow To L.LastRow
+        If RowHasAmounts(ws, L, r) Then
+            SetFrozen ws.Cells(r, L.NameCol), True
+            SetFlag ws.Cells(r, L.NameCol), False
+            cnt = cnt + 1
+        Else
+            SetFrozen ws.Cells(r, L.NameCol), False
+        End If
+    Next r
+    EndWork st
+    started = False
+
+    mLastReport = "ГИБ: зафиксировано строк - " & cnt
+    SetStatus mLastReport
+    If cnt > 0 Then
+        ShowMsg "Распределение зафиксировано: строк - " & cnt & "." & vbCrLf & vbCrLf & _
+                "Теперь назначения в этих строках можно переименовывать - суммы по статьям " & _
+                "не изменятся. Новые назначения распределяются как обычно.", vbInformation
+    Else
+        ShowMsg "В таблице нет строк с суммами - фиксировать нечего.", vbExclamation
+    End If
+    Exit Sub
+
+Fail:
+    errText = Err.Description
+    If started Then EndWork st
+    mBusy = False
+    mLastReport = "ERROR: " & errText
+    ShowMsg "Не удалось зафиксировать распределение:" & vbCrLf & errText, vbExclamation
+End Sub
+
+' Кнопка "Снять фиксацию": выделенные строки таблицы (если выделение вне
+' таблицы - после подтверждения все строки) снова распределяются по тексту
+' назначения. Суммы при снятии не меняются - строка пересчитается, когда
+' ее назначение изменят (или кнопкой "Пересчитать ГИБ").
+Public Sub GIB_UnfreezeDistribution()
+    Dim ws As Worksheet
+    Dim L As TLayout
+    Dim st As TAppState
+    Dim sel As Range, rowList() As Long
+    Dim n As Long, i As Long, cnt As Long
+    Dim started As Boolean, errText As String
+
+    On Error GoTo Fail
+    If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
+    Set ws = ActiveSheet
+    If Not CheckSheet(ws, L) Then Exit Sub
+
+    If TypeName(Selection) = "Range" Then
+        Set sel = Intersect(Selection.EntireRow, ws.Range(ws.Rows(L.FirstRow), ws.Rows(L.LastRow)))
+    End If
+    If sel Is Nothing Then
+        If Application.Visible Then
+            If MsgBox("Выделение вне таблицы. Снять фиксацию со ВСЕХ строк таблицы?", _
+                      vbQuestion + vbYesNo + vbDefaultButton2, "Распределение по ГИБ") <> vbYes Then Exit Sub
+        End If
+        Set sel = ws.Range(ws.Rows(L.FirstRow), ws.Rows(L.LastRow))
+    End If
+
+    BeginWork st
+    started = True
+    ClearStatus
+    n = CollectRows(sel, rowList)
+    For i = 1 To n
+        If ws.Cells(rowList(i), L.NameCol).NumberFormat = FROZEN_FMT Then
+            SetFrozen ws.Cells(rowList(i), L.NameCol), False
+            cnt = cnt + 1
+        End If
+    Next i
+    EndWork st
+    started = False
+
+    mLastReport = "ГИБ: снята фиксация строк - " & cnt
+    SetStatus mLastReport
+    If cnt > 0 Then
+        ShowMsg "Фиксация снята: строк - " & cnt & "." & vbCrLf & vbCrLf & _
+                "Суммы остались как были. Теперь при изменении назначения строка " & _
+                "снова распределяется по тексту.", vbInformation
+    Else
+        ShowMsg "В выделенных строках нет зафиксированных.", vbExclamation
+    End If
+    Exit Sub
+
+Fail:
+    errText = Err.Description
+    If started Then EndWork st
+    mBusy = False
+    mLastReport = "ERROR: " & errText
+    ShowMsg "Не удалось снять фиксацию:" & vbCrLf & errText, vbExclamation
+End Sub
+
 Public Function GIB_LastReport() As String
     GIB_LastReport = mLastReport
 End Function
@@ -210,6 +403,19 @@ End Function
 ' Убрать сообщение из строки состояния Excel.
 Public Sub GIB_ClearStatus()
     ClearStatus
+End Sub
+
+' Снимок низа таблицы листа бюджета (при открытии книги и переходе на лист).
+Public Sub GIB_SnapshotSheet(ByVal Sh As Object)
+    Dim ws As Worksheet
+    Dim L As TLayout
+
+    If mBusy Then Exit Sub
+    If Not TypeOf Sh Is Worksheet Then Exit Sub
+    Set ws = Sh
+    If Not IsGibSheet(ws) Then Exit Sub
+    On Error Resume Next
+    If GetLayout(ws, L) Then SnapTake ws, False
 End Sub
 
 ' Показать/скрыть надписи "Макросы отключены" (фигуры gibMacroWarning*)
@@ -250,11 +456,12 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
     Dim itCode() As String, itAmt() As Double, itTotal As Long
     Dim pc() As String, pa() As Double, pn As Long, pm As Boolean, pl As Boolean
     Dim newCodes() As String, newCnt As Long
-    Dim needFlag As Boolean, longRow() As Boolean
+    Dim needFlag As Boolean, frozen() As Boolean, longRow() As Boolean
 
     If n < 1 Then Exit Sub
     If Not GetLayout(ws, L) Then Exit Sub
 
+    ReDim frozen(1 To n)
     ReDim hasText(1 To n)
     ReDim missAmt(1 To n)
     ReDim longRow(1 To n)
@@ -264,12 +471,14 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
     ReDim itAmt(1 To 32)
     ReDim newCodes(1 To 8)
 
-    ' 1. Разбор текстов назначений
+    ' 1. Разбор текстов назначений (зафиксированные строки не разбираются:
+    '    их суммы не зависят от текста назначения)
     For i = 1 To n
+        frozen(i) = IsFrozenRow(ws, L, rowList(i))
         txt = CellText(ws.Cells(rowList(i), L.NameCol))
         hasText(i) = (Len(Trim$(txt)) > 0)
         itemFirst(i) = itTotal + 1
-        If hasText(i) Then
+        If hasText(i) And Not frozen(i) Then
             rep.TextRows = rep.TextRows + 1
             pn = ParseGib(txt, pc, pa, pm, pl)
             missAmt(i) = pm
@@ -308,7 +517,9 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
     ' 3. Запись сумм и подсветка строк, требующих ручной обработки
     For i = 1 To n
         r = rowList(i)
-        If itemCnt(i) > 0 Then
+        If frozen(i) Then
+            ' зафиксированное распределение не меняется
+        ElseIf itemCnt(i) > 0 Then
             WriteRow ws, L, r, itCode, itAmt, itemFirst(i), itemCnt(i)
             rep.FilledRows = rep.FilledRows + 1
             ' без строки "Чамъ" границы таблицы неизвестны - формула "Хамаги"
@@ -320,19 +531,36 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
             WriteRow ws, L, r, itCode, itAmt, 0, 0
         End If
         needFlag = False
-        If hasText(i) Then
+        If hasText(i) And Not frozen(i) Then
             If missAmt(i) Then
                 needFlag = True
             ElseIf itemCnt(i) = 0 Then
                 needFlag = Not RowHasAmounts(ws, L, r)
             End If
         End If
-        SetMark ws.Cells(r, L.NameCol), needFlag, longRow(i) And itemCnt(i) > 0
+        SetMark ws.Cells(r, L.NameCol), needFlag, longRow(i) And itemCnt(i) > 0 And Not frozen(i)
         If needFlag Then AddProblem rep, r
-        If longRow(i) And itemCnt(i) > 0 Then AddCheck rep, r
     Next i
 
-    ' 4. Нумерация, формулы "Хамаги" и итоги "Чамъ"
+    ' 4. Опустевшие столбцы подпунктов (5-значные коды прежней версии)
+    If RemoveEmptySubColumns(ws, L) Then
+        If Not GetLayout(ws, L) Then Exit Sub
+    End If
+
+    ' 5. Границы ячеек: вставка из выписки приносит свое оформление
+    '    и стирает сетку таблицы в обработанных строках
+    i = 1
+    Do While i <= n
+        k = i
+        Do While k < n
+            If rowList(k + 1) <> rowList(k) + 1 Then Exit Do
+            k = k + 1
+        Loop
+        SetGridBorders ws, L, rowList(i), rowList(k)
+        i = k + 1
+    Loop
+
+    ' 6. Нумерация, формулы "Хамаги" и итоги "Чамъ"
     MaintainStructure ws, L
 End Sub
 
@@ -391,6 +619,22 @@ Private Function RowHasAmounts(ByVal ws As Worksheet, L As TLayout, ByVal r As L
     Next j
 End Function
 
+' Строка зафиксирована кнопкой "Зафиксировать распределение" и в ней есть
+' суммы. Пустая строка с пометкой (например, новая строка, унаследовавшая
+' оформление соседней) зафиксированной не считается.
+Private Function IsFrozenRow(ByVal ws As Worksheet, L As TLayout, ByVal r As Long) As Boolean
+    If ws.Cells(r, L.NameCol).NumberFormat <> FROZEN_FMT Then Exit Function
+    IsFrozenRow = RowHasAmounts(ws, L, r)
+End Function
+
+Private Sub SetFrozen(ByVal c As Range, ByVal frozenOn As Boolean)
+    If frozenOn Then
+        If c.NumberFormat <> FROZEN_FMT Then c.NumberFormat = FROZEN_FMT
+    ElseIf c.NumberFormat = FROZEN_FMT Then
+        c.NumberFormat = NAME_FMT
+    End If
+End Sub
+
 ' Пересчет подсветки после ручного ввода сумм в область ГИБ: подсветка
 ' снимается, как только в строке появилась сумма.
 Private Sub RefreshFlags(ByVal ws As Worksheet, L As TLayout, ByVal areaHit As Range)
@@ -411,29 +655,124 @@ Private Sub RefreshFlags(ByVal ws As Worksheet, L As TLayout, ByVal areaHit As R
     Next i
 End Sub
 
+' Ячейки проверочного столбца "Расходы" в строках данных, задетые
+' изменением Target (Nothing - не задеты).
+Private Function CheckColsHit(ByVal ws As Worksheet, L As TLayout, ByVal Target As Range) As Range
+    If L.ExpCol = 0 Or L.LastRow < L.FirstRow Then Exit Function
+    Set CheckColsHit = Intersect(Target, ws.Range(ws.Cells(L.FirstRow, L.ExpCol), ws.Cells(L.LastRow, L.ExpCol)))
+End Function
+
+' После вставки сумм из выписки в "Расходы": каждая сумма заменяется
+' формулой баланса, возвращаются сетка таблицы и формат чисел "Хамаги"
+' (вставка приносит оформление выписки).
+Private Sub FixCheckCells(ByVal ws As Worksheet, ByVal chkHit As Range)
+    Dim L As TLayout
+    Dim rowList() As Long, n As Long, i As Long, k As Long
+
+    If Not GetLayout(ws, L) Then Exit Sub
+    If L.TotalCol = 0 Or L.ExpCol = 0 Then Exit Sub
+    n = CollectRows(chkHit, rowList)
+    i = 1
+    Do While i <= n
+        k = i
+        Do While k < n
+            If rowList(k + 1) <> rowList(k) + 1 Then Exit Do
+            k = k + 1
+        Loop
+        If rowList(i) >= L.FirstRow And rowList(k) <= L.LastRow Then
+            SetBalanceFormulas ws, L, rowList(i), rowList(k)
+            SetGridBorders ws, L, rowList(i), rowList(k)
+            StyleLikeTotal ws, L, L.ExpCol, rowList(i), rowList(k)
+        End If
+        i = k + 1
+    Loop
+End Sub
+
+' Суммы (числа) в "Расходы", строки r1..r2, заменяются формулой
+' =ROUND(Хамаги-сумма,2): в ячейке виден баланс (0 - суммы совпали),
+' а сумма из выписки - в строке формул. Формулы и пустые ячейки не трогаются.
+Private Sub SetBalanceFormulas(ByVal ws As Worksheet, L As TLayout, ByVal r1 As Long, ByVal r2 As Long)
+    Dim fArr As Variant, vArr As Variant
+    Dim i As Long, r As Long, amt As Double
+
+    fArr = ColArray(ws, r1, r2, L.ExpCol, True)
+    vArr = ColArray(ws, r1, r2, L.ExpCol, False)
+    For i = 1 To r2 - r1 + 1
+        r = r1 + i - 1
+        If Left$(SafeStr(fArr(i)), 1) <> "=" Then
+            If AmountOf(vArr(i), amt) Then
+                ws.Cells(r, L.ExpCol).Formula = "=ROUND(" & A1(ws, r, L.TotalCol) & "-" & NumLiteral(amt) & ",2)"
+            End If
+        End If
+    Next i
+End Sub
+
+' Сумма из ячейки: число или текст вида "3350", "3 350,00", "-100".
+Private Function AmountOf(ByVal v As Variant, amt As Double) As Boolean
+    Dim s As String, neg As Boolean, pEnd As Long
+
+    If IsError(v) Or IsEmpty(v) Then Exit Function
+    If VarType(v) = vbDouble Then
+        amt = v
+        AmountOf = True
+        Exit Function
+    End If
+    s = Trim$(ParseNorm(CStr(v)))
+    If Left$(s, 1) = "-" Then
+        neg = True
+        s = Trim$(Mid$(s, 2))
+    End If
+    If Len(s) = 0 Then Exit Function
+    If Not IsDigitChar(Left$(s, 1)) Then Exit Function
+    If Not ReadAmount(s, 1, amt, pEnd) Then Exit Function
+    If pEnd <= Len(s) Then Exit Function          ' после суммы есть еще текст
+    If neg Then amt = -amt
+    AmountOf = True
+End Function
+
+' Число для формулы (с точкой, отрицательное - в скобках).
+Private Function NumLiteral(ByVal v As Double) As String
+    NumLiteral = Trim$(Str$(Round(v, 2)))
+    If v < 0 Then NumLiteral = "(" & NumLiteral & ")"
+End Function
+
+' Шрифт, формат чисел и выравнивание ячеек столбца col (строки r1..r2) -
+' как у ячейки "Хамаги" первой из этих строк; заливка убирается.
+Private Sub StyleLikeTotal(ByVal ws As Worksheet, L As TLayout, ByVal col As Long, _
+                           ByVal r1 As Long, ByVal r2 As Long)
+    Dim tmpl As Range
+
+    Set tmpl = ws.Cells(r1, L.TotalCol)
+    With ws.Range(ws.Cells(r1, col), ws.Cells(r2, col))
+        .NumberFormat = tmpl.NumberFormat
+        .HorizontalAlignment = tmpl.HorizontalAlignment
+        .Font.Name = tmpl.Font.Name
+        .Font.Size = tmpl.Font.Size
+        .Font.Bold = False
+        .Font.Italic = False
+        .Font.ColorIndex = xlAutomatic
+        .Interior.Pattern = xlNone
+    End With
+End Sub
+
 ' Добавление cnt пустых строк в конец таблицы (перед строкой "Чамъ").
 Private Sub AddRowsCore(ByVal ws As Worksheet, ByVal cnt As Long)
     Dim L As TLayout
     Dim st As TAppState
-    Dim insAt As Long, r As Long
+    Dim insAt As Long
     Dim started As Boolean, errText As String
 
     On Error GoTo Fail
     If cnt < 1 Then Exit Sub
-    If cnt > 5000 Then cnt = 5000
+    If cnt > MAX_ADD_ROWS Then cnt = MAX_ADD_ROWS
     If Not CheckSheet(ws, L) Then Exit Sub
-    If L.SumRow > 0 Then insAt = L.SumRow Else insAt = L.LastRow + 1
 
     BeginWork st
     started = True
     ClearStatus
-    ws.Range(ws.Rows(insAt), ws.Rows(insAt + cnt - 1)).Insert Shift:=xlShiftDown, CopyOrigin:=xlFormatFromLeftOrAbove
-    If GetLayout(ws, L) Then
-        For r = insAt To insAt + cnt - 1
-            SetFlag ws.Cells(r, L.NameCol), False
-        Next r
-        MaintainStructure ws, L
-    End If
+    insAt = InsertTableRows(ws, L, cnt)
+    MaintainStructure ws, L
+    SnapTake ws, False
     EndWork st
     started = False
 
@@ -450,6 +789,423 @@ Fail:
     ShowMsg "Не удалось добавить строки:" & vbCrLf & errText, vbExclamation
 End Sub
 
+' Вставка cnt пустых строк в конец таблицы (перед строкой "Чамъ") с сеткой
+' и оформлением строк данных. Возвращает номер первой новой строки;
+' L обновляется под новое расположение таблицы.
+Private Function InsertTableRows(ByVal ws As Worksheet, L As TLayout, ByVal cnt As Long) As Long
+    Dim insAt As Long, r As Long
+
+    If L.SumRow > 0 Then insAt = L.SumRow Else insAt = L.LastRow + 1
+    ws.Range(ws.Rows(insAt), ws.Rows(insAt + cnt - 1)).Insert Shift:=xlShiftDown, CopyOrigin:=xlFormatFromLeftOrAbove
+    SnapMirror ws, True, insAt, cnt, False
+    If GetLayout(ws, L) Then
+        For r = insAt To insAt + cnt - 1
+            SetFlag ws.Cells(r, L.NameCol), False
+            SetFrozen ws.Cells(r, L.NameCol), False   ' пометка соседней строки
+        Next r
+        SetGridBorders ws, L, insAt, insAt + cnt - 1
+    End If
+    InsertTableRows = insAt
+End Function
+
+'==========================================================================
+'  ВСТАВКА, КОТОРАЯ НЕ ПОМЕЩАЕТСЯ В ТАБЛИЦУ
+'==========================================================================
+
+' Сколько строк не хватает таблице, чтобы вместить изменение Target
+' (0 - помещается или это не вставка в таблицу). Учитывается одна
+' прямоугольная область, которая начинается в строках данных (или в строке
+' "Чамъ", если строк несколько), задевает столбцы таблицы и приносит
+' непустые данные в строку "Чамъ" и ниже. Очистка ячеек (Delete) и
+' правка одной ячейки строки "Чамъ" таблицу не расширяют.
+Private Function OverflowRows(ByVal ws As Worksheet, L As TLayout, ByVal Target As Range) As Long
+    Dim topRow As Long, botRow As Long, c1 As Long, c2 As Long
+    Dim v As Variant, i As Long, j As Long, hasData As Boolean
+
+    If L.SumRow = 0 Then Exit Function
+    If Target.Areas.Count <> 1 Then Exit Function
+    topRow = Target.Row
+    botRow = topRow + Target.Rows.Count - 1
+    c1 = Target.Column
+    c2 = c1 + Target.Columns.Count - 1
+    If botRow < L.SumRow Or topRow < L.FirstRow Or topRow > L.SumRow Then Exit Function
+    If topRow = L.SumRow And Target.Rows.Count = 1 Then Exit Function
+    If c1 > TableLastCol(L) Or c2 < TableFirstCol(L) Then Exit Function
+    If botRow - L.LastRow > MAX_ADD_ROWS Then Exit Function
+
+    v = Block2D(ws.Range(ws.Cells(L.SumRow, c1), ws.Cells(botRow, c2)))
+    For i = 1 To botRow - L.SumRow + 1
+        For j = 1 To c2 - c1 + 1
+            If Len(SafeStr(v(i, j))) > 0 Then
+                hasData = True
+                Exit For
+            End If
+        Next j
+        If hasData Then Exit For
+    Next i
+    If hasData Then OverflowRows = botRow - L.LastRow
+End Function
+
+' Содержимое вставленного диапазона для повторной записи: формулы - как
+' формулы, текст - как текст (с апострофом, если Excel иначе превратил бы
+' его в число или дату, например номер документа "0002309").
+Private Function PastedData(ByVal rng As Range) As Variant
+    Dim vals As Variant, frm As Variant, res() As Variant
+    Dim i As Long, j As Long, s As String
+
+    vals = rng.Value
+    frm = rng.Formula
+    ReDim res(1 To rng.Rows.Count, 1 To rng.Columns.Count)
+    For i = 1 To rng.Rows.Count
+        For j = 1 To rng.Columns.Count
+            s = SafeStr(frm(i, j))
+            If Left$(s, 1) = "=" Then
+                res(i, j) = s
+            ElseIf VarType(vals(i, j)) = vbString Then
+                res(i, j) = TextLiteral(CStr(vals(i, j)))
+            Else
+                res(i, j) = vals(i, j)
+            End If
+        Next j
+    Next i
+    PastedData = res
+End Function
+
+Private Function TextLiteral(ByVal s As String) As String
+    Dim ch As String
+
+    ch = Left$(s, 1)
+    If IsNumeric(s) Or IsDate(s) Or ch = "=" Or ch = "+" Or ch = "-" Or ch = "@" Or ch = "'" Then
+        TextLiteral = "'" & s
+    Else
+        TextLiteral = s
+    End If
+End Function
+
+' Отмена последнего действия пользователя (вставки) без повторного вызова
+' обработчика. При успехе события остаются выключенными до EndWork.
+Private Function UndoLastAction() As Boolean
+    mBusy = True
+    Application.EnableEvents = False
+    On Error Resume Next
+    Application.Undo
+    UndoLastAction = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo 0
+    If Not UndoLastAction Then
+        Application.EnableEvents = True
+        mBusy = False
+    End If
+End Function
+
+' После отмены вставки: добавить строки, которых не хватает диапазону addr,
+' и записать в него сохраненные данные. Оформление таблицы (сетка, заливка)
+' остается своим, из выписки переносятся только значения.
+Private Function RepasteWithRows(ByVal ws As Worksheet, ByVal addr As String, _
+                                 data As Variant, addedRows As Long) As Range
+    Dim L As TLayout
+    Dim rng As Range, need As Long
+
+    Set rng = ws.Range(addr)
+    If GetLayout(ws, L) Then
+        need = rng.Row + rng.Rows.Count - 1 - L.LastRow
+        If need > 0 And L.SumRow > 0 Then
+            InsertTableRows ws, L, need
+            addedRows = need
+        End If
+    End If
+    Set rng = ws.Range(addr)
+    rng.Value = data
+    Set RepasteWithRows = rng
+End Function
+
+' Тонкая сетка (как в строках данных) в строках r1..r2 таблицы.
+Private Sub SetGridBorders(ByVal ws As Worksheet, L As TLayout, ByVal r1 As Long, ByVal r2 As Long)
+    Dim c1 As Long, c2 As Long, b As Variant
+
+    If r2 < r1 Then Exit Sub
+    c1 = TableFirstCol(L)
+    c2 = TableLastCol(L)
+    With ws.Range(ws.Cells(r1, c1), ws.Cells(r2, c2))
+        For Each b In Array(xlEdgeLeft, xlEdgeTop, xlEdgeBottom, xlEdgeRight, xlInsideVertical, xlInsideHorizontal)
+            ' в одной строке (столбце) внутренних линий нет
+            If Not ((b = xlInsideHorizontal And r1 = r2) Or (b = xlInsideVertical And c1 = c2)) Then
+                With .Borders(b)
+                    .LineStyle = xlContinuous
+                    .Weight = xlThin
+                    .ColorIndex = xlAutomatic
+                End With
+            End If
+        Next b
+    End With
+End Sub
+
+' Первый и последний столбцы таблицы ("р/т" ... последний заголовок).
+Private Function TableFirstCol(L As TLayout) As Long
+    TableFirstCol = L.NameCol
+    If L.NumCol > 0 And L.NumCol < L.NameCol Then TableFirstCol = L.NumCol
+End Function
+
+' Последний из столбцов "Хамаги" и "Расходы" (за ним - область ГИБ).
+Private Function CheckColsEnd(L As TLayout) As Long
+    CheckColsEnd = L.TotalCol
+    If L.ExpCol > CheckColsEnd Then CheckColsEnd = L.ExpCol
+End Function
+
+Private Function TableLastCol(L As TLayout) As Long
+    TableLastCol = L.NameCol
+    If L.TotalCol > TableLastCol Then TableLastCol = L.TotalCol
+    If L.AreaLast > TableLastCol Then TableLastCol = L.AreaLast
+End Function
+
+' Столбцы с кодами длиннее 4 цифр (подпункты, созданные прежней версией):
+' суммы теперь пишутся в столбец 4-значной сметы, и опустевший столбец
+' подпункта удаляется. True - что-то удалено.
+Private Function RemoveEmptySubColumns(ByVal ws As Worksheet, L As TLayout) As Boolean
+    Dim j As Long, col As Long
+
+    If L.LastRow < L.FirstRow Then Exit Function
+    For j = L.CodeCount To 1 Step -1
+        If Len(L.codes(j)) > CODE_LEN Then
+            col = L.CodeCols(j)
+            If Application.WorksheetFunction.CountA(ws.Range(ws.Cells(L.FirstRow, col), ws.Cells(L.LastRow, col))) = 0 Then
+                ws.Columns(col).Delete
+                SnapMirror ws, False, col, 1, True
+                RemoveEmptySubColumns = True
+            End If
+        End If
+    Next j
+End Function
+
+'==========================================================================
+'  СНИМОК НИЗА ТАБЛИЦЫ (вместо отмены вставки)
+'==========================================================================
+
+' Обновляет снимок строки "Чамъ" и всего, что под ней. Если в Excel нет
+' скопированного диапазона, снимаются и значения, и оформление; иначе
+' (полное копирование сбросило бы буфер пользователя) - только содержимое,
+' а оформление остается прежним: его выравнивает SnapMirror.
+' structChanged = True: пользователь сам вставлял/удалял строки или столбцы.
+Private Sub SnapTake(ByVal ws As Worksheet, ByVal structChanged As Boolean)
+    Dim L As TLayout
+    Dim old As TSnap, sn As TSnap
+    Dim snap As Worksheet
+    Dim ev As Boolean, r2 As Long, c2 As Long, addr As String
+
+    ev = Application.EnableEvents
+    Application.EnableEvents = False
+    On Error GoTo Fail
+    If Not GetLayout(ws, L) Then GoTo Invalid
+    If L.SumRow = 0 Then GoTo Invalid
+    With ws.UsedRange
+        r2 = .Row + .Rows.Count - 1
+        c2 = .Column + .Columns.Count - 1
+    End With
+    If r2 < L.SumRow Then r2 = L.SumRow
+    If c2 < TableLastCol(L) Then c2 = TableLastCol(L)
+    If r2 - L.SumRow + 1 > SNAP_MAX_ROWS Or c2 > SNAP_MAX_COLS Then GoTo Invalid
+    Set snap = SnapSheet(True)
+    If snap Is Nothing Then GoTo Invalid
+
+    old = SnapRead()
+    sn.Valid = True
+    sn.SumRow = L.SumRow
+    sn.LastRow = r2
+    sn.LastCol = c2
+    sn.SheetName = ws.Name
+    addr = ws.Range(ws.Cells(L.SumRow, 1), ws.Cells(r2, c2)).Address
+    If Application.CutCopyMode = 0 Then
+        snap.Cells.Clear
+        ws.Parent.Worksheets(Array(ws.Name, snap.Name)).FillAcrossSheets ws.Range(addr), xlFillWithAll
+        sn.FmtOK = True
+    Else
+        sn.FmtOK = old.Valid And old.FmtOK And Not structChanged And _
+                   old.SheetName = ws.Name And old.SumRow = sn.SumRow
+        If Not sn.FmtOK Then snap.Cells.UnMerge
+        snap.UsedRange.ClearContents
+        snap.Range(addr).Formula = ws.Range(addr).Formula
+    End If
+    SnapWrite sn
+    Application.EnableEvents = ev
+    Exit Sub
+
+Fail:
+    Resume Invalid
+Invalid:
+    On Error Resume Next
+    sn.Valid = False
+    SnapWrite sn
+    Application.EnableEvents = ev
+End Sub
+
+' Снимок подходит для восстановления низа таблицы листа ws.
+Private Function SnapUsable(ByVal ws As Worksheet, L As TLayout) As Boolean
+    Dim sn As TSnap
+
+    sn = SnapRead()
+    If Not sn.Valid Or L.SumRow = 0 Then Exit Function
+    If sn.SheetName <> ws.Name Or sn.SumRow <> L.SumRow Then Exit Function
+    SnapUsable = Not (SnapSheet(False) Is Nothing)
+End Function
+
+' Вставка могла затереть саму подпись "Чамъ" (например, вставка нескольких
+' столбцов, начиная с "р/т"): тогда строка итогов берется из снимка.
+Private Sub SnapFixSumRow(ByVal ws As Worksheet, L As TLayout, ByVal Target As Range)
+    Dim sn As TSnap
+
+    sn = SnapRead()
+    If Not sn.Valid Or sn.SheetName <> ws.Name Then Exit Sub
+    If L.SumRow <> 0 And L.SumRow <= sn.SumRow Then Exit Sub
+    If sn.SumRow <= L.FirstRow Then Exit Sub
+    If Intersect(Target, ws.Rows(sn.SumRow)) Is Nothing Then Exit Sub
+    L.SumRow = sn.SumRow
+    L.LastRow = sn.SumRow - 1
+End Sub
+
+' Возвращает в состояние снимка ту часть низа таблицы (строка "Чамъ" и
+' ниже), на которую легла вставка Target. Ячейки вставки за пределами
+' снимка (там лист был пуст) очищаются.
+Private Sub RestoreFooter(ByVal ws As Worksheet, ByVal Target As Range)
+    Dim sn As TSnap
+    Dim snap As Worksheet
+    Dim tr1 As Long, tr2 As Long, tc1 As Long, tc2 As Long
+    Dim r1 As Long, r2 As Long, c1 As Long, c2 As Long
+    Dim addr As String, Done As Boolean
+
+    sn = SnapRead()
+    Set snap = SnapSheet(False)
+    tr1 = Target.Row
+    tr2 = tr1 + Target.Rows.Count - 1
+    tc1 = Target.Column
+    tc2 = tc1 + Target.Columns.Count - 1
+
+    r1 = tr1: If r1 < sn.SumRow Then r1 = sn.SumRow
+    r2 = tr2: If r2 > sn.LastRow Then r2 = sn.LastRow
+    c2 = tc2: If c2 > sn.LastCol Then c2 = sn.LastCol
+    If r1 <= r2 And tc1 <= c2 Then
+        addr = ws.Range(ws.Cells(r1, tc1), ws.Cells(r2, c2)).Address
+        If sn.FmtOK Then
+            On Error Resume Next
+            ws.Parent.Worksheets(Array(snap.Name, ws.Name)).FillAcrossSheets snap.Range(addr), xlFillWithAll
+            Done = (Err.Number = 0)
+            Err.Clear
+            On Error GoTo 0
+            If Not Done Then
+                ' область задела объединенные ячейки - снимок целиком
+                addr = ws.Range(ws.Cells(sn.SumRow, 1), ws.Cells(sn.LastRow, sn.LastCol)).Address
+                ws.Parent.Worksheets(Array(snap.Name, ws.Name)).FillAcrossSheets snap.Range(addr), xlFillWithAll
+            End If
+        Else
+            ws.Range(addr).Formula = snap.Range(addr).Formula
+        End If
+    End If
+
+    ' ниже и правее снимка лист был пуст
+    If tr2 > sn.LastRow Then
+        r1 = tr1: If r1 <= sn.LastRow Then r1 = sn.LastRow + 1
+        ws.Range(ws.Cells(r1, tc1), ws.Cells(tr2, tc2)).Clear
+    End If
+    If tc2 > sn.LastCol Then
+        r1 = tr1: If r1 < sn.SumRow Then r1 = sn.SumRow
+        r2 = tr2: If r2 > sn.LastRow Then r2 = sn.LastRow
+        c1 = tc1: If c1 <= sn.LastCol Then c1 = sn.LastCol + 1
+        If r1 <= r2 Then ws.Range(ws.Cells(r1, c1), ws.Cells(r2, tc2)).Clear
+    End If
+End Sub
+
+' Повторяет на листе снимка вставку строк (isRows) или вставку/удаление
+' столбцов листа бюджета, чтобы оформление снимка оставалось на своих местах.
+Private Sub SnapMirror(ByVal ws As Worksheet, ByVal isRows As Boolean, ByVal pos As Long, _
+                       ByVal cnt As Long, ByVal isDelete As Boolean)
+    Dim sn As TSnap
+    Dim snap As Worksheet
+    Dim ev As Boolean
+
+    sn = SnapRead()
+    If Not sn.Valid Or sn.SheetName <> ws.Name Then Exit Sub
+    Set snap = SnapSheet(False)
+    If snap Is Nothing Then Exit Sub
+    ev = Application.EnableEvents
+    Application.EnableEvents = False
+    On Error GoTo Fail
+    If isRows Then
+        snap.Range(snap.Rows(pos), snap.Rows(pos + cnt - 1)).Insert Shift:=xlShiftDown
+        If pos <= sn.SumRow Then sn.SumRow = sn.SumRow + cnt
+        If pos <= sn.LastRow Then sn.LastRow = sn.LastRow + cnt
+    ElseIf isDelete Then
+        snap.Range(snap.Columns(pos), snap.Columns(pos + cnt - 1)).Delete
+        If pos <= sn.LastCol Then sn.LastCol = sn.LastCol - cnt
+    Else
+        snap.Range(snap.Columns(pos), snap.Columns(pos + cnt - 1)).Insert Shift:=xlShiftToRight
+        If pos <= sn.LastCol Then sn.LastCol = sn.LastCol + cnt
+    End If
+    SnapWrite sn
+    Application.EnableEvents = ev
+    Exit Sub
+
+Fail:
+    Resume Stale
+Stale:
+    On Error Resume Next
+    sn.Valid = False
+    SnapWrite sn
+    Application.EnableEvents = ev
+End Sub
+
+' Скрытый лист снимка; create = True - создать, если его нет.
+Private Function SnapSheet(ByVal create As Boolean) As Worksheet
+    Dim prev As Object
+    Dim ev As Boolean
+
+    On Error Resume Next
+    Set SnapSheet = ThisWorkbook.Worksheets(SNAP_SHEET)
+    Err.Clear
+    If Not SnapSheet Is Nothing Then Exit Function
+    If Not create Then Exit Function
+
+    Set prev = ThisWorkbook.ActiveSheet
+    ev = Application.EnableEvents
+    Application.EnableEvents = False
+    Set SnapSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    If Err.Number = 0 Then
+        SnapSheet.Name = SNAP_SHEET
+        SnapSheet.Visible = xlSheetVeryHidden
+    Else
+        Set SnapSheet = Nothing
+    End If
+    If Not prev Is Nothing Then prev.Activate
+    Application.EnableEvents = ev
+End Function
+
+' Описание снимка хранится в скрытом имени книги gibSnapInfo:
+' ="действует|оформление|SumRow|LastRow|LastCol|имя листа".
+Private Function SnapRead() As TSnap
+    Dim s As String, p() As String
+
+    On Error GoTo Done
+    s = ThisWorkbook.Names(SNAP_INFO).RefersTo
+    If Left$(s, 2) <> "=""" Or Right$(s, 1) <> """" Then Exit Function
+    s = Replace(Mid$(s, 3, Len(s) - 3), """""", """")
+    p = Split(s, "|", 6)
+    If UBound(p) < 5 Then Exit Function
+    SnapRead.SumRow = CLng(p(2))
+    SnapRead.LastRow = CLng(p(3))
+    SnapRead.LastCol = CLng(p(4))
+    SnapRead.SheetName = p(5)
+    SnapRead.FmtOK = (p(1) = "1")
+    SnapRead.Valid = (p(0) = "1")
+Done:
+End Function
+
+Private Sub SnapWrite(sn As TSnap)
+    Dim s As String
+
+    On Error Resume Next
+    s = IIf(sn.Valid, "1", "0") & "|" & IIf(sn.FmtOK, "1", "0") & "|" & _
+        CStr(sn.SumRow) & "|" & CStr(sn.LastRow) & "|" & CStr(sn.LastCol) & "|" & sn.SheetName
+    ThisWorkbook.Names.Add Name:=SNAP_INFO, RefersTo:="=""" & Replace(s, """", """""") & """", Visible:=False
+End Sub
+
 '==========================================================================
 '  СТРУКТУРА ТАБЛИЦЫ
 '==========================================================================
@@ -462,14 +1218,14 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
     Dim hdrRows As Long, fixedHdr As Long, fixedCol As Long
 
     L.HdrRow = 0: L.NameCol = 0: L.NumCol = 0: L.TotalCol = 0
-    L.RashCol = 0: L.DiffCol = 0
+    L.ExpCol = 0
     L.FirstRow = 0: L.LastRow = 0: L.SumRow = 0
     L.AreaFirst = 0: L.AreaLast = -1: L.CodeCount = 0
     ReDim L.codes(1 To 1)
     ReDim L.CodeCols(1 To 1)
 
-    ' строка заголовков: сохраненная программой при встраивании (GIB_HDR,
-    ' GIB_COL), иначе - та, где есть "Номгуи корхонахо" / "Основание"
+    ' строка заголовков: сохраненная программой (GIB_HDR, GIB_COL),
+    ' иначе - та, где есть "Номгуи корхонахо" / "Основание"
     fixedHdr = SheetParam(ws, "GIB_HDR")
     fixedCol = SheetParam(ws, "GIB_COL")
     hdrRows = HDR_MAX_ROWS
@@ -508,13 +1264,16 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
             If L.NumCol = 0 And (k = "RT" Or k = "PP" Or k = "NPP") Then L.NumCol = c
         ElseIf c > L.NameCol Then
             If L.TotalCol = 0 And (k = "HAMAGI" Or k = "VSEGO" Or k = "ITOGO") Then L.TotalCol = c
-            If L.RashCol = 0 And Left$(k, 6) = "RASHOD" Then L.RashCol = c
-            If L.DiffCol = 0 And Left$(k, 5) = "RAZNI" Then L.DiffCol = c
         End If
     Next c
 
+    ' проверочный столбец "Расходы" - только сразу за "Хамаги"
+    If L.TotalCol > 0 And L.TotalCol < lastHdr Then
+        If Left$(NormKey(hdr(L.HdrRow, L.TotalCol + 1)), 6) = "RASHOD" Then L.ExpCol = L.TotalCol + 1
+    End If
+
     ' столбцы ГИБ: заголовок начинается с кода из 3-8 цифр
-    If L.TotalCol > 0 Then i = L.TotalCol + 1 Else i = L.NameCol + 1
+    If L.TotalCol > 0 Then i = CheckColsEnd(L) + 1 Else i = L.NameCol + 1
     For c = i To lastHdr
         code = HeaderCode(hdr(L.HdrRow, c))
         If Len(code) > 0 Then
@@ -528,9 +1287,10 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
         End If
     Next c
 
-    ' область сумм: от столбца после "Хамаги" до последнего заголовка
+    ' область сумм: от столбца после "Хамаги" (и проверочных столбцов)
+    ' до последнего заголовка
     If L.TotalCol > 0 Then
-        L.AreaFirst = L.TotalCol + 1
+        L.AreaFirst = CheckColsEnd(L) + 1
         L.AreaLast = lastHdr
         If L.AreaLast < L.AreaFirst Then L.AreaLast = L.AreaFirst - 1
     ElseIf L.CodeCount > 0 Then
@@ -569,7 +1329,6 @@ Private Function GetLayout(ByVal ws As Worksheet, L As TLayout) As Boolean
             Next c
             If found Then Exit For
         Next r
-        ' в выписке таблица заканчивается строками "Обороты за период" / "Остаток"
         If Not found Then
             labels = Block2D(ws.Range(ws.Cells(L.FirstRow, L.NameCol), ws.Cells(lastUsed, L.NameCol)))
             For r = 1 To lastUsed - L.FirstRow + 1
@@ -646,7 +1405,7 @@ Private Sub CreateCodeColumn(ByVal ws As Worksheet, L As TLayout, ByVal code As 
         tmpl = succCol
         fromLeft = False
     Else
-        If L.TotalCol > 0 Then pos = L.TotalCol + 1 Else pos = L.AreaLast + 1
+        If L.TotalCol > 0 Then pos = CheckColsEnd(L) + 1 Else pos = L.AreaLast + 1
         tmpl = 0
         fromLeft = True
     End If
@@ -671,6 +1430,7 @@ Private Sub CreateCodeColumn(ByVal ws As Worksheet, L As TLayout, ByVal code As 
     Else
         ws.Columns(pos).Insert Shift:=xlShiftToRight, CopyOrigin:=xlFormatFromRightOrBelow
     End If
+    SnapMirror ws, False, pos, 1, False
     ws.Columns(pos).Hidden = False
     ws.Columns(pos).ColumnWidth = w
 
@@ -686,6 +1446,7 @@ Private Sub CreateCodeColumn(ByVal ws As Worksheet, L As TLayout, ByVal code As 
     ' столбцов ГИБ еще не было: формат скопирован со столбца "Хамаги" -
     ' в строках данных убираем заливку и жирный шрифт (числовой формат
     ' "0,00" - как у "Хамаги" и у столбцов ГИБ в исходном шаблоне)
+    If tmpl = 0 Then ws.Columns(pos).FormatConditions.Delete   ' подсветка "Расходы"
     If tmpl = 0 And L.LastRow >= L.FirstRow Then
         With ws.Range(ws.Cells(L.FirstRow, pos), ws.Cells(L.LastRow, pos))
             .Interior.Pattern = xlNone
@@ -715,7 +1476,7 @@ End Sub
 ' Нумерация "р/т", формулы "Хамаги" в строках и итоги в строке "Чамъ".
 Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
     Dim i As Long, r As Long, c As Long, c1 As Long, nRows As Long
-    Dim arr As Variant, f As String, want As String, extra As Variant
+    Dim arr As Variant, f As String, want As String
 
     If L.SumRow = 0 Or L.LastRow < L.FirstRow Then Exit Sub
     nRows = L.LastRow - L.FirstRow + 1
@@ -740,22 +1501,6 @@ Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
         Next i
     End If
 
-    ' 2а) сверка с выпиской: "Разница" = "Хамаги" - "Расходы" в каждой строке
-    '     (формула ставится в пустые ячейки и обновляется, если сдвинулись столбцы)
-    If L.DiffCol > 0 And L.TotalCol > 0 And L.RashCol > 0 Then
-        arr = ColArray(ws, L.FirstRow, L.LastRow, L.DiffCol, True)
-        For i = 1 To nRows
-            r = L.FirstRow + i - 1
-            f = SafeStr(arr(i))
-            want = "=ROUND(" & A1(ws, r, L.TotalCol) & "-" & A1(ws, r, L.RashCol) & ",2)"
-            If Len(f) = 0 Or UCase$(Left$(f, 7)) = "=ROUND(" Then
-                If StrComp(Replace(f, "$", ""), want, vbTextCompare) <> 0 Then
-                    ws.Cells(r, L.DiffCol).Formula = want
-                End If
-            End If
-        Next i
-    End If
-
     ' 3) итоги "Чамъ" по всем строкам данных
     If L.TotalCol > 0 Then c1 = L.TotalCol Else c1 = L.AreaFirst
     If L.AreaLast >= c1 Then
@@ -770,20 +1515,6 @@ Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
             End If
         Next c
     End If
-
-    ' 4) итоги "Расходы" и "Разница" (общая разница: 0 - все суммы совпали)
-    For Each extra In Array(L.RashCol, L.DiffCol)
-        c = extra
-        If c > 0 Then
-            f = SafeStr(ws.Cells(L.SumRow, c).Formula)
-            If Len(f) = 0 Or IsSimpleSum(f) Then
-                want = "=SUM(" & A1(ws, L.FirstRow, c) & ":" & A1(ws, L.LastRow, c) & ")"
-                If StrComp(Replace(f, "$", ""), want, vbTextCompare) <> 0 Then
-                    ws.Cells(L.SumRow, c).Formula = want
-                End If
-            End If
-        End If
-    Next extra
 End Sub
 
 ' Формула "Хамаги" в строке r: сумма по всей области сумм. Ставится, если
@@ -817,9 +1548,8 @@ Private Function IsGibSheet(ByVal ws As Worksheet) As Boolean
     Dim k As String
     Dim other As Worksheet
 
-    ' Лист, подготовленный программой «Распределение по ГИБ», помечен
-    ' скрытым именем GIB_ON. Если в книге есть такая пометка - работаем
-    ' только на помеченном листе, название листа значения не имеет.
+    ' Лист, подготовленный программой «Распределение по ГИБ», помечен скрытым
+    ' именем GIB_ON. Если в книге есть такая пометка - работаем только на нём.
     If SheetParam(ws, "GIB_ON") <> 0 Then
         IsGibSheet = True
         Exit Function
@@ -833,8 +1563,7 @@ Private Function IsGibSheet(ByVal ws As Worksheet) As Boolean
                  (InStr(k, "BUDZHET") > 0) Or (InStr(k, "BUDGET") > 0)
 End Function
 
-' Числовое значение скрытого имени уровня листа (GIB_ON, GIB_HDR, GIB_COL).
-' 0 - имени нет.
+' Числовое значение скрытого имени уровня листа (GIB_ON, GIB_HDR, GIB_COL). 0 - имени нет.
 Private Function SheetParam(ByVal ws As Worksheet, ByVal key As String) As Long
     Dim nm As Name
     Dim n As String
@@ -915,7 +1644,7 @@ End Function
 ' amts(1..N), возвращает N. missingAmt = True, если встретился "ГИБ <код>"
 ' без суммы. Понимаются записи: "ГИБ 2211-140,00", "ГИБ 2211 - 140",
 ' "ГИБ:2211-1 500,50", "гиб2211-140.5", "ГИБ 2211-1.500,00" и несколько
-' ГИБ в одном тексте.
+' ГИБ в одном тексте. 5-значный код возвращается 4-значным (GibKey).
 Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double, _
                           missingAmt As Boolean, Optional longCode As Boolean) As Long
     Dim t As String, ch As String, code As String
@@ -942,16 +1671,15 @@ Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double
                 Exit Do
             End If
         Loop
-        ' код ГИБ: 4 цифры; если цифр больше (до 8) - берутся первые 4,
-        ' а строка подсвечивается для проверки
+        ' код ГИБ: от 3 до 8 цифр
         q = p
         Do While q <= n
             If Not IsDigitChar(Mid$(t, q, 1)) Then Exit Do
             q = q + 1
         Loop
-        If q - p >= 4 And q - p <= 8 Then
-            code = Mid$(t, p, 4)
-            If q - p > 4 Then longCode = True
+        If q - p >= 3 And q - p <= 8 Then
+            code = Mid$(t, p, q - p)
+            If q - p > CODE_LEN Then longCode = True
             ' разделитель между кодом и суммой: тире, двоеточие, "=" или пробел
             p = q
             Do While p <= n
@@ -980,7 +1708,7 @@ Private Function ParseGib(ByVal s As String, codes() As String, amts() As Double
                     ReDim Preserve codes(1 To 2 * cnt)
                     ReDim Preserve amts(1 To 2 * cnt)
                 End If
-                codes(cnt) = code
+                codes(cnt) = GibKey(code)
                 amts(cnt) = amt
                 q = pEnd
             Else
@@ -1117,6 +1845,12 @@ End Function
 Private Function IsDigitChar(ByVal ch As String) As Boolean
     If Len(ch) <> 1 Then Exit Function
     IsDigitChar = (ch >= "0" And ch <= "9")
+End Function
+
+' Код сметы для распределения: первые 4 цифры, 5-я - подпункт
+' ("22111" и "22112" -> "2211").
+Private Function GibKey(ByVal code As String) As String
+    If Len(code) > CODE_LEN Then GibKey = Left$(code, CODE_LEN) Else GibKey = code
 End Function
 
 Private Function SameCode(ByVal a As String, ByVal b As String) As Boolean
@@ -1271,23 +2005,16 @@ Private Sub SetFlag(ByVal c As Range, ByVal flagOn As Boolean)
     End If
 End Sub
 
-' Подсветка назначения: розовая - нет ГИБ/суммы, желтая - в ГИБ больше 4 цифр.
+' Подсветка назначения: красная - нет ГИБ/суммы, желтая - в ГИБ больше 4 цифр.
 Private Sub SetMark(ByVal c As Range, ByVal flagOn As Boolean, ByVal checkOn As Boolean)
     If flagOn Then
         SetFlag c, True
     ElseIf checkOn Then
+        SetFlag c, False
         If c.Interior.Color <> CHECK_COLOR Then c.Interior.Color = CHECK_COLOR
     Else
         SetFlag c, False
         If c.Interior.Color = CHECK_COLOR Then c.Interior.Pattern = xlNone
-    End If
-End Sub
-
-Private Sub AddCheck(rep As TReport, ByVal r As Long)
-    rep.CheckCount = rep.CheckCount + 1
-    If rep.CheckCount <= MAX_LIST Then
-        If Len(rep.CheckRows) > 0 Then rep.CheckRows = rep.CheckRows & ", "
-        rep.CheckRows = rep.CheckRows & CStr(r)
     End If
 End Sub
 
@@ -1305,15 +2032,13 @@ Private Sub ReportResult(rep As TReport)
     Dim s As String
 
     s = "ГИБ: обработано назначений - " & rep.TextRows
+    If rep.addedRows > 0 Then s = s & "; добавлено строк: " & rep.addedRows
     If Len(rep.newCodes) > 0 Then s = s & "; новые столбцы: " & rep.newCodes
     If rep.ProblemCount > 0 Then
         s = s & "; без ГИБ/суммы: " & rep.ProblemCount & " (строки " & rep.ProblemRows & ")"
     End If
-    If rep.CheckCount > 0 Then
-        s = s & "; ГИБ больше 4 цифр, проверьте: " & rep.CheckCount & " (строки " & rep.CheckRows & ")"
-    End If
     mLastReport = s
-    If rep.TextRows > 0 Or Len(rep.newCodes) > 0 Then SetStatus s
+    If rep.TextRows > 0 Or rep.addedRows > 0 Or Len(rep.newCodes) > 0 Then SetStatus s
 End Sub
 
 Private Sub SetStatus(ByVal s As String)
@@ -1353,3 +2078,4 @@ Private Sub ShowMsg(ByVal msgText As String, ByVal icon As VbMsgBoxStyle)
     If Not Application.Visible Then Exit Sub
     MsgBox msgText, icon, "Распределение по ГИБ"
 End Sub
+

@@ -2,10 +2,8 @@
 from constants import XL_CALC_MANUAL, XL_DOWN, XL_GREEN, XL_YELLOW
 from excel_columns import col_values, ensure_gib_columns, gib_columns
 from excel_com import WriteError, make_backup, open_workbook
-from excel_reconcile import (
-    fill_total_formulas, mark_no_gib, read_reconciliation,
-    setup_reconciliation, verify_rows
-)
+from excel_reconcile import fill_total_formulas, read_reconciliation, setup_reconciliation
+from excel_verify import mark_no_gib, verify_rows
 from utils import to_number
 
 
@@ -59,8 +57,8 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
         recon = setup_reconciliation(ws, header_row, purpose_col, first_row, last_row)
 
         progress(15, "Проверяю столбцы ГИБ…")
-        needed = sorted({code for _, gibs in items for code in gibs})
-        created = ensure_gib_columns(ws, header_row, needed, purpose_col)
+        needed = sorted({code for _, gibs in items for code in gibs}, key=int)
+        created = ensure_gib_columns(ws, header_row, needed, purpose_col, start_col=recon["rash"] + 1)
 
         progress(50, "Ставлю суммы…")
         gib_cols = gib_columns(ws, header_row)
@@ -71,12 +69,22 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
         r1 = min(r for r, _ in items)
         r2 = max(r for r, _ in items)
         replaced = 0
+        item_rows = {r: g for r, g in items}
         for code, col in gib_cols.items():
             mine = {r: g[code] for r, g in items if code in g}
-            if not mine:
-                continue
             cur = col_values(ws, col, r1, r2, "Formula")
             out = list(cur)
+            # как в образце: строка заполняется заново по тексту — суммы ГИБ, которых
+            # в назначении больше нет, стираются (формулы не трогаем)
+            cleared = []
+            for r, g in item_rows.items():
+                old = cur[r - r1]
+                if code not in g and old not in ("", None) and not str(old).startswith("="):
+                    out[r - r1] = ""
+                    cleared.append(r)
+                    replaced += 1
+            if not mine and out == list(cur):
+                continue
             for r, amount in mine.items():
                 old = cur[r - r1]
                 if old not in ("", None) and to_number(old) != amount:
@@ -85,10 +93,13 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
             ws.Range(ws.Cells(r1, col), ws.Cells(r2, col)).Formula = [(v,) for v in out]
             for r in mine:
                 ws.Cells(r, col).Interior.Color = XL_YELLOW if r in check else XL_GREEN
+            for r in cleared:
+                if int(ws.Cells(r, col).Interior.Color) in (XL_GREEN, XL_YELLOW):
+                    ws.Cells(r, col).Interior.Pattern = -4142      # наша подсветка больше не нужна
         for code in created:
             ws.Cells(header_row, gib_cols[code]).Interior.Color = XL_GREEN
 
-        fill_total_formulas(ws, header_row, recon["total"], first_row, last_row)
+        fill_total_formulas(ws, header_row, recon["total"], first_row, last_row, recon["rash"])
 
         if old_calc is not None:
             xl.Calculation = old_calc
@@ -96,7 +107,7 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
         xl.Calculate()
         progress(90, "Сверяю итоги…")
         check_res = verify_rows(ws, items, header_row, r2)
-        check_res["recon"] = read_reconciliation(ws, header_row, first_row, last_row)
+        check_res["recon"] = read_reconciliation(ws, header_row, first_row, last_row, recon["rash"])
         progress(95, "Сохраняю…")
         wb.Save()
         progress(100, "Готово")

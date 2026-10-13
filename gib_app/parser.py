@@ -7,8 +7,8 @@
 import re
 from dataclasses import dataclass, field
 
-# «ГИБ» (или GIB), до 4 разделителей, код (4–8 цифр; ГИБ — первые 4), затем тире/двоеточие/«=» или пробел
-GIB_RE = re.compile(r"(?:ГИБ|GIB)[ :.\-#№]{0,4}(\d{4,8})(?!\d)( *[-:=] *| +)(?=\d)", re.IGNORECASE)
+# «ГИБ» (или GIB), до 4 разделителей, код (3–8 цифр; если больше 4 — ГИБ первые 4), затем тире/двоеточие/«=» или пробел
+GIB_RE = re.compile(r"(?:ГИБ|GIB)[ :.\-#№]{0,4}(\d{3,8})(?!\d)( *[-:=] *| +)(?=\d)", re.IGNORECASE)
 SPACES = dict.fromkeys(map(ord, "\t\r\n           "
                                 " ​  　﻿"), " ")
 DASHES = dict.fromkeys(map(ord, "­‐‑‒–—―−﹣－"), "-")
@@ -65,14 +65,15 @@ def read_amount(t: str, p: int):
 def parse_purpose_ex(text: str):
     """→ ({код_ГИБ: сумма}, [длинные коды]). Один и тот же ГИБ в строке суммируется.
 
-    Если после «ГИБ» больше 4 цифр (например, 22110), ГИБ — первые 4 (2211),
-    а сам длинный код возвращается отдельно: такую строку нужно проверить.
+    Код — 3–8 цифр, как в макросе образца. Если цифр больше 4 (например, 22110 — смета
+    с подпунктом), ГИБ — первые 4 (2211), а длинный код возвращается отдельно: строку
+    подсвечиваем жёлтым для проверки.
     """
     t = str(text or "").translate(SPACES).translate(DASHES)
     result, long_codes, pos = {}, [], 0
     while m := GIB_RE.search(t, pos):
         raw = m.group(1)
-        code = raw[:4]
+        code = raw[:4] if len(raw) > 4 else raw
         if len(raw) > 4:
             long_codes.append(raw)
         amount, pos = read_amount(t, m.end())

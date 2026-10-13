@@ -84,7 +84,7 @@ def swap_constants(ws, a: int, b: int):
         ws.Cells(r, b).Value = va[r - 1]
 
 
-def ensure_gib_columns(ws, header_row: int, needed: list, pcol: int) -> list:
+def ensure_gib_columns(ws, header_row: int, needed: list, pcol: int, start_col: int | None = None) -> list:
     """Создаёт недостающие столбцы ГИБ по возрастанию кода. Возвращает список созданных."""
     created = []
     if needed and ws.Cells(header_row, pcol).Value in (None, ""):
@@ -95,6 +95,12 @@ def ensure_gib_columns(ws, header_row: int, needed: list, pcol: int) -> list:
             continue
         created.append(code)
         if not cols:
+            if start_col:
+                # как в образце: первый столбец ГИБ — сразу за «Расходы»
+                if ws.Cells(header_row, start_col).Value not in (None, ""):
+                    ws.Columns(start_col).Insert(Shift=XL_TO_RIGHT, CopyOrigin=XL_FORMAT_FROM_LEFT_OR_ABOVE)
+                ws.Cells(header_row, start_col).Value = int(code)
+                continue
             _, last_col = used_bounds(ws)
             vals = row_values(ws, header_row, last_col)
             last = max((i for i, v in enumerate(vals, 1) if v not in (None, "")), default=0)
@@ -102,13 +108,13 @@ def ensure_gib_columns(ws, header_row: int, needed: list, pcol: int) -> list:
             continue
         last_gib_col = max(cols.values())
         header_val = ws.Cells(header_row, last_gib_col + 1).Value
-        if max(cols, key=int) < code and header_val in (None, "") and not has_formulas(ws, last_gib_col):
+        if max(int(k) for k in cols) < int(code) and header_val in (None, "") and not has_formulas(ws, last_gib_col):
             ws.Cells(header_row, last_gib_col + 1).Value = int(code)
             continue
 
         ordered = sorted(cols.items(), key=lambda kv: kv[1])
         first_col, last_gib_col = ordered[0][1], ordered[-1][1]
-        bigger = [c for k, c in ordered if k > code]
+        bigger = [c for k, c in ordered if int(k) > int(code)]
         swap = None
         if bigger and bigger[0] != first_col:
             pos = bigger[0]

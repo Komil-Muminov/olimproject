@@ -24,6 +24,26 @@ class TestParser(unittest.TestCase):
         self.assertEqual(res, {"2211": 500.0})
         self.assertEqual(longs, ["22110"])
 
+    def test_sub_items_sum_into_one_column(self):
+        # как в образце: «ГИБ 22111-600,00» и «ГИБ 22112-550,00» — 1150,00 в одном столбце 2211
+        res, longs = parse_purpose_ex("ГИБ 22111-600,00 ГИБ 22112-550,00")
+        self.assertEqual(res, {"2211": 1150.0})
+        self.assertEqual(longs, ["22111", "22112"])
+
+    def test_three_digit_code(self):
+        # как в образце: код из 3 цифр — тоже ГИБ
+        res, longs = parse_purpose_ex("ГИБ 221-10")
+        self.assertEqual(res, {"221": 10.0})
+        self.assertEqual(longs, [])
+
+    def test_inn_not_taken_as_amount(self):
+        self.assertEqual(parse_purpose("ГИБ 2211-140 020012345"), {"2211": 140.0})
+
+    def test_gib_header_codes(self):
+        self.assertEqual(gib_code(2211), "2211")
+        self.assertEqual(gib_code("221 Хизмат"), "221")
+        self.assertIsNone(gib_code("111110 Хазина"))      # счёт листа «мухо» — не ГИБ
+
     def test_multiple_gib(self):
         res, _ = parse_purpose_ex("ГИБ 2111-100 и ГИБ 2211-200.50")
         self.assertEqual(res, {"2111": 100.0, "2211": 200.50})

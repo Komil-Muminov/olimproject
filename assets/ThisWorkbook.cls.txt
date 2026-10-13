@@ -1,0 +1,47 @@
+Option Explicit
+
+' Любое изменение ячеек передается в модуль modGIB. Он сам проверяет,
+' что это лист бюджета (в названии есть "бучет") и что изменен
+' столбец "Номгуи корхонахо", и только тогда распределяет суммы по ГИБ.
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+    GIB_HandleChange Sh, Target
+End Sub
+
+' Красная надпись "Макросы отключены" хранится в файле видимой: если макросы
+' не включены, пользователь сразу видит, почему суммы не заполняются.
+' Как только макросы работают (открытие или "Включить содержимое") - прячем ее.
+Private Sub Workbook_Open()
+    Dim wasSaved As Boolean
+
+    wasSaved = Me.Saved
+    GIB_SetMacroWarning False
+    GIB_SnapshotSheet ActiveSheet
+    If wasSaved Then Me.Saved = True
+End Sub
+
+' Снимок строки "Чамъ" и подписей листа бюджета: по нему восстанавливается
+' низ таблицы, если вставка оказалась длиннее таблицы.
+Private Sub Workbook_SheetActivate(ByVal Sh As Object)
+    Dim wasSaved As Boolean
+
+    wasSaved = Me.Saved
+    GIB_SnapshotSheet Sh
+    If wasSaved Then Me.Saved = True
+End Sub
+
+Private Sub Workbook_BeforeSave(ByVal SaveAsUI As Boolean, Cancel As Boolean)
+    GIB_SetMacroWarning True
+End Sub
+
+Private Sub Workbook_AfterSave(ByVal Success As Boolean)
+    GIB_SetMacroWarning False
+    If Success Then Me.Saved = True
+End Sub
+
+Private Sub Workbook_Deactivate()
+    GIB_ClearStatus
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    GIB_ClearStatus
+End Sub

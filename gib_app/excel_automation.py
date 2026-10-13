@@ -5,13 +5,23 @@ from excel_com import WriteError
 from excel_reconcile import setup_reconciliation
 
 
+# кнопки — как в «Банк+муҳосибӣ (Бучет) -ислох шуда.xlsm»: (имя, подпись, макрос, x, ширина)
+BUTTONS = (
+    ("btnGibRecalc", "Пересчитать ГИБ", "GIB_RecalcSheet", 3, 118),
+    ("btnGibAddRows", "Добавить строки", "GIB_AddRows", 125, 124),
+    ("btnGibFreeze", "Зафиксировать распределение", "GIB_FreezeDistribution", 253, 180),
+    ("btnGibUnfreeze", "Снять фиксацию", "GIB_UnfreezeDistribution", 437, 120),
+)
+
+
 def add_controls(ws):
-    """Кнопка «Пересчитать ГИБ» и красная надпись «Макросы выключены»."""
-    btn = ws.Buttons().Add(3, 4, 130, 22)
-    btn.Name = "btnGibRecalc"
-    btn.Caption = "Пересчитать ГИБ"
-    btn.OnAction = "GIB_RecalcSheet"
-    btn.PrintObject = False
+    """Кнопки макроса в верхней строке и красная надпись «Макросы выключены»."""
+    for name, caption, macro, x, width in BUTTONS:
+        btn = ws.Buttons().Add(x, 4, width, 22)
+        btn.Name = name
+        btn.Caption = caption
+        btn.OnAction = macro
+        btn.PrintObject = False
 
     warn = ws.Shapes.AddTextbox(1, 2, 1, 640, 28)
     warn.Name = "gibMacroWarning"

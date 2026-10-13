@@ -59,7 +59,7 @@ def format_plan_description(plan) -> tuple[str, bool]:
         parts.append("Все нужные столбцы ГИБ уже есть")
     if plan.done:
         parts.append(f"<span style='color:#64748B'>Уже заполнено раньше: {len(plan.done)} — их не трогаем</span>")
-    parts.append("Для сверки с выпиской будут столбцы «Расходы» и «Разница»")
+    parts.append("Сверка с выпиской — в столбце «Расходы» сразу за «Ҳамагӣ»: 0 — сумма совпала")
     parts.append(f"<span style='color:#64748B'>Лист «{plan.sheet}», назначения в столбце "
                  f"{get_column_letter(lay.purpose_col)}, строки {lay.first_row}–{lay.last_row}</span>")
     return "<br>".join(parts), True
@@ -78,14 +78,15 @@ def format_done_summary(res: dict, plan) -> tuple[list, list]:
 
     recon = check.get("recon")
     if recon and recon["empty"]:
-        lines.append("📋 Сверка: вставьте суммы из выписки в столбец «Расходы» — «Разница» посчитается сама.")
+        lines.append("📋 Сверка: вставьте суммы из выписки в столбец «Расходы» и снова нажмите «Заполнить ГИБ» — "
+                     "в ячейках появится баланс (0 — сумма совпала).")
     elif recon and not recon["bad_rows"]:
-        lines.append("✓ Сверка с выпиской: все суммы совпали, разница 0.")
+        lines.append("✓ Сверка с выпиской: во всех строках «Расходы» баланс 0 — суммы совпали.")
 
     warn = [format_warnings(plan, after=True)] if format_warnings(plan) else []
     if recon and recon["bad_rows"] and not recon["empty"]:
         warn.append(f"⚠ Сверка с выпиской: не сходится — {rows_list(recon['bad_rows'])}, "
-                    f"общая разница {format_money(recon['total_diff'])}. В столбце «Разница» такие строки подсвечены красным.")
+                    f"общий баланс {format_money(recon['total_diff'])}. В столбце «Расходы» такие ячейки красные.")
     bad = [g for g in check["gibs"] if not (g["written_ok"] and g["total_ok"])]
     for g in bad:
         warn.append(f"⚠ ГИБ {g['code']}: итог «{format_money(g['total'] or 0)}» не равен сумме столбца {format_money(g['column_sum'])}")
@@ -97,14 +98,15 @@ def format_embed_summary(res: dict, plan) -> tuple[list, str]:
     if plan.items:
         lines.append(f"Сразу заполнено назначений: <b>{len(plan.items)}</b>"
                      + (f", созданы столбцы: <b>{', '.join(plan.new_codes)}</b>" if plan.new_codes else ""))
-    lines.append("Добавлены столбцы «Расходы» и «Разница» — для сверки с выпиской.")
+    lines.append("Сверка с выпиской — столбец «Расходы» сразу за «Ҳамагӣ».")
     lines += ["", "<b>Как работать дальше:</b>",
               "1. Откройте этот файл в Excel и нажмите «Включить содержимое» на жёлтой панели.",
               "2. Вставляйте назначения в столбец назначений — ГИБ проставятся сами.",
-              "   Суммы из выписки вставляйте в «Расходы» — «Разница» покажет, где не сходится.",
-              "3. Кнопка «Пересчитать ГИБ» вверху листа — заново пройтись по всем назначениям."]
+              "   Суммы из выписки вставляйте в «Расходы» — там появится баланс (0 — сумма совпала).",
+              "3. Кнопки вверху листа: «Пересчитать ГИБ», «Добавить строки»,",
+              "   «Зафиксировать распределение» и «Снять фиксацию»."]
     warn = "Исходный файл не изменён." + (
         "<br>" + format_warnings(plan, after=True).replace("Пропущено, заполните вручную.",
-                                                           "В Excel эти строки подсвечены розовым.")
+                                                           "В Excel эти строки подсвечены красным.")
         if plan.no_gib else "")
     return lines, warn

@@ -8,7 +8,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from constants import XL_OPENXML
 
 CELL_RE = re.compile(r"^\s*([A-Za-z]{1,3})\s*(\d+)\s*$")
-GIB_HEADER_RE = re.compile(r"^\s*(\d{4})(?!\d)")
+GIB_HEADER_RE = re.compile(r"^\s*(\d{3,4})(?!\d)")
 
 
 def parse_cell(addr: str):
