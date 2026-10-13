@@ -1,18 +1,16 @@
 """Главное окно: старт (ГИБ / Глубокий анализ), страница файла и результат."""
 import os
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPushButton, QStackedWidget, QVBoxLayout, QWidget
-)
+from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from constants import EXCEL_EXT
-from styles import STYLE
 import ui_flow
+import ui_registry_flow
 from ui_actions import (execute_check, execute_compare, execute_embed, load_plan,
                         render_found_info, update_option_marks)
+from ui_registry import build_registry_card
 from ui_start import build_start_card
-from ui_views import build_found_card, build_result_card
+from ui_views import build_found_card, build_header, build_result_card
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +24,7 @@ class MainWindow(QMainWindow):
         self._gib_text = ""
         self.mode = "fill"
         self.st_path = self.tg_path = self.st_pays = self.tg_sheets = None
+        self.registry, self.reg_paths, self.back_page = None, [], 0
 
         root = QWidget()
         root.setObjectName("root")
@@ -34,23 +33,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(40, 30, 40, 30)
         lay.setSpacing(16)
 
-        header_lay = QHBoxLayout()
-        header_info = QVBoxLayout()
-        title = QLabel("Распределение по ГИБ")
-        title.setObjectName("appTitle")
-        header_info.addWidget(title)
-        sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — сравнение и проверка по ИНН.")
-        sub.setObjectName("muted")
-        header_info.addWidget(sub)
-        header_lay.addLayout(header_info)
-        header_lay.addStretch()
-
-        self.catalog_btn = QPushButton("📖  Справочник ГИБ")
-        self.catalog_btn.setObjectName("secondary")
-        self.catalog_btn.setToolTip("Просмотр и редактирование статей расходов бюджетной классификации")
-        self.catalog_btn.clicked.connect(self.open_catalog)
-        header_lay.addWidget(self.catalog_btn)
-        lay.addLayout(header_lay)
+        lay.addLayout(build_header(self))
 
         self.pages = QStackedWidget()
         lay.addWidget(self.pages, 1)
@@ -58,6 +41,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(build_start_card(self))
         self.pages.addWidget(build_found_card(self))
         self.pages.addWidget(build_result_card(self))
+        self.pages.addWidget(build_registry_card(self))
         self.update_start()
 
     def update_start(self):
@@ -65,6 +49,12 @@ class MainWindow(QMainWindow):
 
     def go_start(self):
         if not self.worker:
+            self.pages.setCurrentIndex(self.back_page)
+            self.back_page = 0
+
+    def registry_back(self):
+        if not self.worker:
+            self.registry = None            # освободить память (свод большой)
             self.pages.setCurrentIndex(0)
 
     def choose_statement(self):
@@ -108,15 +98,27 @@ class MainWindow(QMainWindow):
             for f in files[:2]:     # первый — выписка, второй — куда заполнить
                 (ui_flow.set_target if self.st_path and f != self.st_path else ui_flow.set_statement)(self, f)
         else:
-            self.load(files[0])
+            self.open_files(files)
 
     def choose_file(self):
         if self.worker:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Выберите файл выписки", self.settings.value("last_dir", ""),
-                                              "Excel (*.xlsx *.xlsm *.xls)")
-        if path:
-            self.load(path)
+        if ui_flow.current_mode(self) == "analysis":
+            paths, _ = QFileDialog.getOpenFileNames(self, "Выберите файл (или несколько реестров платежей)",
+                                                    self.settings.value("last_dir", ""), ui_flow.EXCEL_FILTER)
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Выберите файл", self.settings.value("last_dir", ""),
+                                                  ui_flow.EXCEL_FILTER)
+            paths = [path] if path else []
+        if paths:
+            self.open_files(paths)
+
+    def open_files(self, paths):
+        self.settings.setValue("last_dir", os.path.dirname(paths[0]))
+        if ui_flow.current_mode(self) == "analysis":
+            ui_registry_flow.start_scan(self, paths)
+        else:
+            self.load(paths[0])
 
     def load(self, path):
         load_plan(self, path, ui_flow.current_mode(self))

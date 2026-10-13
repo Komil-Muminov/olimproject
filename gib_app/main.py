@@ -7,7 +7,8 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from ui import STYLE, MainWindow  # noqa: E402
+from styles import STYLE  # noqa: E402
+from ui import MainWindow  # noqa: E402
 
 
 def resource(name):

@@ -8,6 +8,27 @@ from PySide6.QtWidgets import (
 from ui_helpers import BACKUP_NOTE
 
 
+def build_header(win):
+    """Название программы, подпись и кнопка «Справочник ГИБ»."""
+    header = QHBoxLayout()
+    info = QVBoxLayout()
+    title = QLabel("Распределение по ГИБ")
+    title.setObjectName("appTitle")
+    info.addWidget(title)
+    sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — сравнение и проверка по ИНН, "
+                 "реестры платежей.")
+    sub.setObjectName("muted")
+    info.addWidget(sub)
+    header.addLayout(info)
+    header.addStretch()
+    win.catalog_btn = QPushButton("📖  Справочник ГИБ")
+    win.catalog_btn.setObjectName("secondary")
+    win.catalog_btn.setToolTip("Просмотр и редактирование статей расходов бюджетной классификации")
+    win.catalog_btn.clicked.connect(win.open_catalog)
+    header.addWidget(win.catalog_btn)
+    return header
+
+
 def build_found_card(win):
     card = QFrame()
     card.setObjectName("card")

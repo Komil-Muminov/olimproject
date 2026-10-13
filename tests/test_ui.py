@@ -15,7 +15,7 @@ class TestMainWindow(unittest.TestCase):
     def test_window_starts(self):
         from ui import MainWindow
         w = MainWindow()
-        self.assertEqual(w.pages.count(), 3)
+        self.assertEqual(w.pages.count(), 4)
         self.assertIn("Справочник", w.catalog_btn.text())
         self.assertTrue(w.fill_box.isVisibleTo(w))          # ГИБ → «Заполнить ГИБ»: два файла
         w.embed_radio.setChecked(True)
