@@ -37,14 +37,23 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(40, 30, 40, 30)
         lay.setSpacing(16)
 
+        header_lay = QHBoxLayout()
+        header_info = QVBoxLayout()
         title = QLabel("Распределение по ГИБ")
         title.setObjectName("appTitle")
-        title.setAlignment(Qt.AlignCenter)
-        lay.addWidget(title)
+        header_info.addWidget(title)
         sub = QLabel("Заполнение столбцов ГИБ по назначениям и сравнение списков по ИНН.")
         sub.setObjectName("muted")
-        sub.setAlignment(Qt.AlignCenter)
-        lay.addWidget(sub)
+        header_info.addWidget(sub)
+        header_lay.addLayout(header_info)
+        header_lay.addStretch()
+
+        self.catalog_btn = QPushButton("📖  Справочник ГИБ")
+        self.catalog_btn.setObjectName("secondary")
+        self.catalog_btn.setToolTip("Просмотр и редактирование статей расходов бюджетной классификации")
+        self.catalog_btn.clicked.connect(self.open_catalog)
+        header_lay.addWidget(self.catalog_btn)
+        lay.addLayout(header_lay)
 
         self.pages = QStackedWidget()
         lay.addWidget(self.pages, 1)
@@ -175,3 +184,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self._busy(False)
         QMessageBox.critical(self, "Ошибка", err)
+
+    def open_catalog(self):
+        from catalog_dialog import CatalogDialog
+        CatalogDialog(self).exec()
