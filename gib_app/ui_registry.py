@@ -54,7 +54,7 @@ def build_registry_card(win):
     lay.addWidget(win.reg_export_btn, 0, Qt.AlignLeft)
     lay.addStretch()
 
-    note = QLabel("Исходные файлы не меняются: результат — новый Excel-файл в папке с реестрами.")
+    note = QLabel("Исходные файлы не меняются: результат — новый Excel-файл в папке «Свод по глубокому анализу».")
     note.setObjectName("muted")
     lay.addWidget(note)
     btns = QHBoxLayout()

@@ -81,14 +81,15 @@ def report(win):
     if not reg or win.worker:
         return
     months = sorted(m for i in reg.files for m in i.main_months)
-    path = registry_report_path(win.reg_paths[0], period_label(months))
+    path = registry_report_path(period_label(months))
     _run(win, write_registry_report, path, reg, done=lambda res: _reported(win, res))
 
 
 def _reported(win, res):
     _idle(win)
     c = res["counts"]
-    lines = [f"Создан файл: <b>{os.path.basename(res['path'])}</b>", ""]
+    lines = [f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
+             f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", ""]
     lines += [f"{k}: <b>{_int(v)}</b>" for k, v in c]
     show_result(win, True, "✓  Свод по ИНН готов", lines, path=res["path"], note="Исходные файлы не изменены.")
     win.back_page = REGISTRY_PAGE
@@ -120,13 +121,14 @@ def export(win):
     inn = getattr(win, "reg_found_inn", None)
     if not inn or win.worker:
         return
-    path = inn_report_path(win.reg_paths[0], inn)
+    path = inn_report_path(inn)
     _run(win, write_inn_payments, path, win.reg_paths, inn, done=lambda res: _exported(win, res))
 
 
 def _exported(win, res):
     _idle(win)
-    show_result(win, True, "✓  Платежи выгружены", [f"Создан файл: <b>{os.path.basename(res['path'])}</b>", "",
+    show_result(win, True, "✓  Платежи выгружены", [f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
+                f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
                 f"Платил: <b>{res['paid']}</b> платежей", f"Получал: <b>{res['got']}</b> платежей"],
                 path=res["path"], note="Исходные файлы не изменены.")
     win.back_page = REGISTRY_PAGE

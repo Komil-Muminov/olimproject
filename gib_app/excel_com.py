@@ -4,22 +4,11 @@ import shutil
 from contextlib import contextmanager
 from datetime import datetime
 
+from app_paths import backup_dir
+
 
 class WriteError(Exception):
     pass
-
-
-def backup_dir() -> str:
-    """Папка «_резервные копии» в корне проекта: рядом с gib_app при запуске из исходников,
-    рядом с GIB.exe (а если exe лежит в dist — уровнем выше) при запуске программы."""
-    import sys
-    if getattr(sys, "frozen", False):
-        base = os.path.dirname(os.path.abspath(sys.executable))
-        if os.path.basename(base).lower() == "dist":
-            base = os.path.dirname(base)
-    else:
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, "_резервные копии")
 
 
 def make_backup(path: str, wb, own: bool) -> str:

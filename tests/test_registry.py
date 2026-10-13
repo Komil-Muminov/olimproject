@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from registry_analysis import gone_and_new, jumps, party_rows, search  # noqa: E402
 from registry_read import Payment, inn_text, registry_columns, to_payment  # noqa: E402
 from registry_stats import Registry, period_label  # noqa: E402
+from app_paths import ANALYSIS_FOLDER  # noqa: E402
+from report_paths import registry_report_path  # noqa: E402
 from report_registry_errors import inn_in_name  # noqa: E402
 
 HEAD = ["№ Документа", "Дата документа", "Дата учета", "Плательщик", "ИНН Плат", "Счет Плательщика", "Сумма",
@@ -80,6 +82,13 @@ class TestRegistryStats(unittest.TestCase):
     def test_inn_in_name(self):
         self.assertEqual(inn_in_name("Сарраесати хазинадори ИНН 010010058"), "010010058")
         self.assertEqual(inn_in_name("счёт 20204972221022300242"), "")
+
+
+class TestPaths(unittest.TestCase):
+    def test_report_goes_to_analysis_folder(self):
+        path = registry_report_path("Янв–Дек 2024")
+        self.assertEqual(os.path.basename(os.path.dirname(path)), ANALYSIS_FOLDER)
+        self.assertTrue(os.path.basename(path).startswith("Свод по ИНН (Янв–Дек 2024)"))
 
 
 if __name__ == "__main__":

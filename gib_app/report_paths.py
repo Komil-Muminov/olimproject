@@ -1,5 +1,8 @@
-"""Генерация путей к создаваемым отчетам (рядом с исходным файлом, без перезаписи)."""
+"""Пути к создаваемым отчетам (без перезаписи): сравнение и проверка — рядом с исходным файлом,
+свод реестров и выгрузки по ИНН — в папке «Свод по глубокому анализу»."""
 import os
+
+from app_paths import analysis_dir
 
 
 def unique_path(base: str) -> str:
@@ -20,11 +23,11 @@ def check_report_path(src: str) -> str:
     return unique_path(f"{os.path.splitext(src)[0]} — проверка ИНН")
 
 
-def registry_report_path(src: str, period: str) -> str:
-    """«Свод по ИНН (Янв–Дек 2024).xlsx» в папке первого реестра."""
-    return unique_path(os.path.join(os.path.dirname(src), f"Свод по ИНН ({period})"))
+def registry_report_path(period: str) -> str:
+    """«Свод по ИНН (Янв–Дек 2024).xlsx» в папке «Свод по глубокому анализу» (корень проекта)."""
+    return unique_path(os.path.join(analysis_dir(), f"Свод по ИНН ({period})"))
 
 
-def inn_report_path(src: str, inn: str) -> str:
-    """«Платежи ИНН 040000011.xlsx» в папке первого реестра."""
-    return unique_path(os.path.join(os.path.dirname(src), f"Платежи ИНН {inn}"))
+def inn_report_path(inn: str) -> str:
+    """«Платежи ИНН 040000011.xlsx» в папке «Свод по глубокому анализу»."""
+    return unique_path(os.path.join(analysis_dir(), f"Платежи ИНН {inn}"))
