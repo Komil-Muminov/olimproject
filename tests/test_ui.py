@@ -31,18 +31,10 @@ class TestMainWindow(unittest.TestCase):
         self.assertGreater(dlg.table.rowCount(), 0)
         dlg.close()
 
-    def test_registry_inn_selector(self):
+    def test_registry_inn_search(self):
         from ui import MainWindow
-        from registry_index import clean_inn_query
-        from ui_registry_inn import populate_inn_view
         from registry_stats import Registry, Party
         w = MainWindow()
-        self.assertTrue(hasattr(w, "reg_table"))
-        self.assertEqual(w.reg_table.columnCount(), 4)
-
-        self.assertEqual(clean_inn_query("040000011  ·  ООО Тест (100 ₽)"), "040000011")
-        self.assertEqual(clean_inn_query("  040000011  "), "040000011")
-
         reg = Registry()
         f = reg.start_file("test.xlsx", "Лист1")
         p = Party("040000011")
@@ -51,17 +43,18 @@ class TestMainWindow(unittest.TestCase):
         p.counts[f] = 3
         reg.payers["040000011"] = p
         reg.finish()
-
-        populate_inn_view(w, reg)
-        self.assertEqual(w.reg_table.rowCount(), 1)
-        self.assertEqual(w.reg_table.item(0, 0).text(), "040000011")
-
         w.registry = reg
-        w.reg_table.cellClicked.emit(0, 0)
+        self.assertTrue(w.reg_found_box.isHidden())
+        w.reg_inn.setText(" 40000011 ")                     # потерянный ноль и пробелы
+        w.reg_find_btn.click()
         self.assertIn("040000011", w.reg_found.text())
+        self.assertFalse(w.reg_found_box.isHidden())
         self.assertFalse(w.reg_export_btn.isHidden())
+        w.reg_inn.setText("123")
+        w.reg_find_btn.click()
+        self.assertIn("не найден", w.reg_found.text())
+        self.assertTrue(w.reg_export_btn.isHidden())
         w.close()
-
 
 if __name__ == "__main__":
     unittest.main()

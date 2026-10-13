@@ -2,40 +2,42 @@
 from html import escape
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout
 
 from utils import format_money
 
-LIST_VIEW, FOUND_VIEW = 0, 1
-
 
 def build_found_panel(win):
-    box = QFrame()
+    """Карточка под полем ввода; скрыта, пока ничего не искали."""
+    box = win.reg_found_box = QFrame()
     box.setObjectName("foundBox")
     lay = QVBoxLayout(box)
-    lay.setContentsMargins(18, 14, 18, 14)
-    lay.setSpacing(10)
+    lay.setContentsMargins(16, 10, 16, 10)
+    lay.setSpacing(6)
     win.reg_found = QLabel()
     win.reg_found.setTextFormat(Qt.RichText)
     win.reg_found.setWordWrap(True)
     win.reg_found.setTextInteractionFlags(Qt.TextSelectableByMouse)
-    lay.addWidget(win.reg_found)
-    lay.addStretch()
+    win.reg_found.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+    scroll = QScrollArea()          # на маленьком экране таблица прокручивается, окно не растёт
+    scroll.setWidget(win.reg_found)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setMinimumHeight(90)
+    scroll.viewport().setStyleSheet("background: white;")
+    win.reg_found.setStyleSheet("background: white;")
+    lay.addWidget(scroll, 1)
     btns = QHBoxLayout()
-    back = QPushButton("←  К списку")
-    back.clicked.connect(lambda: show_list(win))
-    btns.addWidget(back)
-    btns.addStretch()
+    win.reg_found_note = QLabel()
+    win.reg_found_note.setObjectName("muted")
+    btns.addWidget(win.reg_found_note, 1)
     win.reg_export_btn = QPushButton("📄  Все платежи этого ИНН — в Excel")
     win.reg_export_btn.setObjectName("secondary")
     win.reg_export_btn.setVisible(False)
     btns.addWidget(win.reg_export_btn)
     lay.addLayout(btns)
+    box.setVisible(False)
     return box
-
-
-def show_list(win):
-    win.reg_view.setCurrentIndex(LIST_VIEW)
 
 
 def _money(r, i):
@@ -47,7 +49,7 @@ def found_html(res: dict, labels: list) -> str:
     p, r = res["payer"], res["rec"]
     main = p or r
     other = r.name if p and r and r.name != p.name else ""
-    head = (f"<div style='font-size:14pt; font-weight:600; color:#0F172A'>{escape(main.name)}</div>"
+    head = (f"<div style='font-size:13pt; font-weight:600; color:#0F172A'>{escape(main.name)}</div>"
             f"<div style='color:#64748B'>ИНН {main.inn}" + (f" · как получатель: {escape(other)}" if other else "") + "</div>")
     th = "<td bgcolor='#F1F5F9' align='{a}'><b>{t}</b></td>"
     rows = ["<tr>" + th.format(a="left", t="Период") + th.format(a="right", t="Платил")
@@ -60,9 +62,8 @@ def found_html(res: dict, labels: list) -> str:
                 f"<td bgcolor='#EFF6FF' align='right'><b>{total(r)}</b></td></tr>")
     rows.append(f"<tr><td style='color:#64748B'>Платежей</td><td align='right' style='color:#64748B'>{count(p)}</td>"
                 f"<td align='right' style='color:#64748B'>{count(r)}</td></tr>")
-    table = "<table width='100%' cellspacing='0' cellpadding='7'>" + "".join(rows) + "</table>"
-    notes = [f"{t}: {x.status}" for t, x in (("Платил", p), ("Получал", r)) if x and x.status]
-    return head + "<br>" + table + (f"<p style='color:#64748B'>{' · '.join(notes)}</p>" if notes else "")
+    table = "<table width='100%' cellspacing='0' cellpadding='4'>" + "".join(rows) + "</table>"
+    return head + table
 
 
 def show_found(win, res: dict, labels: list, raw: str):
@@ -70,5 +71,7 @@ def show_found(win, res: dict, labels: list, raw: str):
     win.reg_found_inn = hit.inn if hit else None
     win.reg_found.setText(found_html(res, labels) if hit else
                           f"<p style='font-size:12pt'>«{escape(raw)}» не найден ни среди плательщиков, ни среди получателей.</p>")
+    win.reg_found_note.setText(" · ".join(f"{t}: {x.status}" for t, x in (("Платил", res["payer"]), ("Получал", res["rec"]))
+                                          if x and x.status))
     win.reg_export_btn.setVisible(bool(hit))
-    win.reg_view.setCurrentIndex(FOUND_VIEW)
+    win.reg_found_box.setVisible(True)

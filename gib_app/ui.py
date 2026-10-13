@@ -1,7 +1,7 @@
 """Главное окно: старт (ГИБ / Глубокий анализ), страница файла и результат."""
 import os
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from constants import EXCEL_EXT
 import ui_flow
@@ -17,7 +17,8 @@ class MainWindow(QMainWindow):
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("Распределение по ГИБ")
-        self.resize(900, 640)
+        avail = QApplication.primaryScreen().availableGeometry().height()
+        self.resize(900, max(640, min(760, avail - 60)))       # повыше, если экран позволяет
         self.setAcceptDrops(True)
         self.settings = settings or QSettings("Olim", "GibDistributor")
         self.plan = self.worker = self.backup = self.result_path = None

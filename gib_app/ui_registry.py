@@ -1,12 +1,11 @@
 """Карточка «Реестры платежей»: итоги по файлам, «Свод по ИНН», поиск по ИНН."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QStackedWidget, QVBoxLayout
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QVBoxLayout
 )
 
 import ui_registry_flow as flow
 from ui_registry_found import build_found_panel
-from ui_registry_inn import build_inn_selector, on_text_edited
 
 
 def _label(name, rich=True):
@@ -25,36 +24,28 @@ def build_registry_card(win):
     lay.setContentsMargins(28, 24, 28, 24)
     lay.setSpacing(12)
 
-    win.reg_files = _label("fileName", rich=False)
-    lay.addWidget(win.reg_files)
-    win.reg_info = _label("bigText")
+    win.reg_info = _label("regInfo")
     lay.addWidget(win.reg_info)
     win.reg_progress = QProgressBar()
     win.reg_progress.setVisible(False)
     lay.addWidget(win.reg_progress)
 
-    title = QLabel("🔎  Поиск по ИНН")
-    title.setObjectName("cmpTitle")
-    lay.addWidget(title)
     row = QHBoxLayout()
     win.reg_inn = QLineEdit()
     win.reg_inn.setObjectName("bigSelect")
-    win.reg_inn.setPlaceholderText("Введите ИНН или часть названия — список ниже отфильтруется")
-    win.reg_inn.setMaxLength(100)
+    win.reg_inn.setPlaceholderText("🔎  Поиск по ИНН: введите ИНН, например 040000011, и нажмите Enter")
+    win.reg_inn.setMaxLength(20)
     win.reg_inn.setClearButtonEnabled(True)
     win.reg_inn.returnPressed.connect(lambda: flow.find(win))
-    win.reg_inn.textEdited.connect(lambda _: on_text_edited(win))
     row.addWidget(win.reg_inn, 1)
     win.reg_find_btn = QPushButton("Найти")
     win.reg_find_btn.clicked.connect(lambda: flow.find(win))
     row.addWidget(win.reg_find_btn)
     lay.addLayout(row)
 
-    win.reg_view = QStackedWidget()         # список ИНН / карточка найденного ИНН
-    win.reg_view.addWidget(build_inn_selector(win))
-    win.reg_view.addWidget(build_found_panel(win))
+    lay.addWidget(build_found_panel(win), 1)
     win.reg_export_btn.clicked.connect(lambda: flow.export(win))
-    lay.addWidget(win.reg_view, 1)
+    lay.addStretch()
 
     note = QLabel("Исходные файлы не меняются: результат — новый Excel-файл в папке «Свод по глубокому анализу».")
     note.setObjectName("muted")

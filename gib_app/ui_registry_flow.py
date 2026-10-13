@@ -9,9 +9,7 @@ from registry_stats import period_label
 from report_inn import write_inn_payments
 from report_paths import inn_report_path, registry_report_path
 from report_registry import write_registry_report
-from registry_index import clean_inn_query
 from ui_registry_found import show_found
-from ui_registry_inn import populate_inn_view, reset_inn_view
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -48,9 +46,10 @@ def _idle(win):
 def start_scan(win, paths: list):
     """Файлы из «Глубокого анализа»: реестры читаются в фоне; один обычный файл — по-старому."""
     win.registry, win.reg_paths = None, list(paths)
-    reset_inn_view(win)
-    win.reg_files.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths))
-    win.reg_info.setText("Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
+    win.reg_inn.clear()
+    win.reg_found_box.setVisible(False)
+    win.reg_info.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths)
+                         + "<br>Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
     win.reg_export_btn.setVisible(False)
     win.pages.setCurrentIndex(REGISTRY_PAGE)
     _run(win, scan_registries, win.reg_paths, done=lambda res: _scanned(win, res))
@@ -76,7 +75,6 @@ def _scanned(win, res):
                  f"<b>{format_money(sum(i.total for i in reg.files))}</b> · плательщиков {_int(len(reg.payers))}, "
                  f"получателей {_int(len(reg.recs))}")
     win.reg_info.setText("<br>".join(lines))
-    populate_inn_view(win, reg)
     _idle(win)
 
 
@@ -99,14 +97,11 @@ def _reported(win, res):
     win.back_page = REGISTRY_PAGE
 
 
-def find(win, inn_val=None):
+def find(win):
     reg = win.registry
-    raw = (inn_val or win.reg_inn.text()).strip()
-    if not reg or not raw:
-        return
-    inn = clean_inn_query(raw, reg)
-    win.reg_inn.setText(inn)
-    show_found(win, search(reg, inn), [reg.files[f].label for f in reg.order], raw)
+    raw = win.reg_inn.text().strip()
+    if reg and raw:
+        show_found(win, search(reg, raw), [reg.files[f].label for f in reg.order], raw)
 
 
 def export(win):
