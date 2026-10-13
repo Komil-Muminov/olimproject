@@ -1,8 +1,8 @@
 """Диалоговое окно управления справочником кодов ГИБ (просмотр, добавление, редактирование, удаление)."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget,
+    QDialog, QFormLayout, QHBoxLayout, QHeaderView,
+    QLineEdit, QMessageBox, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout
 )
 

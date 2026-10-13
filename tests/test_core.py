@@ -4,8 +4,8 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
-from parser import parse_purpose, parse_purpose_ex, read_amount, to_number, normalize
-from compare import compare_keyword, key_of, match_key, norm_text
+from parser import parse_purpose, parse_purpose_ex, to_number
+from compare_finder import compare_keyword, key_of, match_key
 from excel_io import parse_cell, cell_name, gib_code
 
 

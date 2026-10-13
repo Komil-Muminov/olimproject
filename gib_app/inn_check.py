@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from compare_finder import find_tables, match_key
+from compare_finder import find_tables
 from constants import SUM_ROW_LABELS as TOTAL_LABELS
 from utils import cell_val as _cell, norm_text
 

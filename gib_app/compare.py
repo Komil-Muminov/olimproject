@@ -1,9 +1,9 @@
 """Сравнение двух списков по ИНН / РМА («Муқоиса»)."""
 from openpyxl.utils import get_column_letter
 
-from compare_finder import compare_keyword, find_lists, find_tables, key_of, match_key
-from compare_models import Diff, SideList, metric_key, metric_title
-from utils import cell_val, norm_text, to_num_safe, to_number
+from compare_finder import compare_keyword, find_lists
+from compare_models import Diff, metric_key, metric_title
+from utils import cell_val, norm_text, to_num_safe
 
 # Обратная совместимость для приватных импортов
 _cell = cell_val
