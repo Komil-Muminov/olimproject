@@ -3,7 +3,7 @@ import os
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton
 
-from excel_io import embed_automation, fill_in_place
+from excel_io import embed_automation
 from report import check_report_path, report_path, write_check_report, write_compare_report
 from ui_helpers import (
     format_done_summary, format_embed_summary, format_warnings,
@@ -42,7 +42,7 @@ def update_option_marks(win):
 
 def render_found_info(win):
     parts = [win._gib_text] if win._gib_text else []
-    if win.plan.inn:
+    if win.plan.inn and win.mode == "analysis":
         parts.append(f"🧾 Таблиц с ИНН: <b>{len(win.plan.inn.tables)}</b>"
                      f"<span style='color:#64748B'> — кнопка «Проверить ИНН» найдёт дубликаты, "
                      f"разные названия одного ИНН и неправильные ИНН.</span>")
@@ -107,19 +107,6 @@ def execute_compare(win):
     win.backup_label.setText("Исходный файл не изменён.")
     win.backup_btn.setVisible(False)
     win.pages.setCurrentIndex(2)
-
-
-def execute_run(win):
-    p = win.plan
-    if not p or not p.items:
-        return
-    win._busy(True)
-    win.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items,
-                        p.layout.first_row, p.layout.last_row, [r for r, _ in p.long_codes], p.no_gib)
-    win.worker.progress.connect(lambda v, t: (win.progress.setValue(v), win.progress.setFormat(f"{t}  %p%")))
-    win.worker.done.connect(win._done)
-    win.worker.failed.connect(win._failed)
-    win.worker.start()
 
 
 def execute_embed(win):

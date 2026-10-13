@@ -17,6 +17,12 @@ class TestMainWindow(unittest.TestCase):
         w = MainWindow()
         self.assertEqual(w.pages.count(), 3)
         self.assertIn("Справочник", w.catalog_btn.text())
+        self.assertTrue(w.fill_box.isVisibleTo(w))          # ГИБ → «Заполнить ГИБ»: два файла
+        w.embed_radio.setChecked(True)
+        self.assertFalse(w.fill_box.isVisibleTo(w))
+        w.mode_group.button(1).click()                      # Глубокий анализ: один файл
+        self.assertFalse(w.gib_box.isVisibleTo(w))
+        self.assertTrue(w.drop.isVisibleTo(w))
         w.close()
 
     def test_catalog_dialog_opens(self):

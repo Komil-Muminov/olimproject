@@ -65,6 +65,9 @@ def build_found_card(win):
     fl.addWidget(win.progress)
 
     btns = QHBoxLayout()
+    back = QPushButton("←  Назад")
+    back.clicked.connect(win.go_start)
+    btns.addWidget(back)
     other = QPushButton("Другой файл")
     other.clicked.connect(win.choose_file)
     btns.addWidget(other)
@@ -94,11 +97,6 @@ def build_found_card(win):
                             "неправильные ИНН. Проверяются все таблицы с ИНН на всех листах.")
     win.chk_btn.clicked.connect(win.run_check)
     btns.addWidget(win.chk_btn)
-
-    win.go_btn = QPushButton("Заполнить ГИБ")
-    win.go_btn.setObjectName("primary")
-    win.go_btn.clicked.connect(win.run)
-    btns.addWidget(win.go_btn)
 
     fl.addLayout(btns)
     return card
@@ -134,8 +132,8 @@ def build_result_card(win):
     rl.addWidget(win.backup_label)
 
     rb = QHBoxLayout()
-    again = QPushButton("Открыть другой файл")
-    again.clicked.connect(win.choose_file)
+    again = QPushButton("←  В начало")
+    again.clicked.connect(win.go_start)
     rb.addWidget(again)
     rb.addStretch()
 

@@ -10,8 +10,8 @@ from utils import to_number
 
 
 def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=None, last_row=None,
-                  check_rows=(), no_gib_rows=(), progress=lambda p, t: None):
-    """Суммы ставятся в те же строки, где стоят назначения."""
+                  check_rows=(), no_gib_rows=(), progress=lambda p, t: None, backup=True):
+    """Суммы ставятся в те же строки, где стоят назначения. backup=False — копию уже сделали."""
     import pythoncom
     import pywintypes
     import win32com.client
@@ -21,13 +21,16 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
     pythoncom.CoInitialize()
     progress(2, "Подключаюсь к Excel…")
     xl, wb, own = open_workbook(win32com.client, pywintypes, path)
-    backup = None
+    make_copy, backup = backup, None
     old_calc = old_screen = None
+    old_events = xl.EnableEvents
     try:
         if wb.ReadOnly:
             raise WriteError("Файл открыт только для чтения (возможно, его открыл другой пользователь).")
-        progress(5, "Делаю копию файла…")
-        backup = make_backup(path, wb, own)
+        xl.EnableEvents = False             # макросы книги (если есть) не мешают записи
+        if make_copy:
+            progress(5, "Делаю копию файла…")
+            backup = make_backup(path, wb, own)
         try:
             ws = wb.Worksheets(sheet_name)
         except pywintypes.com_error:
@@ -130,6 +133,7 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
                 xl.Calculation = old_calc
             if old_screen is not None:
                 xl.ScreenUpdating = old_screen
+            xl.EnableEvents = old_events
         except Exception:
             pass
         if own:

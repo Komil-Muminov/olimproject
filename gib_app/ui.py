@@ -1,6 +1,6 @@
-"""Главное окно приложения: выбор выписки, просмотр плана и запуск обработки."""
+"""Главное окно: старт (ГИБ / Глубокий анализ), страница файла и результат."""
 import os
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QStackedWidget, QVBoxLayout, QWidget
@@ -9,14 +9,11 @@ from PySide6.QtWidgets import (
 from constants import EXCEL_EXT
 from planner import Plan
 from styles import STYLE
-from ui_actions import (
-    execute_check, execute_compare, execute_embed, execute_run,
-    populate_compare_options, render_found_info, update_option_marks
-)
-from ui_helpers import (
-    format_done_summary, format_embed_summary, format_plan_description,
-    format_warnings
-)
+import ui_flow
+from ui_actions import (execute_check, execute_compare, execute_embed, populate_compare_options,
+                        render_found_info, update_option_marks)
+from ui_helpers import format_embed_summary, format_plan_description, format_warnings
+from ui_start import build_start_card
 from ui_views import build_found_card, build_result_card
 
 
@@ -29,6 +26,8 @@ class MainWindow(QMainWindow):
         self.settings = settings or QSettings("Olim", "GibDistributor")
         self.plan = self.worker = self.backup = self.result_path = None
         self._gib_text = ""
+        self.mode = "fill"
+        self.st_path = self.tg_path = self.st_pays = self.tg_sheets = None
 
         root = QWidget()
         root.setObjectName("root")
@@ -42,7 +41,7 @@ class MainWindow(QMainWindow):
         title = QLabel("Распределение по ГИБ")
         title.setObjectName("appTitle")
         header_info.addWidget(title)
-        sub = QLabel("Заполнение столбцов ГИБ по назначениям и сравнение списков по ИНН.")
+        sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — сравнение и проверка по ИНН.")
         sub.setObjectName("muted")
         header_info.addWidget(sub)
         header_lay.addLayout(header_info)
@@ -58,12 +57,36 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         lay.addWidget(self.pages, 1)
 
-        self.drop = QPushButton("📂\n\nПеретащите сюда файл выписки\nили нажмите, чтобы выбрать")
-        self.drop.setObjectName("dropZone")
-        self.drop.clicked.connect(self.choose_file)
-        self.pages.addWidget(self.drop)
+        self.pages.addWidget(build_start_card(self))
         self.pages.addWidget(build_found_card(self))
         self.pages.addWidget(build_result_card(self))
+        self.update_start()
+
+    def update_start(self):
+        ui_flow.update_start(self)
+
+    def go_start(self):
+        if not self.worker:
+            self.pages.setCurrentIndex(0)
+
+    def choose_statement(self):
+        path = ui_flow.pick(self, "1. Выберите выписку")
+        if path:
+            ui_flow.set_statement(self, path)
+
+    def choose_target(self):
+        path = ui_flow.pick(self, "2. Выберите файл, куда заполнить")
+        if path:
+            ui_flow.set_target(self, path)
+
+    def update_fill_info(self):
+        ui_flow.update_fill_info(self)
+
+    def run_fill(self):
+        ui_flow.run_fill(self)
+
+    def _filled(self, res):
+        ui_flow.show_filled(self, res)
 
     def open_file(self):
         if self.plan:
@@ -81,7 +104,12 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls() if u.toLocalFile().lower().endswith(EXCEL_EXT)]
-        if files and not self.worker:
+        if not files or self.worker:
+            return
+        if self.pages.currentIndex() == 0 and ui_flow.current_mode(self) == "fill":
+            for f in files[:2]:     # первый — выписка, второй — куда заполнить
+                (ui_flow.set_target if self.st_path and f != self.st_path else ui_flow.set_statement)(self, f)
+        else:
             self.load(files[0])
 
     def choose_file(self):
@@ -102,25 +130,23 @@ class MainWindow(QMainWindow):
         self.plan = plan
         self.file_label.setText("📄  " + os.path.basename(path))
         self.warn_text.setText("")
-        lay = plan.layout
-        gib = bool(lay or plan.header_only)
+        self.mode = ui_flow.current_mode(self)
+        analysis = self.mode == "analysis"
+        gib = not analysis and bool(plan.layout or plan.header_only)
         self.embed_btn.setEnabled(gib)
         self.embed_btn.setVisible(gib)
-        self.go_btn.setVisible(bool(lay))
-        self.cmp_btn.setVisible(bool(plan.compare))
-        self.chk_btn.setVisible(bool(plan.inn))
+        self.cmp_btn.setVisible(analysis and bool(plan.compare))
+        self.chk_btn.setVisible(analysis and bool(plan.inn))
         self.note.setVisible(gib)
-
-        text, enabled = format_plan_description(plan)
-        if not gib and (plan.compare or plan.inn):
-            self.found_text.setText("")
+        self.cmp_row.setVisible(analysis and bool(plan.compares))
+        if analysis:
+            self._gib_text = "" if (plan.compare or plan.inn) else "В этом файле не нашлось таблиц с ИНН."
+            populate_compare_options(self)
         else:
-            self.found_text.setText(text)
-            self.go_btn.setEnabled(enabled)
-        self._gib_text = self.found_text.text()
-        self.cmp_row.setVisible(bool(plan.compares))
-        populate_compare_options(self)
-        self.warn_text.setText(format_warnings(plan))
+            self._gib_text = format_plan_description(plan)[0]
+            self.found_text.setText(self._gib_text)
+            self.found_text.setVisible(True)
+            self.warn_text.setText(format_warnings(plan))
         self.pages.setCurrentIndex(1)
 
     def _compare_sheet_changed(self, i):
@@ -135,14 +161,10 @@ class MainWindow(QMainWindow):
     def run_compare(self):
         execute_compare(self)
 
-    def run(self):
-        execute_run(self)
-
     def embed(self):
         execute_embed(self)
 
     def _busy(self, on):
-        self.go_btn.setEnabled(not on and bool(self.plan and self.plan.items))
         self.embed_btn.setEnabled(not on)
         self.progress.setVisible(on)
         self.progress.setValue(0)
@@ -166,23 +188,11 @@ class MainWindow(QMainWindow):
         self.result_head.style().unpolish(self.result_head)
         self.result_head.style().polish(self.result_head)
 
-    def _done(self, res):
-        self.worker = None
-        self.progress.setVisible(False)
-        check = res["check"]
-        self.result_path = self.plan.path
-        self._set_head(check["ok"], "✓  Готово" if check["ok"] else "⚠  Готово, но итоги не сходятся")
-        lines, warn = format_done_summary(res, self.plan)
-        self.result_text.setText("<br>".join(lines))
-        self.result_warn.setText("<br>".join(warn))
-        self.backup = res.get("backup")
-        self.backup_label.setText(f"🛡  Копия файла до изменений: {self.backup}" if self.backup else "")
-        self.backup_btn.setVisible(bool(self.backup))
-        self.pages.setCurrentIndex(2)
-
     def _failed(self, err):
         self.worker = None
         self._busy(False)
+        self.fill_progress.setVisible(False)
+        self.update_fill_info()
         QMessageBox.critical(self, "Ошибка", err)
 
     def open_catalog(self):

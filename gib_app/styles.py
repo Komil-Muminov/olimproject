@@ -18,6 +18,12 @@ QPushButton#dropZone:hover { border-color: #2563EB; color: #2563EB; background: 
 QPushButton#primary { background: #2563EB; color: white; border: none; padding: 12px 28px; font-weight: 600; font-size: 12pt; }
 QPushButton#primary:hover { background: #1D4ED8; }
 QPushButton#primary:disabled { background: #94A3B8; }
+QPushButton#modeCard { background: white; border: 2px solid #E2E8F0; border-radius: 12px; padding: 16px;
+                       font-size: 14pt; font-weight: 600; color: #475569; }
+QPushButton#modeCard:hover { border-color: #93C5FD; }
+QPushButton#modeCard:checked { border-color: #2563EB; background: #EFF6FF; color: #1E3A8A; }
+QRadioButton { font-size: 11pt; color: #0F172A; padding: 4px 0; }
+QLabel#fileCaption { font-size: 11pt; font-weight: 600; color: #334155; }
 QFrame#cmpBox { background: transparent; border: none; }
 QLabel#cmpTitle { font-size: 11pt; font-weight: 600; color: #334155; padding-bottom: 4px; }
 QLabel#cmpInfo { font-size: 10pt; color: #64748B; padding-top: 6px; }
