@@ -1,113 +1,23 @@
-"""Интерфейс: открыть выписку → «Заполнить ГИБ» → готово.
-
-Программа сама находит лист, столбец с назначениями и строку шапки, ставит суммы
-в столбцы ГИБ той же строки (недостающие создаёт) и сохраняет этот же файл.
-"""
+"""Главное окно приложения: выбор выписки, просмотр плана и запуск обработки."""
 import os
-import sys
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtWidgets import (
+    QFileDialog, QLabel, QMainWindow, QMessageBox,
+    QPushButton, QStackedWidget, QVBoxLayout, QWidget
+)
 
-from openpyxl.utils import get_column_letter
-from PySide6.QtCore import QSettings, Qt, QThread, Signal
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                               QProgressBar, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
-
-from compare import best_compare, find_compares
-from detect import by_header, detect, sheet_score
-from excel_io import Book, WriteError, embed_automation, fill_in_place
-from parser import parse_purpose_ex, to_number
-from inn_check import check_inn
-from report import check_report_path, report_path, write_check_report, write_compare_report
-
-EXCEL_EXT = (".xlsx", ".xlsm", ".xls")
-
-
-def fmt(x):
-    return f"{x:,.2f}".replace(",", " ").replace(".", ",")
-
-
-def rows_list(rows, limit=8):
-    """«строка 48» / «строки 48, 52, 60 и ещё 3»"""
-    shown = ", ".join(str(r) for r in rows[:limit])
-    return ("строка " if len(rows) == 1 else "строки ") + shown + (
-        f" и ещё {len(rows) - limit}" if len(rows) > limit else "")
-
-
-def template_path():
-    """Шаблон с макросом — рядом с программой (и внутри exe)."""
-    base = getattr(sys, "_MEIPASS", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-    return os.path.join(base, "assets", "gib_template.xlsm")
-
-
-class Worker(QThread):
-    progress = Signal(int, str)
-    done = Signal(dict)
-    failed = Signal(str)
-
-    def __init__(self, func, *args):
-        super().__init__()
-        self.func, self.args = func, args
-
-    def run(self):
-        try:
-            self.done.emit(self.func(*self.args, progress=lambda p, t: self.progress.emit(p, t)))
-        except WriteError as e:
-            self.failed.emit(str(e))
-        except Exception as e:  # ошибки COM и прочее
-            self.failed.emit(f"{type(e).__name__}: {e}")
-
-
-class Plan:
-    """Что нашлось в файле и что будет сделано."""
-
-    def __init__(self, path):
-        self.path = path
-        book = Book(path)
-        # лист сравнения двух списков по ИНН («Муқоиса», «Сравнение»…) — (лист, Diff, список1, список2)
-        self.compares = find_compares(book.sheets)
-        # все таблицы с ИНН на всех листах — для проверки (дубликаты, названия, неправильные ИНН)
-        self.inn = check_inn(book.sheets)
-        best = best_compare(self.compares)
-        self.compare = self.compares[best] if self.compares else None
-        # лист, где больше всего назначений с ГИБ
-        scores = {n: sheet_score(d) for n, d in book.sheets.items()}
-        self.sheet = max(scores, key=scores.get) if scores else None
-        data = book.sheets.get(self.sheet, [])
-        self.layout = detect(data) if self.sheet else None
-        self.items, self.no_gib, self.done, self.mismatch = [], [], [], []
-        self.long_codes = []          # (строка, ["22110", …]) — в ГИБ больше 4 цифр, взяты первые 4
-        self.codes, self.new_codes, self.total = [], [], 0.0
-        # назначений ещё нет (пустой Бучет) — автоматику всё равно можно встроить по заголовку
-        self.header_only = None
-        if not self.layout:
-            for name in [self.sheet] + [n for n in book.sheets if n != self.sheet]:
-                lay = by_header(book.sheets.get(name, []))
-                if lay:
-                    self.sheet, self.header_only = name, lay
-                    break
-            return
-        lay = self.layout
-        for r in range(lay.first_row, lay.last_row + 1):
-            v = Book.value(data, r, lay.purpose_col)
-            if not isinstance(v, str) or not v.strip():
-                continue
-            gibs, longs = parse_purpose_ex(v)
-            if longs:
-                self.long_codes.append((r, longs))
-            if not gibs:
-                self.no_gib.append(r)
-                continue
-            if lay.gib_cols and all(code in lay.gib_cols and to_number(Book.value(data, r, lay.gib_cols[code])) == a
-                                    for code, a in gibs.items()):
-                self.done.append(r)
-                continue
-            if lay.amount_col:
-                paid = to_number(Book.value(data, r, lay.amount_col))
-                if paid is not None and abs(paid - sum(gibs.values())) > 0.005:
-                    self.mismatch.append(r)
-            self.items.append((r, gibs))
-        self.codes = sorted({c for _, g in self.items for c in g})
-        self.new_codes = [c for c in self.codes if c not in lay.gib_cols]
-        self.total = round(sum(sum(g.values()) for _, g in self.items), 2)
+from constants import EXCEL_EXT
+from planner import Plan
+from styles import STYLE
+from ui_actions import (
+    execute_check, execute_compare, execute_embed, execute_run,
+    populate_compare_options, render_found_info, update_option_marks
+)
+from ui_helpers import (
+    format_done_summary, format_embed_summary, format_plan_description,
+    format_warnings
+)
+from ui_views import build_found_card, build_result_card
 
 
 class MainWindow(QMainWindow):
@@ -117,10 +27,7 @@ class MainWindow(QMainWindow):
         self.resize(900, 640)
         self.setAcceptDrops(True)
         self.settings = settings or QSettings("Olim", "GibDistributor")
-        self.plan = None
-        self.worker = None
-        self.backup = None
-        self.result_path = None
+        self.plan = self.worker = self.backup = self.result_path = None
         self._gib_text = ""
 
         root = QWidget()
@@ -129,6 +36,7 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(root)
         lay.setContentsMargins(40, 30, 40, 30)
         lay.setSpacing(16)
+
         title = QLabel("Распределение по ГИБ")
         title.setObjectName("appTitle")
         title.setAlignment(Qt.AlignCenter)
@@ -141,133 +49,13 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         lay.addWidget(self.pages, 1)
 
-        # 1. выбор файла
         self.drop = QPushButton("📂\n\nПеретащите сюда файл выписки\nили нажмите, чтобы выбрать")
         self.drop.setObjectName("dropZone")
         self.drop.clicked.connect(self.choose_file)
         self.pages.addWidget(self.drop)
+        self.pages.addWidget(build_found_card(self))
+        self.pages.addWidget(build_result_card(self))
 
-        # 2. что найдено
-        found = QFrame()
-        found.setObjectName("card")
-        fl = QVBoxLayout(found)
-        fl.setContentsMargins(28, 24, 28, 24)
-        fl.setSpacing(12)
-        self.file_label = QLabel()
-        self.file_label.setObjectName("fileName")
-        fl.addWidget(self.file_label)
-        self.found_text = QLabel()
-        self.found_text.setObjectName("bigText")
-        self.found_text.setWordWrap(True)
-        self.found_text.setTextFormat(Qt.RichText)
-        fl.addWidget(self.found_text)
-        self.cmp_row = QFrame()
-        self.cmp_row.setObjectName("cmpBox")
-        cl = QVBoxLayout(self.cmp_row)
-        cl.setContentsMargins(0, 4, 0, 0)
-        cl.setSpacing(6)
-        title = QLabel("Сравнение по ИНН  ·  выберите лист")
-        title.setObjectName("cmpTitle")
-        cl.addWidget(title)
-        # варианты — строки с точкой ●/○, выбор кликом
-        self.sheet_opts = QVBoxLayout()
-        self.sheet_opts.setSpacing(2)
-        cl.addLayout(self.sheet_opts)
-        self.sheet_group = QButtonGroup(self)
-        self.sheet_group.setExclusive(True)
-        self.sheet_group.idClicked.connect(self._compare_sheet_changed)
-        self.cmp_info = QLabel()
-        self.cmp_info.setObjectName("cmpInfo")
-        self.cmp_info.setWordWrap(True)
-        self.cmp_info.setTextFormat(Qt.RichText)
-        cl.addWidget(self.cmp_info)
-        fl.addWidget(self.cmp_row)
-        self.warn_text = QLabel()
-        self.warn_text.setObjectName("warn")
-        self.warn_text.setWordWrap(True)
-        self.warn_text.setTextFormat(Qt.RichText)
-        fl.addWidget(self.warn_text)
-        fl.addStretch()
-        self.note = note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» рядом с ним.")
-        note.setObjectName("muted")
-        note.setWordWrap(True)
-        fl.addWidget(note)
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        fl.addWidget(self.progress)
-        btns = QHBoxLayout()
-        other = QPushButton("Другой файл")
-        other.clicked.connect(self.choose_file)
-        btns.addWidget(other)
-        view = QPushButton("Открыть в Excel")
-        view.clicked.connect(self.open_file)
-        btns.addWidget(view)
-        btns.addStretch()
-        self.embed_btn = QPushButton("⚙  Встроить автоматику в Excel")
-        self.embed_btn.setObjectName("secondary")
-        self.embed_btn.setToolTip("Создаёт копию файла с макросом: дальше ГИБ проставляются сами,\n"
-                                  "когда вы вставляете назначения прямо в Excel.")
-        self.embed_btn.clicked.connect(self.embed)
-        btns.addWidget(self.embed_btn)
-        self.cmp_btn = QPushButton("🔍  Сравнить по ИНН")
-        self.cmp_btn.setObjectName("primary")
-        self.cmp_btn.setToolTip("Создаёт новый файл с различиями двух списков: новые, пропавшие,\n"
-                                "изменившиеся суммы и дубликаты. Исходный файл не меняется.")
-        self.cmp_btn.clicked.connect(self.run_compare)
-        btns.addWidget(self.cmp_btn)
-        self.chk_btn = QPushButton("🧾  Проверить ИНН")
-        self.chk_btn.setObjectName("secondary")
-        self.chk_btn.setToolTip("Создаёт новый файл: дубликаты ИНН, один ИНН — разные названия,\n"
-                                "неправильные ИНН. Проверяются все таблицы с ИНН на всех листах.")
-        self.chk_btn.clicked.connect(self.run_check)
-        btns.addWidget(self.chk_btn)
-        self.go_btn = QPushButton("Заполнить ГИБ")
-        self.go_btn.setObjectName("primary")
-        self.go_btn.clicked.connect(self.run)
-        btns.addWidget(self.go_btn)
-        fl.addLayout(btns)
-        self.pages.addWidget(found)
-
-        # 3. готово
-        result = QFrame()
-        result.setObjectName("card")
-        rl = QVBoxLayout(result)
-        rl.setContentsMargins(28, 24, 28, 24)
-        rl.setSpacing(12)
-        self.result_head = QLabel()
-        self.result_head.setObjectName("resultOk")
-        rl.addWidget(self.result_head)
-        self.result_text = QLabel()
-        self.result_text.setObjectName("bigText")
-        self.result_text.setWordWrap(True)
-        self.result_text.setTextFormat(Qt.RichText)
-        rl.addWidget(self.result_text)
-        self.result_warn = QLabel()
-        self.result_warn.setObjectName("warn")
-        self.result_warn.setWordWrap(True)
-        self.result_warn.setTextFormat(Qt.RichText)
-        rl.addWidget(self.result_warn)
-        rl.addStretch()
-        self.backup_label = QLabel()
-        self.backup_label.setObjectName("muted")
-        self.backup_label.setWordWrap(True)
-        rl.addWidget(self.backup_label)
-        rb = QHBoxLayout()
-        again = QPushButton("Открыть другой файл")
-        again.clicked.connect(self.choose_file)
-        rb.addWidget(again)
-        rb.addStretch()
-        self.backup_btn = QPushButton("Открыть копию (до изменений)")
-        self.backup_btn.clicked.connect(lambda: self._start_file(self.backup))
-        rb.addWidget(self.backup_btn)
-        self.open_btn = QPushButton("Открыть в Excel")
-        self.open_btn.setObjectName("primary")
-        self.open_btn.clicked.connect(lambda: self._start_file(self.result_path))
-        rb.addWidget(self.open_btn)
-        rl.addLayout(rb)
-        self.pages.addWidget(result)
-
-    # ------------------------------------------------------------ файл
     def open_file(self):
         if self.plan:
             self._start_file(self.plan.path)
@@ -313,207 +101,36 @@ class MainWindow(QMainWindow):
         self.cmp_btn.setVisible(bool(plan.compare))
         self.chk_btn.setVisible(bool(plan.inn))
         self.note.setVisible(gib)
+
+        text, enabled = format_plan_description(plan)
         if not gib and (plan.compare or plan.inn):
             self.found_text.setText("")
-        elif not gib:
-            self.found_text.setText("В этом файле не нашлось ни назначений с «ГИБ XXXX-сумма», "
-                                    "ни таблиц с ИНН.")
-            self.go_btn.setEnabled(False)
-        elif not lay and plan.header_only:
-            h = plan.header_only
-            self.found_text.setText(
-                f"Назначений с ГИБ в файле пока нет.<br><br>"
-                f"Можно <b>встроить автоматику</b>: после этого ГИБ будут проставляться сами, когда вы "
-                f"вставите назначения в столбец {get_column_letter(h.purpose_col)} "
-                f"(лист «{plan.sheet}», заголовок в строке {h.header_row}).")
-            self.go_btn.setEnabled(False)
-        elif not lay:
-            self.found_text.setText("В этом файле не нашлось назначений с «ГИБ XXXX-сумма».")
-            self.go_btn.setEnabled(False)
-        elif not plan.items:
-            self.found_text.setText(f"Все суммы ГИБ уже проставлены ✓<br><br>"
-                                    f"<span style='color:#64748B'>Лист «{plan.sheet}», "
-                                    f"назначений с ГИБ: {len(plan.done)}</span>")
-            self.go_btn.setEnabled(False)
         else:
-            parts = [f"Найдено назначений с ГИБ: <b>{len(plan.items)}</b> на сумму <b>{fmt(plan.total)}</b>",
-                     f"ГИБ: <b>{', '.join(plan.codes)}</b>"]
-            if plan.new_codes:
-                parts.append(f"Будут созданы столбцы: <b>{', '.join(plan.new_codes)}</b>")
-            else:
-                parts.append("Все нужные столбцы ГИБ уже есть")
-            if plan.done:
-                parts.append(f"<span style='color:#64748B'>Уже заполнено раньше: {len(plan.done)} — их не трогаем</span>")
-            parts.append("Для сверки с выпиской будут столбцы «Расходы» и «Разница»")
-            parts.append(f"<span style='color:#64748B'>Лист «{plan.sheet}», назначения в столбце "
-                         f"{get_column_letter(lay.purpose_col)}, строки {lay.first_row}–{lay.last_row}</span>")
-            self.found_text.setText("<br>".join(parts))
-            self.go_btn.setEnabled(True)
+            self.found_text.setText(text)
+            self.go_btn.setEnabled(enabled)
         self._gib_text = self.found_text.text()
         self.cmp_row.setVisible(bool(plan.compares))
-        for btn in self.sheet_group.buttons():
-            self.sheet_group.removeButton(btn)
-            btn.deleteLater()
-        self.opt_texts = []
-        for i, (name, d, a, b) in enumerate(plan.compares):
-            if d.pairs:
-                what = (f"{a.where()[:1].upper() + a.where()[1:]}  ↔  {b.where()}\n"
-                        f"      кто появился, кто пропал и у кого изменилась сумма")
-            else:
-                what = (f"{a.where()[:1].upper() + a.where()[1:]}  ↔  {b.where()}\n"
-                        f"      какие организации есть только в одной части. "
-                        f"В правой части нет сумм — суммы не сравниваются")
-            self.opt_texts.append((name, what))
-            btn = QPushButton()
-            btn.setObjectName("sheetOption")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setChecked(plan.compares[i] is plan.compare)
-            self.sheet_group.addButton(btn, i)
-            self.sheet_opts.addWidget(btn)
-        self._mark_options()
-        self._render_found()
-        self.warn_text.setText(self._warnings(plan))
+        populate_compare_options(self)
+        self.warn_text.setText(format_warnings(plan))
         self.pages.setCurrentIndex(1)
 
     def _compare_sheet_changed(self, i):
         if self.plan and 0 <= i < len(self.plan.compares):
             self.plan.compare = self.plan.compares[i]
-            self._mark_options()
-            self._render_found()
-
-    def _mark_options(self):
-        for i, btn in enumerate(self.sheet_group.buttons()):
-            name, what = self.opt_texts[self.sheet_group.id(btn)]
-            btn.setText(f"{'●' if btn.isChecked() else '○'}   {name}\n      {what}")
-
-    def _render_found(self):
-        parts = [self._gib_text] if self._gib_text else []
-        if self.plan.inn:
-            tabs = self.plan.inn.tables
-            parts.append(f"🧾 Таблиц с ИНН: <b>{len(tabs)}</b>"
-                         f"<span style='color:#64748B'> — кнопка «Проверить ИНН» найдёт дубликаты, "
-                         f"разные названия одного ИНН и неправильные ИНН (пустые, не те цифры, буквы).</span>")
-        self.found_text.setText("<br><br>".join(parts))
-        self.found_text.setVisible(bool(parts))
-        if not self.plan.compare:
-            return
-        sheet, d, a, b = self.plan.compare
-        sheets = ("Итого · Новые · Пропавшие · Изменения · Без изменений · Дубликаты · Разные названия" if d.pairs and a.year and b.year
-                  else "Итого · Только справа · Только слева · " + ("Изменения · Без изменений" if d.pairs else "Есть в обоих")
-                  + " · Дубликаты · Разные названия")
-        self.cmp_info.setText(f"Результат — новый Excel-файл, каждая категория на своём листе: {sheets}. "
-                              f"Исходный файл не меняется.")
+            update_option_marks(self)
+            render_found_info(self)
 
     def run_check(self):
-        p = self.plan
-        if not p or not p.inn:
-            return
-        try:
-            path = write_check_report(check_report_path(p.path), p.path, p.inn)
-        except PermissionError:
-            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
-            return
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"{type(e).__name__}: {e}")
-            return
-        r = p.inn
-        self.result_path = path
-        self._set_head(True, "✓  Проверка готова — всё в порядке" if not r.problems else "✓  Проверка готова")
-        self.result_text.setText("<br>".join([
-            f"Создан файл: <b>{os.path.basename(path)}</b>", "",
-            f"Проверено таблиц с ИНН: <b>{len(r.tables)}</b>",
-            f"👥 Дубликаты ИНН: <b>{len(r.duplicates)}</b>",
-            f"✏ Один ИНН — разные названия: <b>{len(r.names)}</b>",
-            f"⚠ Неправильные ИНН: <b>{len(r.invalid)}</b>"]))
-        self.result_warn.setText("")
-        self.backup = None
-        self.backup_label.setText("Исходный файл не изменён.")
-        self.backup_btn.setVisible(False)
-        self.pages.setCurrentIndex(2)
+        execute_check(self)
 
     def run_compare(self):
-        p = self.plan
-        if not p or not p.compare:
-            return
-        sheet, d, a, b = p.compare
-        try:
-            path = write_compare_report(report_path(p.path, sheet), p.path, sheet, d, a, b)
-        except PermissionError:
-            QMessageBox.critical(self, "Ошибка", "Не удалось сохранить файл — возможно, он открыт в Excel.")
-            return
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"{type(e).__name__}: {e}")
-            return
-        self.result_path = path
-        self._set_head(True, "✓  Сравнение готово")
-        changed = len(d.org_changed)
-        self.result_text.setText("<br>".join([
-            f"Создан файл: <b>{os.path.basename(path)}</b>", "",
-            (f"🆕 Новые: <b>{len(d.only2)}</b>" if a.year and b.year
-             else f"🆕 Только в правой части ({b.span}): <b>{len(d.only2)}</b>"),
-            (f"❌ Пропавшие: <b>{len(d.only1)}</b>" if a.year and b.year
-             else f"❌ Только в левой части ({a.span}): <b>{len(d.only1)}</b>"),
-            *([f"🔄 Изменилась сумма: <b>{changed}</b> орг.",
-               f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
-              else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались — во втором списке их нет)"]),
-            f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>",
-            f"✏ Разные названия при одном ИНН: <b>{len(d.org_names)}</b>"]))
-        self.result_warn.setText("")
-        self.backup = None
-        self.backup_label.setText("Исходный файл не изменён.")
-        self.backup_btn.setVisible(False)
-        self.pages.setCurrentIndex(2)
+        execute_compare(self)
 
-    @staticmethod
-    def _warnings(plan, after=False):
-        w = []
-        if plan.no_gib:
-            w.append(f"⚠ Нет ГИБ в назначении — {rows_list(plan.no_gib)}. "
-                     + ("В Excel эти ячейки красные — заполните вручную." if after
-                        else "Программа это пропустит и выделит красным."))
-        if plan.mismatch:
-            w.append(f"⚠ Сумма ГИБ не равна сумме платежа — {rows_list(plan.mismatch)}. Проверьте.")
-        if plan.long_codes:
-            shown = ", ".join(f"строка {r} ({', '.join(f'{c} → {c[:4]}' for c in codes)})"
-                              for r, codes in plan.long_codes[:6])
-            more = f" и ещё {len(plan.long_codes) - 6}" if len(plan.long_codes) > 6 else ""
-            w.append(f"⚠ В ГИБ больше 4 цифр — взяты первые 4: {shown}{more}. Проверьте"
-                     + (" (в Excel эти строки жёлтые)." if after else "."))
-        return "<br>".join(w)
-
-    # ------------------------------------------------------------ заполнение
     def run(self):
-        p = self.plan
-        if not p or not p.items:
-            return
-        self._busy(True)
-        self.worker = Worker(fill_in_place, p.path, p.sheet, p.layout.purpose_col, p.layout.header_row, p.items,
-                             p.layout.first_row, p.layout.last_row, [r for r, _ in p.long_codes], p.no_gib)
-        self.worker.progress.connect(lambda v, t: (self.progress.setValue(v), self.progress.setFormat(f"{t}  %p%")))
-        self.worker.done.connect(self._done)
-        self.worker.failed.connect(self._failed)
-        self.worker.start()
+        execute_run(self)
 
     def embed(self):
-        p = self.plan
-        lay = p.layout or p.header_only if p else None
-        if not lay:
-            return
-        base = os.path.splitext(p.path)[0]
-        dst, _ = QFileDialog.getSaveFileName(self, "Куда сохранить файл с автоматикой",
-                                             f"{base} (автоматика).xlsm", "Книга Excel с макросами (*.xlsm)")
-        if not dst:
-            return
-        if not dst.lower().endswith(".xlsm"):
-            dst += ".xlsm"
-        self._busy(True)
-        self.worker = Worker(embed_automation, p.path, dst, template_path(), p.sheet,
-                             lay.header_row, lay.purpose_col)
-        self.worker.progress.connect(lambda v, t: (self.progress.setValue(v), self.progress.setFormat(f"{t}  %p%")))
-        self.worker.done.connect(self._embedded)
-        self.worker.failed.connect(self._failed)
-        self.worker.start()
+        execute_embed(self)
 
     def _busy(self, on):
         self.go_btn.setEnabled(not on and bool(self.plan and self.plan.items))
@@ -526,23 +143,9 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.result_path = res["path"]
         self._set_head(True, "✓  Автоматика встроена")
-        p = self.plan
-        lines = [f"Создан файл: <b>{os.path.basename(res['path'])}</b>"]
-        if p.items:
-            lines.append(f"Сразу заполнено назначений: <b>{len(p.items)}</b>"
-                         + (f", созданы столбцы: <b>{', '.join(p.new_codes)}</b>" if p.new_codes else ""))
-        lines.append("Добавлены столбцы «Расходы» и «Разница» — для сверки с выпиской.")
-        lines += ["",
-                  "<b>Как работать дальше:</b>",
-                  "1. Откройте этот файл в Excel и нажмите «Включить содержимое» на жёлтой панели.",
-                  "2. Вставляйте назначения в столбец назначений — ГИБ проставятся сами.",
-                  "   Суммы из выписки вставляйте в «Расходы» — «Разница» покажет, где не сходится.",
-                  "3. Кнопка «Пересчитать ГИБ» вверху листа — заново пройтись по всем назначениям."]
+        lines, warn = format_embed_summary(res, self.plan)
         self.result_text.setText("<br>".join(lines))
-        self.result_warn.setText("Исходный файл не изменён." + (
-            "<br>" + self._warnings(p, after=True).replace("Пропущено, заполните вручную.",
-                                                           "В Excel эти строки подсвечены розовым.")
-            if p.no_gib else ""))
+        self.result_warn.setText(warn)
         self.backup = None
         self.backup_label.setText("")
         self.backup_btn.setVisible(False)
@@ -558,30 +161,10 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.progress.setVisible(False)
         check = res["check"]
-        ok = check["ok"]
         self.result_path = self.plan.path
-        self._set_head(ok, "✓  Готово" if ok else "⚠  Готово, но итоги не сходятся")
-        lines = [f"Заполнено строк: <b>{res['filled']}</b> на сумму <b>{fmt(check['written_sum'])}</b>"]
-        if res["created"]:
-            lines.append(f"Созданы столбцы ГИБ: <b>{', '.join(res['created'])}</b>")
-        if res.get("header_inserted"):
-            lines.append("Над таблицей добавлена строка с номерами ГИБ")
-        lines.append("Всё, что вписала программа, подсвечено <span style='background:#DCFCE7'>&nbsp;зелёным&nbsp;</span>.")
-        if res.get("left_open"):
-            lines.append("Файл был открыт в Excel — изменения уже в нём и сохранены.")
-        recon = check.get("recon")
-        if recon and recon["empty"]:
-            lines.append("📋 Сверка: вставьте суммы из выписки в столбец «Расходы» — «Разница» посчитается сама.")
-        elif recon and not recon["bad_rows"]:
-            lines.append("✓ Сверка с выпиской: все суммы совпали, разница 0.")
+        self._set_head(check["ok"], "✓  Готово" if check["ok"] else "⚠  Готово, но итоги не сходятся")
+        lines, warn = format_done_summary(res, self.plan)
         self.result_text.setText("<br>".join(lines))
-        warn = [self._warnings(self.plan, after=True)] if self._warnings(self.plan) else []
-        if recon and recon["bad_rows"] and not recon["empty"]:
-            warn.append(f"⚠ Сверка с выпиской: не сходится — {rows_list(recon['bad_rows'])}, "
-                        f"общая разница {fmt(recon['total_diff'])}. В столбце «Разница» такие строки подсвечены красным.")
-        bad = [g for g in check["gibs"] if not (g["written_ok"] and g["total_ok"])]
-        for g in bad:
-            warn.append(f"⚠ ГИБ {g['code']}: итог «{fmt(g['total'] or 0)}» не равен сумме столбца {fmt(g['column_sum'])}")
         self.result_warn.setText("<br>".join(warn))
         self.backup = res.get("backup")
         self.backup_label.setText(f"🛡  Копия файла до изменений: {self.backup}" if self.backup else "")
@@ -592,47 +175,3 @@ class MainWindow(QMainWindow):
         self.worker = None
         self._busy(False)
         QMessageBox.critical(self, "Ошибка", err)
-
-
-STYLE = """
-* { font-family: 'Segoe UI'; font-size: 10pt; }
-QMainWindow, QWidget#root { background: #F5F7FB; }
-QLabel#appTitle { font-size: 22pt; font-weight: 700; color: #0F172A; }
-QLabel#muted { color: #64748B; }
-QLabel#fileName { font-size: 13pt; font-weight: 600; color: #0F172A; }
-QLabel#bigText { font-size: 12pt; color: #0F172A; line-height: 150%; }
-QLabel#warn { font-size: 11pt; color: #B45309; }
-QLabel#resultOk { font-size: 20pt; font-weight: 700; color: #16A34A; }
-QLabel#resultBad { font-size: 20pt; font-weight: 700; color: #DC2626; }
-QFrame#card { background: white; border: 1px solid #E2E8F0; border-radius: 16px; }
-QPushButton { background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 8px; padding: 8px 16px; color: #0F172A; }
-QPushButton:hover { background: #E2E8F0; }
-QPushButton#dropZone { border: 2px dashed #CBD5E1; border-radius: 16px; color: #64748B; font-size: 15pt; background: white; }
-QPushButton#dropZone:hover { border-color: #2563EB; color: #2563EB; background: #EFF6FF; }
-QPushButton#primary { background: #2563EB; color: white; border: none; padding: 12px 28px; font-weight: 600; font-size: 12pt; }
-QPushButton#primary:hover { background: #1D4ED8; }
-QPushButton#primary:disabled { background: #94A3B8; }
-QFrame#cmpBox { background: transparent; border: none; }
-QLabel#cmpTitle { font-size: 11pt; font-weight: 600; color: #334155; padding-bottom: 4px; }
-QLabel#cmpInfo { font-size: 10pt; color: #64748B; padding-top: 6px; }
-QLabel#cmpArrow { font-size: 22pt; color: #94A3B8; padding: 0 4px; }
-QLabel#listCard { background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 8px; }
-QPushButton#sheetOption { background: transparent; border: none; border-radius: 8px; padding: 9px 12px;
-                          text-align: left; font-size: 10.5pt; color: #64748B; }
-QPushButton#sheetOption:hover { background: #F1F5F9; }
-QPushButton#sheetOption:checked { background: #EFF6FF; color: #1E3A8A; }
-QComboBox#bigSelect { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
-                      font-size: 11pt; color: #0F172A; min-height: 22px; }
-QComboBox#bigSelect:hover { border-color: #2563EB; }
-QComboBox#bigSelect:on { border-color: #2563EB; }
-QComboBox#bigSelect::drop-down { border: none; width: 34px; }
-QComboBox#bigSelect QAbstractItemView { background: white; border: 1px solid #CBD5E1; border-radius: 8px;
-                                        padding: 6px; outline: none; font-size: 11pt;
-                                        selection-background-color: #DBEAFE; selection-color: #0F172A; }
-QPushButton#secondary { background: white; color: #2563EB; border: 2px solid #2563EB; padding: 10px 18px;
-                        font-weight: 600; font-size: 11pt; }
-QPushButton#secondary:hover { background: #EFF6FF; }
-QPushButton#secondary:disabled { color: #94A3B8; border-color: #CBD5E1; }
-QProgressBar { border: 1px solid #E2E8F0; border-radius: 6px; text-align: center; height: 20px; background: #F1F5F9; }
-QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
-"""

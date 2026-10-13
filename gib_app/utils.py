@@ -1,0 +1,39 @@
+"""Общие вспомогательные функции для работы с числами, текстом и ячейками."""
+import re
+from constants import TJ_TO_RU
+
+
+def to_number(value) -> float | None:
+    """Преобразует значение в float или None, если число некорректно."""
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).replace(" ", "").replace(" ", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def to_num_safe(v) -> float:
+    """Возвращает число с плавающей точкой или 0.0."""
+    res = to_number(v)
+    return res if res is not None else 0.0
+
+
+def norm_text(v) -> str:
+    """Нормализует текст: нижний регистр, единые пробелы, таджикские буквы в русские."""
+    return " ".join(str(v or "").translate(TJ_TO_RU).lower().split())
+
+
+def format_money(x) -> str:
+    """Форматирует число в денежный вид: 1 234,56."""
+    return f"{x:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def cell_val(data, r: int, c: int):
+    """Безопасный доступ к значению в двумерном массиве (1-based index)."""
+    if 0 < r <= len(data) and 0 < c <= len(data[r - 1]):
+        return data[r - 1][c - 1]
+    return None

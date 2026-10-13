@@ -6,9 +6,9 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from compare import _cell, find_tables, match_key, norm_text
-
-TOTAL_LABELS = ("хамаги", "итого", "всего", "чамъ", "обороты", "остаток")
+from compare_finder import find_tables, match_key
+from constants import SUM_ROW_LABELS as TOTAL_LABELS
+from utils import cell_val as _cell, norm_text
 
 
 @dataclass
