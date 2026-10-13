@@ -94,10 +94,10 @@ def setup_completer(win, reg):
     win.reg_inn.setCompleter(completer)
 
 
-def update_inn_table(win):
+def update_inn_table(win, reg=None):
     """Обновляет строки таблицы ТОП-50 по выбранной стороне."""
     table = getattr(win, "reg_table", None)
-    reg = getattr(win, "registry", None)
+    reg = reg or getattr(win, "registry", None)
     if not table:
         return
     if not reg:
@@ -126,7 +126,7 @@ def update_inn_table(win):
 def populate_inn_view(win, reg):
     """Инициализирует таблицу и автодополнение после завершения сканирования."""
     setup_completer(win, reg)
-    update_inn_table(win)
+    update_inn_table(win, reg)
 
 
 def reset_inn_view(win):

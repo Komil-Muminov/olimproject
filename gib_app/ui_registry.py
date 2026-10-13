@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 import ui_registry_flow as flow
+from ui_registry_inn import build_inn_selector
 
 
 def _label(name, rich=True):
@@ -37,14 +38,16 @@ def build_registry_card(win):
     row = QHBoxLayout()
     win.reg_inn = QLineEdit()
     win.reg_inn.setObjectName("bigSelect")
-    win.reg_inn.setPlaceholderText("Введите ИНН, например 040000011")
-    win.reg_inn.setMaxLength(20)
+    win.reg_inn.setPlaceholderText("Введите ИНН или название организации...")
+    win.reg_inn.setMaxLength(100)
     win.reg_inn.returnPressed.connect(lambda: flow.find(win))
     row.addWidget(win.reg_inn, 1)
     win.reg_find_btn = QPushButton("Найти")
     win.reg_find_btn.clicked.connect(lambda: flow.find(win))
     row.addWidget(win.reg_find_btn)
     lay.addLayout(row)
+
+    lay.addWidget(build_inn_selector(win))
     win.reg_found = _label("cmpInfo")
     lay.addWidget(win.reg_found)
     win.reg_export_btn = QPushButton("📄  Все платежи этого ИНН — в Excel")

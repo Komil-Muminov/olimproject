@@ -9,6 +9,7 @@ from registry_stats import period_label
 from report_inn import write_inn_payments
 from report_paths import inn_report_path, registry_report_path
 from report_registry import write_registry_report
+from ui_registry_inn import clean_inn_query, populate_inn_view, reset_inn_view
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -45,6 +46,7 @@ def _idle(win):
 def start_scan(win, paths: list):
     """Файлы из «Глубокого анализа»: реестры читаются в фоне; один обычный файл — по-старому."""
     win.registry, win.reg_paths = None, list(paths)
+    reset_inn_view(win)
     win.reg_files.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths))
     win.reg_info.setText("Читаю файлы… Большой реестр (800 тыс. строк) — примерно 15 секунд.")
     win.reg_found.setText("")
@@ -73,6 +75,7 @@ def _scanned(win, res):
                  f"<b>{format_money(sum(i.total for i in reg.files))}</b> · плательщиков {_int(len(reg.payers))}, "
                  f"получателей {_int(len(reg.recs))}")
     win.reg_info.setText("<br>".join(lines))
+    populate_inn_view(win, reg)
     _idle(win)
 
 
@@ -103,17 +106,20 @@ def _party_text(title, r, labels):
             f"платежей {sum(r.counts)}" + (f" · {r.status}" if r.status else ""))
 
 
-def find(win):
+def find(win, inn_val=None):
     reg = win.registry
-    if not reg or not win.reg_inn.text().strip():
+    raw = (inn_val or win.reg_inn.text()).strip()
+    if not reg or not raw:
         return
-    res = search(reg, win.reg_inn.text())
+    inn = clean_inn_query(raw, reg)
+    win.reg_inn.setText(inn)
+    res = search(reg, inn)
     labels = [reg.files[f].label for f in reg.order]
     hit = res["payer"] or res["rec"]
     win.reg_found_inn = hit.inn if hit else None
     win.reg_found.setText(f"ИНН <b>{hit.inn}</b><br>" + _party_text("Как плательщик", res["payer"], labels) + "<br>"
                           + _party_text("Как получатель", res["rec"], labels) if hit
-                          else "Такого ИНН нет ни среди плательщиков, ни среди получателей.")
+                          else f"ИНН «{raw}» не найден ни среди плательщиков, ни среди получателей.")
     win.reg_export_btn.setVisible(bool(hit))
 
 

@@ -47,4 +47,8 @@ QPushButton#secondary:hover { background: #EFF6FF; }
 QPushButton#secondary:disabled { color: #94A3B8; border-color: #CBD5E1; }
 QProgressBar { border: 1px solid #E2E8F0; border-radius: 6px; text-align: center; height: 20px; background: #F1F5F9; }
 QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
+QTableWidget#innTable { background: white; border: 1px solid #CBD5E1; border-radius: 8px; gridline-color: #F1F5F9; font-size: 9.5pt; }
+QTableWidget#innTable::item { padding: 2px 4px; }
+QTableWidget#innTable::item:selected { background: #EFF6FF; color: #1E3A8A; }
+QHeaderView::section { background: #F8FAFC; color: #475569; font-weight: 600; font-size: 9.5pt; padding: 4px 6px; border: none; border-bottom: 1px solid #E2E8F0; }
 """
