@@ -76,16 +76,22 @@ def build_found_card(win):
 
     win.embed_btn = QPushButton("⚙  Встроить автоматику в Excel")
     win.embed_btn.setObjectName("secondary")
+    win.embed_btn.setToolTip("Создаёт копию файла с макросом: дальше ГИБ проставляются сами,\n"
+                              "когда вы вставляете назначения прямо в Excel.")
     win.embed_btn.clicked.connect(win.embed)
     btns.addWidget(win.embed_btn)
 
     win.cmp_btn = QPushButton("🔍  Сравнить по ИНН")
     win.cmp_btn.setObjectName("primary")
+    win.cmp_btn.setToolTip("Создаёт новый файл с различиями двух списков: новые, пропавшие,\n"
+                            "изменившиеся суммы и дубликаты. Исходный файл не меняется.")
     win.cmp_btn.clicked.connect(win.run_compare)
     btns.addWidget(win.cmp_btn)
 
     win.chk_btn = QPushButton("🧾  Проверить ИНН")
     win.chk_btn.setObjectName("secondary")
+    win.chk_btn.setToolTip("Создаёт новый файл: дубликаты ИНН, один ИНН — разные названия,\n"
+                            "неправильные ИНН. Проверяются все таблицы с ИНН на всех листах.")
     win.chk_btn.clicked.connect(win.run_check)
     btns.addWidget(win.chk_btn)
 
