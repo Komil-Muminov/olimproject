@@ -561,6 +561,7 @@ Private Sub ProcessRows(ByVal ws As Worksheet, rowList() As Long, ByVal n As Lon
     Loop
 
     ' 6. Нумерация, формулы "Хамаги" и итоги "Чамъ"
+    If L.SumRow = 0 Then UpdateBalanceNotes ws, L, L.FirstRow, L.LastRow
     MaintainStructure ws, L
 End Sub
 
@@ -681,6 +682,7 @@ Private Sub FixCheckCells(ByVal ws As Worksheet, ByVal chkHit As Range)
         Loop
         If rowList(i) >= L.FirstRow And rowList(k) <= L.LastRow Then
             SetBalanceFormulas ws, L, rowList(i), rowList(k)
+            UpdateBalanceNotes ws, L, rowList(i), rowList(k)
             SetGridBorders ws, L, rowList(i), rowList(k)
             StyleLikeTotal ws, L, L.ExpCol, rowList(i), rowList(k)
         End If
@@ -1515,6 +1517,7 @@ Private Sub MaintainStructure(ByVal ws As Worksheet, L As TLayout)
             End If
         Next c
     End If
+    UpdateBalanceNotes ws, L, L.FirstRow, L.LastRow
 End Sub
 
 ' Формула "Хамаги" в строке r: сумма по всей области сумм. Ставится, если
@@ -2079,3 +2082,65 @@ Private Sub ShowMsg(ByVal msgText As String, ByVal icon As VbMsgBoxStyle)
     MsgBox msgText, icon, "Распределение по ГИБ"
 End Sub
 
+' Пояснение к балансу в «Расходы»: примечание (видно при наведении) у ячеек,
+' где сумма по ГИБ не совпала с суммой из выписки. Сумма из выписки берется
+' из формулы =ROUND(Хамаги-сумма,2), «Хамаги» - сумма области ГИБ строки
+' (не зависит от пересчета). Совпало - наше примечание убирается.
+Private Sub UpdateBalanceNotes(ByVal ws As Worksheet, L As TLayout, ByVal r1 As Long, ByVal r2 As Long)
+    Dim r As Long, f As String, p As Long, amt As Double, tot As Double, bal As Double
+    Dim c As Range, txt As String, lit As String
+
+    If L.ExpCol = 0 Or L.TotalCol = 0 Or r2 < r1 Then Exit Sub
+    On Error Resume Next
+    For r = r1 To r2
+        Set c = ws.Cells(r, L.ExpCol)
+        f = SafeStr(c.Formula)
+        txt = ""
+        If UCase$(Left$(f, 7)) = "=ROUND(" And Right$(f, 3) = ",2)" Then
+            p = InStr(8, f, "-")
+            If p > 0 Then
+                lit = Mid$(f, p + 1, Len(f) - p - 3)
+                lit = Replace(Replace(lit, "(", ""), ")", "")
+                amt = Val(lit)
+                If L.AreaLast >= L.AreaFirst Then
+                    tot = Application.WorksheetFunction.Sum( _
+                          ws.Range(ws.Cells(r, L.AreaFirst), ws.Cells(r, L.AreaLast)))
+                Else
+                    tot = 0
+                End If
+                bal = Round(tot - amt, 2)
+                If Abs(bal) > 0.004 Then
+                    txt = "По назначению (Хамаги): " & Money(tot) & vbLf & _
+                          "По выписке: " & Money(amt) & vbLf & _
+                          "Разница: " & Money(bal) & " — в назначении на " & Money(Abs(bal)) & _
+                          IIf(bal < 0, " меньше", " больше")
+                End If
+            End If
+        End If
+        If Len(txt) > 0 Then
+            If Not c.Comment Is Nothing Then c.Comment.Delete
+            c.AddComment txt
+            c.Comment.Shape.TextFrame.AutoSize = True
+        ElseIf Not c.Comment Is Nothing Then
+            If Left$(c.Comment.Text, 13) = "По назначению" Then c.Comment.Delete
+        End If
+    Next r
+    On Error GoTo 0
+End Sub
+
+' Сумма для текста: 3 350,00 (не зависит от языковых настроек Windows)
+Private Function Money(ByVal v As Double) As String
+    Dim a As Double, ip As String, fp As Long, out As String, i As Long
+    a = Round(Abs(v), 2)
+    ip = Trim$(Str$(Fix(a)))
+    fp = CLng(Round((a - Fix(a)) * 100, 0))
+    If fp >= 100 Then
+        ip = Trim$(Str$(Fix(a) + 1))
+        fp = 0
+    End If
+    For i = Len(ip) To 1 Step -1
+        out = Mid$(ip, i, 1) & out
+        If (Len(ip) - i + 1) Mod 3 = 0 And i > 1 Then out = " " & out
+    Next i
+    Money = IIf(v < 0, "-", "") & out & "," & Right$("0" & CStr(fp), 2)
+End Function

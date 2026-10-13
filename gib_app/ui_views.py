@@ -55,7 +55,7 @@ def build_found_card(win):
     fl.addWidget(win.warn_text)
     fl.addStretch()
 
-    win.note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» рядом с ним.")
+    win.note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» (в папке программы).")
     win.note.setObjectName("muted")
     win.note.setWordWrap(True)
     fl.addWidget(win.note)

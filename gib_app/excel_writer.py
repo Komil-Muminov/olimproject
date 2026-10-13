@@ -2,7 +2,9 @@
 from constants import XL_CALC_MANUAL, XL_DOWN, XL_GREEN, XL_YELLOW
 from excel_columns import col_values, ensure_gib_columns, gib_columns
 from excel_com import WriteError, make_backup, open_workbook
-from excel_reconcile import fill_total_formulas, read_reconciliation, setup_reconciliation
+from excel_reconcile import (
+    fill_total_formulas, read_reconciliation, setup_reconciliation, update_balance_notes
+)
 from excel_verify import mark_no_gib, verify_rows
 from utils import to_number
 
@@ -105,6 +107,8 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
             xl.Calculation = old_calc
             old_calc = None
         xl.Calculate()
+        # пояснение к балансу «Расходы»: откуда разница (видно при наведении)
+        update_balance_notes(ws, recon["total"], recon["rash"], first_row, recon["sum_row"] - 1 if recon["sum_row"] else last_row)
         progress(90, "Сверяю итоги…")
         check_res = verify_rows(ws, items, header_row, r2)
         check_res["recon"] = read_reconciliation(ws, header_row, first_row, last_row, recon["rash"])

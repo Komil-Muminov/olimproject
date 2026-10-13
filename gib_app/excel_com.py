@@ -8,9 +8,22 @@ class WriteError(Exception):
     pass
 
 
+def backup_dir() -> str:
+    """Папка «_резервные копии» в корне проекта: рядом с gib_app при запуске из исходников,
+    рядом с GIB.exe (а если exe лежит в dist — уровнем выше) при запуске программы."""
+    import sys
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(os.path.abspath(sys.executable))
+        if os.path.basename(base).lower() == "dist":
+            base = os.path.dirname(base)
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, "_резервные копии")
+
+
 def make_backup(path: str, wb, own: bool) -> str:
-    """Копия файла до изменений в папку «_резервные копии» рядом с ним."""
-    folder = os.path.join(os.path.dirname(os.path.abspath(path)), "_резервные копии")
+    """Копия файла до изменений в папку «_резервные копии» в корне проекта."""
+    folder = backup_dir()
     name, ext = os.path.splitext(os.path.basename(path))
     dst = os.path.join(folder, f"{name} {datetime.now():%Y-%m-%d %H-%M-%S}{ext}")
     try:

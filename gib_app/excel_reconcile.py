@@ -119,3 +119,36 @@ def read_reconciliation(ws, header_row: int, first_row: int, last_row: int, rash
                 if isinstance(f, str) and f.upper().startswith(BALANCE_PREFIX)]
     bad = [r for r, v in balances if abs(v) > 0.005]
     return {"empty": not balances, "bad_rows": bad, "total_diff": round(sum(v for _, v in balances), 2)}
+
+
+NOTE_PREFIX = "По назначению"
+
+
+def _money(v: float) -> str:
+    return f"{v:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def update_balance_notes(ws, total: int, rash: int, first_row: int, last_row: int):
+    """Примечание у ячейки «Расходы», где баланс не 0: откуда взялась разница.
+    Вызывать после пересчёта книги. Совпало — наше примечание убирается."""
+    formulas = col_values(ws, rash, first_row, last_row, "Formula")
+    balances = col_values(ws, rash, first_row, last_row)
+    totals = col_values(ws, total, first_row, last_row)
+    for i, (f, bal, tot) in enumerate(zip(formulas, balances, totals)):
+        c = ws.Cells(first_row + i, rash)
+        is_balance = isinstance(f, str) and f.upper().startswith(BALANCE_PREFIX)
+        bal, tot = to_num_safe(bal), to_num_safe(tot)
+        try:
+            ours = c.Comment is not None and str(c.Comment.Text()).startswith(NOTE_PREFIX)
+            if is_balance and abs(bal) > 0.004:
+                if c.Comment is not None:
+                    c.Comment.Delete()
+                amt = round(tot - bal, 2)
+                side = "меньше" if bal < 0 else "больше"
+                c.AddComment(f"{NOTE_PREFIX} (Ҳамагӣ): {_money(tot)}\nПо выписке: {_money(amt)}\n"
+                             f"Разница: {_money(bal)} — в назначении на {_money(abs(bal))} {side}")
+                c.Comment.Shape.TextFrame.AutoSize = True
+            elif ours:
+                c.Comment.Delete()
+        except Exception:
+            pass
