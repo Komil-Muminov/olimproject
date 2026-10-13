@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QPushButton, QRadioButton, QSizePolicy, QVBoxLayout, QWidget
 )
 
+from ui_helpers import BACKUP_NOTE
+
 
 def _file_row(win, title, attr, slot):
     row = QHBoxLayout()
@@ -80,7 +82,7 @@ def build_start_card(win):
     win.fill_info.setTextFormat(Qt.RichText)
     fl.addWidget(win.fill_info)
     fl.addStretch()
-    note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» (в папке программы).")
+    note = QLabel(BACKUP_NOTE)
     note.setObjectName("muted")
     note.setWordWrap(True)
     fl.addWidget(note)

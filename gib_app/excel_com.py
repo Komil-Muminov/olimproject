@@ -1,6 +1,7 @@
 """Управление сессиями Microsoft Excel COM и резервным копированием файлов."""
 import os
 import shutil
+from contextlib import contextmanager
 from datetime import datetime
 
 
@@ -59,3 +60,65 @@ def open_workbook(win32, pywintypes, path: str):
         xl.Quit()
         raise WriteError(f"Excel не смог открыть файл: {e}")
     return xl, wb, True
+
+
+@contextmanager
+def excel_workbook(path: str):
+    """Книга для записи: (xl, wb, own). Макросы книги отключены на время работы; в конце
+    настройки Excel возвращаются, а своя (не открытая пользователем) книга и Excel закрываются."""
+    import pythoncom
+    import pywintypes
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    xl, wb, own = open_workbook(win32com.client, pywintypes, path)
+    saved = {}
+    try:
+        saved = {k: getattr(xl, k) for k in ("EnableEvents", "ScreenUpdating", "Calculation")}
+    except Exception:
+        pass
+    try:
+        if wb.ReadOnly:
+            raise WriteError("Файл открыт только для чтения (возможно, его открыл другой пользователь).")
+        xl.EnableEvents = False
+        yield xl, wb, own
+    finally:
+        for k, v in saved.items():
+            try:
+                setattr(xl, k, v)
+            except Exception:
+                pass
+        if own:
+            try:
+                wb.Close(False)
+            finally:
+                xl.Quit()
+
+
+@contextmanager
+def excel_app():
+    """Отдельный скрытый Excel; в конце закрывается (книги закрывает вызывающий код)."""
+    import pythoncom
+    import pywintypes
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    try:
+        xl = win32com.client.DispatchEx("Excel.Application")
+    except pywintypes.com_error:
+        raise WriteError("Не удалось запустить Microsoft Excel.")
+    xl.Visible = False
+    xl.DisplayAlerts = False
+    xl.EnableEvents = False
+    xl.ScreenUpdating = False
+    try:
+        yield xl
+    finally:
+        xl.Quit()
+
+
+def get_sheet(wb, name: str):
+    try:
+        return wb.Worksheets(name)
+    except Exception:
+        raise WriteError(f"Лист «{name}» не найден.")

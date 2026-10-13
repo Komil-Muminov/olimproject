@@ -5,10 +5,9 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton
 
 from excel_io import embed_automation
 from report import check_report_path, report_path, write_check_report, write_compare_report
-from ui_helpers import (
-    format_done_summary, format_embed_summary, format_warnings,
-    template_path
-)
+from planner import Plan
+from ui_helpers import format_embed_summary, format_plan_description, format_warnings, template_path
+from ui_result import show_result
 from worker import Worker
 
 
@@ -67,19 +66,12 @@ def execute_check(win):
         QMessageBox.critical(win, "Ошибка", f"{type(e).__name__}: {e}")
         return
     r = p.inn
-    win.result_path = path
-    win._set_head(True, "✓  Проверка готова — всё в порядке" if not r.problems else "✓  Проверка готова")
-    win.result_text.setText("<br>".join([
+    show_result(win, True, "✓  Проверка готова — всё в порядке" if not r.problems else "✓  Проверка готова", [
         f"Создан файл: <b>{os.path.basename(path)}</b>", "",
         f"Проверено таблиц с ИНН: <b>{len(r.tables)}</b>",
         f"👥 Дубликаты ИНН: <b>{len(r.duplicates)}</b>",
         f"✏ Один ИНН — разные названия: <b>{len(r.names)}</b>",
-        f"⚠ Неправильные ИНН: <b>{len(r.invalid)}</b>"]))
-    win.result_warn.setText("")
-    win.backup = None
-    win.backup_label.setText("Исходный файл не изменён.")
-    win.backup_btn.setVisible(False)
-    win.pages.setCurrentIndex(2)
+        f"⚠ Неправильные ИНН: <b>{len(r.invalid)}</b>"], path=path, note="Исходный файл не изменён.")
 
 
 def execute_compare(win):
@@ -92,21 +84,14 @@ def execute_compare(win):
     except Exception as e:
         QMessageBox.critical(win, "Ошибка", f"{type(e).__name__}: {e}")
         return
-    win.result_path = path
-    win._set_head(True, "✓  Сравнение готово")
-    win.result_text.setText("<br>".join([
+    show_result(win, True, "✓  Сравнение готово", [
         f"Создан файл: <b>{os.path.basename(path)}</b>", "",
         (f"🆕 Новые: <b>{len(d.only2)}</b>" if a.year and b.year else f"🆕 Только в правой части ({b.span}): <b>{len(d.only2)}</b>"),
         (f"❌ Пропавшие: <b>{len(d.only1)}</b>" if a.year and b.year else f"❌ Только в левой части ({a.span}): <b>{len(d.only1)}</b>"),
         *([f"🔄 Изменилась сумма: <b>{len(d.org_changed)}</b> орг.", f"✓ Без изменений: <b>{d.same}</b>"] if d.pairs
           else [f"✓ Есть в обоих списках: <b>{d.common}</b> (суммы не сравнивались)"]),
         f"👥 Дубликаты ИНН: <b>{len(d.duplicates)}</b>",
-        f"✏ Разные названия при одном ИНН: <b>{len(d.org_names)}</b>"]))
-    win.result_warn.setText("")
-    win.backup = None
-    win.backup_label.setText("Исходный файл не изменён.")
-    win.backup_btn.setVisible(False)
-    win.pages.setCurrentIndex(2)
+        f"✏ Разные названия при одном ИНН: <b>{len(d.org_names)}</b>"], path=path, note="Исходный файл не изменён.")
 
 
 def execute_embed(win):
@@ -124,6 +109,42 @@ def execute_embed(win):
     win._busy(True)
     win.worker = Worker(embed_automation, p.path, dst, template_path(), p.sheet, lay.header_row, lay.purpose_col)
     win.worker.progress.connect(lambda v, t: (win.progress.setValue(v), win.progress.setFormat(f"{t}  %p%")))
-    win.worker.done.connect(win._embedded)
+    win.worker.done.connect(lambda res: show_embedded(win, res))
     win.worker.failed.connect(win._failed)
     win.worker.start()
+
+
+def show_embedded(win, res):
+    win.progress.setVisible(False)
+    lines, warn = format_embed_summary(res, win.plan)
+    show_result(win, True, "✓  Автоматика встроена", lines, warn, path=res["path"])
+
+
+def load_plan(win, path, mode):
+    """Один файл: «Встроить автоматику» (mode="embed") или «Глубокий анализ» (mode="analysis")."""
+    win.settings.setValue("last_dir", os.path.dirname(path))
+    try:
+        plan = Plan(path)
+    except Exception as ex:
+        QMessageBox.critical(win, "Ошибка", f"Не удалось открыть файл:\n{path}\n\n{ex}")
+        return
+    win.plan, win.mode = plan, mode
+    win.file_label.setText("📄  " + os.path.basename(path))
+    win.warn_text.setText("")
+    analysis = mode == "analysis"
+    gib = not analysis and bool(plan.layout or plan.header_only)
+    win.embed_btn.setEnabled(gib)
+    win.embed_btn.setVisible(gib)
+    win.cmp_btn.setVisible(analysis and bool(plan.compare))
+    win.chk_btn.setVisible(analysis and bool(plan.inn))
+    win.note.setVisible(gib)
+    win.cmp_row.setVisible(analysis and bool(plan.compares))
+    if analysis:
+        win._gib_text = "" if (plan.compare or plan.inn) else "В этом файле не нашлось таблиц с ИНН."
+        populate_compare_options(win)
+    else:
+        win._gib_text = format_plan_description(plan)[0]
+        win.found_text.setText(win._gib_text)
+        win.found_text.setVisible(True)
+        win.warn_text.setText(format_warnings(plan))
+    win.pages.setCurrentIndex(1)

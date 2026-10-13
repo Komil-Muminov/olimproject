@@ -27,6 +27,11 @@ def norm_text(v) -> str:
     return " ".join(str(v or "").translate(TJ_TO_RU).lower().split())
 
 
+def find_col(heads: list, prefixes: tuple, after: int = 0) -> int | None:
+    """Номер столбца (с 1), чей нормализованный заголовок начинается с одного из prefixes."""
+    return next((c for c, h in enumerate(heads, 1) if c > after and h.startswith(prefixes)), None)
+
+
 def format_money(x) -> str:
     """Форматирует число в денежный вид: 1 234,56."""
     return f"{x:,.2f}".replace(",", " ").replace(".", ",")

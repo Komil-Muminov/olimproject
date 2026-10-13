@@ -1,7 +1,7 @@
 """Заполнение кодов и сумм ГИБ в существующий файл через Excel COM."""
 from constants import XL_CALC_MANUAL, XL_DOWN, XL_GREEN, XL_YELLOW
 from excel_columns import col_values, ensure_gib_columns, gib_columns
-from excel_com import WriteError, make_backup, open_workbook
+from excel_com import WriteError, excel_workbook, get_sheet, make_backup
 from excel_reconcile import (
     fill_total_formulas, read_reconciliation, setup_reconciliation, update_balance_notes
 )
@@ -11,39 +11,23 @@ from utils import to_number
 
 
 def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=None, last_row=None,
-                  check_rows=(), no_gib_rows=(), progress=lambda p, t: None, backup=True):
-    """Суммы ставятся в те же строки, где стоят назначения. backup=False — копию уже сделали."""
-    import pythoncom
-    import pywintypes
-    import win32com.client
-
+                  check_rows=(), no_gib_rows=(), progress=lambda p, t: None, make_copy=True):
+    """Суммы ставятся в те же строки, где стоят назначения. make_copy=False — копию уже сделали."""
     if not items:
         raise WriteError("Нет строк для заполнения.")
-    pythoncom.CoInitialize()
     progress(2, "Подключаюсь к Excel…")
-    xl, wb, own = open_workbook(win32com.client, pywintypes, path)
-    make_copy, backup = backup, None
-    old_calc = old_screen = None
-    old_events = xl.EnableEvents
-    try:
-        if wb.ReadOnly:
-            raise WriteError("Файл открыт только для чтения (возможно, его открыл другой пользователь).")
-        xl.EnableEvents = False             # макросы книги (если есть) не мешают записи
+    with excel_workbook(path) as (xl, wb, own):
+        backup = None
         if make_copy:
             progress(5, "Делаю копию файла…")
             backup = make_backup(path, wb, own)
-        try:
-            ws = wb.Worksheets(sheet_name)
-        except pywintypes.com_error:
-            raise WriteError(f"Лист «{sheet_name}» не найден.")
-
-        old_screen = xl.ScreenUpdating
+        ws = get_sheet(wb, sheet_name)
         xl.ScreenUpdating = False
         try:
             old_calc = xl.Calculation
             xl.Calculation = XL_CALC_MANUAL
-        except pywintypes.com_error:
-            pass
+        except Exception:
+            old_calc = None
 
         header_inserted = False
         if header_row is None:
@@ -114,7 +98,6 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
 
         if old_calc is not None:
             xl.Calculation = old_calc
-            old_calc = None
         xl.Calculate()
         # пояснение к балансу «Расходы»: откуда разница (видно при наведении)
         update_balance_notes(ws, recon["total"], recon["rash"], first_row, recon["sum_row"] - 1 if recon["sum_row"] else last_row)
@@ -133,17 +116,3 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
             "left_open": not own,
             "check": check_res,
         }
-    finally:
-        try:
-            if old_calc is not None:
-                xl.Calculation = old_calc
-            if old_screen is not None:
-                xl.ScreenUpdating = old_screen
-            xl.EnableEvents = old_events
-        except Exception:
-            pass
-        if own:
-            try:
-                wb.Close(False)
-            finally:
-                xl.Quit()

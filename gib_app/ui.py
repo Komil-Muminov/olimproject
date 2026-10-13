@@ -7,12 +7,10 @@ from PySide6.QtWidgets import (
 )
 
 from constants import EXCEL_EXT
-from planner import Plan
 from styles import STYLE
 import ui_flow
-from ui_actions import (execute_check, execute_compare, execute_embed, populate_compare_options,
+from ui_actions import (execute_check, execute_compare, execute_embed, load_plan,
                         render_found_info, update_option_marks)
-from ui_helpers import format_embed_summary, format_plan_description, format_warnings
 from ui_start import build_start_card
 from ui_views import build_found_card, build_result_card
 
@@ -121,33 +119,7 @@ class MainWindow(QMainWindow):
             self.load(path)
 
     def load(self, path):
-        self.settings.setValue("last_dir", os.path.dirname(path))
-        try:
-            plan = Plan(path)
-        except Exception as ex:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл:\n{path}\n\n{ex}")
-            return
-        self.plan = plan
-        self.file_label.setText("📄  " + os.path.basename(path))
-        self.warn_text.setText("")
-        self.mode = ui_flow.current_mode(self)
-        analysis = self.mode == "analysis"
-        gib = not analysis and bool(plan.layout or plan.header_only)
-        self.embed_btn.setEnabled(gib)
-        self.embed_btn.setVisible(gib)
-        self.cmp_btn.setVisible(analysis and bool(plan.compare))
-        self.chk_btn.setVisible(analysis and bool(plan.inn))
-        self.note.setVisible(gib)
-        self.cmp_row.setVisible(analysis and bool(plan.compares))
-        if analysis:
-            self._gib_text = "" if (plan.compare or plan.inn) else "В этом файле не нашлось таблиц с ИНН."
-            populate_compare_options(self)
-        else:
-            self._gib_text = format_plan_description(plan)[0]
-            self.found_text.setText(self._gib_text)
-            self.found_text.setVisible(True)
-            self.warn_text.setText(format_warnings(plan))
-        self.pages.setCurrentIndex(1)
+        load_plan(self, path, ui_flow.current_mode(self))
 
     def _compare_sheet_changed(self, i):
         if self.plan and 0 <= i < len(self.plan.compares):
@@ -168,25 +140,6 @@ class MainWindow(QMainWindow):
         self.embed_btn.setEnabled(not on)
         self.progress.setVisible(on)
         self.progress.setValue(0)
-
-    def _embedded(self, res):
-        self.worker = None
-        self.progress.setVisible(False)
-        self.result_path = res["path"]
-        self._set_head(True, "✓  Автоматика встроена")
-        lines, warn = format_embed_summary(res, self.plan)
-        self.result_text.setText("<br>".join(lines))
-        self.result_warn.setText(warn)
-        self.backup = None
-        self.backup_label.setText("")
-        self.backup_btn.setVisible(False)
-        self.pages.setCurrentIndex(2)
-
-    def _set_head(self, ok, text):
-        self.result_head.setText(text)
-        self.result_head.setObjectName("resultOk" if ok else "resultBad")
-        self.result_head.style().unpolish(self.result_head)
-        self.result_head.style().polish(self.result_head)
 
     def _failed(self, err):
         self.worker = None

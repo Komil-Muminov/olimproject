@@ -11,7 +11,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from constants import RED_FILL, RED_FONT, TOTAL_HEADERS
 from excel_columns import col_values, gib_columns, insert_column, row_values, sum_row_below, used_bounds
 from excel_reader import cell_name
-from utils import norm_text, to_num_safe, to_number
+from utils import find_col, norm_text, to_num_safe, to_number
 
 SIMPLE_SUM_RE = re.compile(r"^=SUM\(\$?([A-Z]+)\$?\d+:\$?([A-Z]+)\$?\d+\)$", re.IGNORECASE)
 BALANCE_PREFIX = "=ROUND("
@@ -19,10 +19,7 @@ BALANCE_PREFIX = "=ROUND("
 
 def find_header(ws, header_row: int, after_col: int, prefixes: tuple) -> int | None:
     _, last_col = used_bounds(ws)
-    for c, v in enumerate(row_values(ws, header_row, last_col), 1):
-        if c > after_col and norm_text(v).startswith(prefixes):
-            return c
-    return None
+    return find_col([norm_text(v) for v in row_values(ws, header_row, last_col)], prefixes, after_col)
 
 
 def _num_literal(v: float) -> str:

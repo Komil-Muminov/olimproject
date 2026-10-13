@@ -1,7 +1,7 @@
 """Встраивание макроса автоматики и элементов управления в книгу Excel."""
 import os
 from constants import XL_DOWN, XL_XLSM
-from excel_com import WriteError
+from excel_com import WriteError, excel_app
 from excel_reconcile import setup_reconciliation
 
 
@@ -42,24 +42,19 @@ def add_controls(ws):
 
 def embed_automation(src, dst, template, sheet_name, header_row, purpose_col, progress=lambda p, t: None):
     """«Встроить автоматику в Excel»: копия файла в формате .xlsm с макросом распределения по ГИБ."""
-    import pythoncom
-    import pywintypes
-    import win32com.client
-
     if os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(dst)):
         raise WriteError("Новый файл должен отличаться от исходного.")
     if not os.path.exists(template):
         raise WriteError(f"Не найден шаблон с макросом:\n{template}")
-    pythoncom.CoInitialize()
     progress(5, "Запускаю Excel…")
-    try:
-        xl = win32com.client.DispatchEx("Excel.Application")
-    except pywintypes.com_error:
-        raise WriteError("Не удалось запустить Microsoft Excel.")
-    xl.Visible = False
-    xl.DisplayAlerts = False
-    xl.EnableEvents = False
-    xl.ScreenUpdating = False
+    with excel_app() as xl:
+        report = _embed(xl, src, dst, template, sheet_name, header_row, purpose_col, progress)
+    progress(100, "Готово")
+    return {"path": os.path.abspath(dst), "report": report}
+
+
+def _embed(xl, src, dst, template, sheet_name, header_row, purpose_col, progress) -> str:
+    """Копирует листы в шаблон с макросом, сохраняет .xlsm и запускает распределение."""
     book = source = None
     try:
         book = xl.Workbooks.Open(os.path.abspath(template), ReadOnly=True)
@@ -103,13 +98,9 @@ def embed_automation(src, dst, template, sheet_name, header_row, purpose_col, pr
             raise WriteError(f"Макрос сообщил об ошибке: {report[7:]}")
         progress(90, "Сохраняю…")
         book.Save()
-        progress(100, "Готово")
-        return {"path": os.path.abspath(dst), "report": report}
+        return report
     finally:
-        try:
-            if source is not None:
-                source.Close(False)
-            if book is not None:
-                book.Close(False)
-        finally:
-            xl.Quit()
+        if source is not None:
+            source.Close(False)
+        if book is not None:
+            book.Close(False)

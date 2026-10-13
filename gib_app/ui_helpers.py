@@ -6,6 +6,9 @@ from openpyxl.utils import get_column_letter
 from utils import format_money
 
 
+BACKUP_NOTE = "🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» (в папке программы)."
+
+
 def rows_list(rows: list, limit=8) -> str:
     shown = ", ".join(str(r) for r in rows[:limit])
     return ("строка " if len(rows) == 1 else "строки ") + shown + (

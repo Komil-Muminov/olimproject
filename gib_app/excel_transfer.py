@@ -2,10 +2,10 @@
 (после последней заполненной строки, до «Чамъ»), затем суммы раскладываются по ГИБ."""
 from datetime import datetime
 
-from excel_com import WriteError, make_backup, open_workbook
+from excel_com import WriteError, excel_workbook, get_sheet, make_backup
 from excel_writer import fill_in_place
 from statement import doc_text, read_statement
-from target_layout import create_table, existing_keys, locate, make_room, payment_key
+from target_layout import create_table, existing_keys, locate, make_room, split_new
 
 
 def _put(ws, col, r1, values, text=False):
@@ -35,57 +35,26 @@ def _write_rows(ws, t, start, rows):
 
 def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpose_col,
                       progress=lambda p, t: None):
-    import pythoncom
-    import pywintypes
-    import win32com.client
-
     progress(2, "Читаю выписку…")
     _, payments = read_statement(statement_path)
     if not payments:
         raise WriteError("В выписке не нашлось платежей (нужны столбцы «Основание» и «Расходы»).")
-    pythoncom.CoInitialize()
     progress(5, "Открываю файл, куда заполнять…")
-    xl, wb, own = open_workbook(win32com.client, pywintypes, target_path)
-    old_events = xl.EnableEvents
-    try:
-        if wb.ReadOnly:
-            raise WriteError("Файл открыт только для чтения (возможно, его открыл другой пользователь).")
-        xl.EnableEvents = False
+    with excel_workbook(target_path) as (xl, wb, own):
         progress(8, "Делаю копию файла…")
         backup = make_backup(target_path, wb, own)
-        try:
-            ws = wb.Worksheets(sheet_name)
-        except pywintypes.com_error:
-            raise WriteError(f"Лист «{sheet_name}» не найден.")
+        ws = get_sheet(wb, sheet_name)
         if header_row is None:          # пустой лист — сначала создаём таблицу
             header_row, purpose_col = create_table(ws)
         t = locate(ws, header_row, purpose_col)
         use_doc = bool(t.doc) and any(p.doc not in (None, "") for p in payments)
-        seen = existing_keys(ws, t, use_doc)
-        new, skipped = [], 0
-        for p in payments:
-            k = payment_key(p.purpose, p.amount, p.doc if use_doc else None)
-            if seen[k] > 0:
-                seen[k] -= 1
-                skipped += 1
-            else:
-                new.append(p)
+        new, skipped = split_new(payments, existing_keys(ws, t, use_doc), use_doc)
         progress(15, "Переношу платежи…")
         old_sum = t.sum_row
         start = make_room(ws, t, len(new)) if new else t.last_filled + 1
         if new:
             _write_rows(ws, t, start, new)
         wb.Save()
-    finally:
-        try:
-            xl.EnableEvents = old_events
-        except Exception:
-            pass
-        if own:
-            try:
-                wb.Close(False)
-            finally:
-                xl.Quit()
 
     res = {"added": len(new), "skipped": skipped, "total": len(payments), "backup": backup,
            "rows": (start, start + len(new) - 1) if new else None,
@@ -97,6 +66,6 @@ def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpo
         last = (t.sum_row - 1) if t.sum_row else start + len(new) - 1
         res["fill"] = fill_in_place(target_path, sheet_name, purpose_col, header_row, items, t.first_row, last,
                                     [r for r, _ in res["long_codes"]], res["no_gib"],
-                                    progress=lambda v, s: progress(int(20 + v * 0.8), s), backup=False)
+                                    progress=lambda v, s: progress(int(20 + v * 0.8), s), make_copy=False)
     progress(100, "Готово")
     return res

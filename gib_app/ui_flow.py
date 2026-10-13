@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from excel_transfer import transfer_and_fill
 from statement import read_statement, target_sheets
 from ui_helpers import format_done_summary, rows_list
+from ui_result import show_result
 from utils import format_money
 from worker import Worker
 
@@ -114,9 +115,7 @@ def run_fill(win):
 
 
 def show_filled(win, res):
-    win.worker = None
     win.fill_progress.setVisible(False)
-    win.result_path = win.tg_path
     lines = [f"Из выписки перенесено платежей: <b>{res['added']}</b> из {res['total']}"
              + (f" — строки {res['rows'][0]}–{res['rows'][1]}, лист «{res['sheet']}»" if res["rows"] else "")]
     if res["skipped"]:
@@ -133,11 +132,6 @@ def show_filled(win, res):
     elif res["no_gib"]:
         warn.append(f"⚠ Нет ГИБ в назначении — {rows_list(res['no_gib'])}. Заполните вручную.")
     head = "✓  Готово" if res["added"] else "✓  Новых платежей нет — всё уже перенесено"
-    win._set_head(ok, head if ok else "⚠  Готово, но итоги не сходятся")
-    win.result_text.setText("<br>".join(lines))
-    win.result_warn.setText("<br>".join(warn))
-    win.backup = res.get("backup")
-    win.backup_label.setText(f"🛡  Копия файла до изменений: {win.backup}" if win.backup else "")
-    win.backup_btn.setVisible(bool(win.backup))
-    win.pages.setCurrentIndex(2)
+    show_result(win, ok, head if ok else "⚠  Готово, но итоги не сходятся", lines, "<br>".join(warn),
+                path=win.tg_path, backup=res.get("backup"))
     update_fill_info(win)

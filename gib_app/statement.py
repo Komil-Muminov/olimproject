@@ -6,7 +6,7 @@ from constants import SUM_ROW_LABELS
 from detect import by_header
 from excel_reader import Book
 from parser import parse_purpose_ex
-from utils import norm_text, to_number
+from utils import find_col, norm_text, to_number
 
 PURPOSE_HEADERS = ("основание", "назначение", "наименование")
 BUDGET_WORDS = ("буҷет", "бучет", "бюджет", "budget")
@@ -43,18 +43,14 @@ def doc_text(v) -> str:
     return s.lstrip("0") or s      # Excel мог срезать нули: 0002309 = 2309
 
 
-def _col(heads, prefixes, after=0):
-    return next((c for c, h in enumerate(heads, 1) if c > after and h.startswith(prefixes)), None)
-
-
 def statement_header(data):
     """(строка шапки, назначение, расходы, № док, дата) — по заголовкам «Основание» и «Расходы»."""
     for r, row in enumerate(data[:60], 1):
         heads = [norm_text(v) for v in row]
-        pc = _col(heads, PURPOSE_HEADERS)
-        ac = _col(heads, ("расход",), pc or 0)
+        pc = find_col(heads, PURPOSE_HEADERS)
+        ac = find_col(heads, ("расход",), pc or 0)
         if pc and ac:
-            return r, pc, ac, _col(heads, ("№ док", "№док", "номер док", "№")), _col(heads, ("дата док", "дата"))
+            return r, pc, ac, find_col(heads, ("№ док", "№док", "номер док", "№")), find_col(heads, ("дата док", "дата"))
     return None
 
 

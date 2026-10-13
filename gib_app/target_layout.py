@@ -9,7 +9,7 @@ from constants import XL_DOWN
 from excel_columns import col_values, row_values, sum_row_below, used_bounds
 from excel_reconcile import SIMPLE_SUM_RE
 from statement import doc_text
-from utils import norm_text, to_number
+from utils import find_col, norm_text, to_number
 
 BALANCE_AMOUNT_RE = re.compile(r"-\(?(-?[\d.]+)\)?,2\)$")
 
@@ -27,18 +27,14 @@ class Target:
     rash: int | None = None
 
 
-def _col(heads, prefixes):
-    return next((c for c, h in enumerate(heads, 1) if h.startswith(prefixes)), None)
-
-
 def locate(ws, header_row: int, purpose_col: int) -> Target:
     _, last_col = used_bounds(ws)
     heads = [norm_text(v) for v in row_values(ws, header_row, last_col)]
     t = Target(header_row, purpose_col, header_row + 1, header_row, sum_row_below(ws, header_row, purpose_col))
-    t.num = _col(heads, ("р/т", "р\\т", "т/р", "№ п/п", "п/п"))
+    t.num = find_col(heads, ("р/т", "р\\т", "т/р", "№ п/п", "п/п"))
     t.doc = next((c for c, h in enumerate(heads, 1) if "хуччат" in h or "№ док" in h), None)
-    t.date = _col(heads, ("сана", "дата"))
-    t.rash = next((c for c, h in enumerate(heads, 1) if c > purpose_col and h.startswith("расход")), None)
+    t.date = find_col(heads, ("сана", "дата"))
+    t.rash = find_col(heads, ("расход",), purpose_col)
     end = (t.sum_row - 1) if t.sum_row else max(used_bounds(ws)[0], header_row + 1)
     texts = col_values(ws, purpose_col, header_row + 1, end)
     nums = col_values(ws, t.num, header_row + 1, end) if t.num else [None] * len(texts)
@@ -60,6 +56,19 @@ def _amount(formula, value):
 
 def payment_key(purpose, amount, doc=None):
     return norm_text(purpose), amount, doc_text(doc)
+
+
+def split_new(payments, seen: Counter, use_doc: bool) -> tuple:
+    """Платежи, которых ещё нет в файле, и сколько пропущено. Одинаковые платежи
+    считаются поштучно: два одинаковых в выписке и один в файле — перенесётся один."""
+    seen, new = Counter(seen), []
+    for p in payments:
+        k = payment_key(p.purpose, p.amount, p.doc if use_doc else None)
+        if seen[k] > 0:
+            seen[k] -= 1
+        else:
+            new.append(p)
+    return new, len(payments) - len(new)
 
 
 def existing_keys(ws, t: Target, use_doc: bool) -> Counter:

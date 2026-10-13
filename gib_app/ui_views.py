@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QVBoxLayout
 )
 
+from ui_helpers import BACKUP_NOTE
+
 
 def build_found_card(win):
     card = QFrame()
@@ -55,7 +57,7 @@ def build_found_card(win):
     fl.addWidget(win.warn_text)
     fl.addStretch()
 
-    win.note = QLabel("🛡  Перед изменением программа сохранит копию файла в папку «_резервные копии» (в папке программы).")
+    win.note = QLabel(BACKUP_NOTE)
     win.note.setObjectName("muted")
     win.note.setWordWrap(True)
     fl.addWidget(win.note)
