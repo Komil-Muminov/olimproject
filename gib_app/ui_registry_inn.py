@@ -148,9 +148,9 @@ def clean_inn_query(raw: str, reg=None) -> str:
     if len(digits) in (9, 10, 12):
         return digits
     if reg and not digits:
+        # по названию — самая крупная по сумме из подходящих (остальные видны в подсказках)
         q = raw.lower()
-        for book in (reg.payers, reg.recs):
-            for inn, party in book.items():
-                if q in party.name.lower():
-                    return inn
+        hits = [p for book in (reg.payers, reg.recs) for p in book.values() if q in p.name.lower()]
+        if hits:
+            return max(hits, key=lambda p: p.total).inn
     return digits or raw
