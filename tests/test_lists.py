@@ -1,10 +1,15 @@
 import os
 import sys
+import tempfile
 import unittest
+
+from openpyxl import Workbook
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
+from analysis_list_map import AS_LIST  # noqa: E402
 from analysis_lists import ListCollector, payments_like  # noqa: E402
+from analysis_scan import scan_files  # noqa: E402
 
 INNS = [f"{100000000 + i * 7919:09d}" for i in range(12)]
 
@@ -45,6 +50,25 @@ class ListMoneyTest(unittest.TestCase):
         self.assertEqual(set(ents), set(INNS))
         self.assertEqual((ents[INNS[0]].name, ents[INNS[1]].name, ents[INNS[0]].sums), ("ООО «Альфа 0»", "Бета", [100.0]))
         self.assertEqual(lists.details["bad_list"], [])                   # текст вокруг ИНН — не ошибка
+
+
+class AskInnTest(unittest.TestCase):
+    """ИНН не нашёлся сам (строк мало) — спросить столбец; по указанному столбцу таблица читается."""
+
+    def test_small_list(self):
+        path = os.path.join(tempfile.mkdtemp(), "мало.xlsx")
+        wb = Workbook()
+        wb.active.append(["Наименование", "ИНН", "Сумма"])
+        for i, inn in enumerate(INNS[:5]):
+            wb.active.append([f"Орг {i}", inn, 10])
+        wb.active.append(["Итого", None, 50])
+        wb.save(path)
+        res = scan_files([path])
+        self.assertEqual((res["needs_inn"], res["guess"]["cols"]), (path, {"inn": 1, "name": 0, "amount": 2}))
+        mapping = {"sheet": res["guess"]["sheet"], "head": 0, "cols": res["guess"]["cols"], "kind": AS_LIST}
+        reg, lists, _ = scan_files([path], {path: mapping})["raw"]
+        ents = lists.entities(0, 1)
+        self.assertEqual((len(ents), sum(e.sums[0] for e in ents), ents[0].name), (5, 50.0, "Орг 0"))
 
 
 if __name__ == "__main__":

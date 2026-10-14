@@ -3,6 +3,7 @@
 import os
 
 from analysis_checks import mark_same_names
+from analysis_list_map import AS_LIST, as_list, list_guess  # noqa: F401  (AS_LIST — для окна)
 from analysis_lists import ListCollector, payments_like
 from analysis_model import AnalysisData
 from analysis_periods import FILES, available_modes, registry_slots
@@ -12,12 +13,12 @@ from excel_reader import Book
 from registry_read import read_registry
 from registry_stats import Registry
 
-AS_LIST = "list"        # пользователь сказал: читать файл как обычный список организаций
 ASK_SCORE = 2           # столько узнанных заголовков реестра — спросить, не реестр ли это
 
 
 def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
-    """→ {"raw": (реестры, списки, пути)} или {"needs_mapping": путь, "guess": …} (похоже на реестр, но
+    """→ {"raw": (реестры, списки, пути)}, {"needs_inn": путь, "guess": …} (ИНН не нашёлся — указать столбец)
+    или {"needs_mapping": путь, "guess": …} (похоже на реестр, но
     столбцы не узнаны — спросить пользователя)."""
     mappings = mappings or {}
     reg, lists, n = Registry(), ListCollector(), len(paths)
@@ -25,7 +26,7 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
         name, base = os.path.basename(path), int(95 * k / n)
         progress(base, f"Читаю {name} ({k + 1} из {n})…")
         sheets, guess = [], None
-        if mappings.get(path) != AS_LIST:
+        if not as_list(mappings.get(path)):
             try:
                 sheets, guess = read_registry(path, mappings.get(path))
             except Exception:
@@ -45,9 +46,16 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
         # похоже на реестр (узнаны заголовки или два столбца ИНН), но столбцы не узнаны — спросить
         if guess and path not in mappings and (guess["score"] >= ASK_SCORE or payments_like(data)):
             return {"needs_mapping": path, "guess": guess}
-        found = lists.add_file(path, data)
-        if not found:
-            raise WriteError(f"В «{name}» не нашлось ни платежей, ни таблиц с ИНН.")
+        m = mappings.get(path)
+        found = lists.add_file(path, data, m if isinstance(m, dict) and as_list(m) else None)
+        if found:
+            continue
+        if isinstance(m, dict) and as_list(m):
+            raise WriteError(f"В «{name}» в выбранном столбце ИНН нет значений.")
+        ask = list_guess(data)          # ИНН не нашёлся сам — пусть пользователь укажет столбец
+        if not ask:
+            raise WriteError(f"Файл «{name}» пустой.")
+        return {"needs_inn": path, "guess": ask}
     progress(97, "Подвожу итоги…")
     if reg.files:
         reg.finish()

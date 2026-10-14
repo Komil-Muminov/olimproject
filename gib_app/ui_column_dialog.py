@@ -15,13 +15,13 @@ REGISTRY_WARN = "Нужно указать «Сумму» и хотя бы од�
 
 class ColumnDialog(QDialog):
     def __init__(self, parent, path: str, guess: dict, fields=ORDER, titles=TITLES, check=is_enough,
-                 need=REGISTRY_NEED, warn=REGISTRY_WARN, required=("amount",)):
+                 need=REGISTRY_NEED, warn=REGISTRY_WARN, required=("amount",), problem="программа узнала не все столбцы"):
         super().__init__(parent)
         self.guess, self.check, self.warn_text = guess, check, warn
         self.setWindowTitle("Укажите столбцы")
         self.setMinimumWidth(560)
         lay = QVBoxLayout(self)
-        info = QLabel(f"Файл «{os.path.basename(path)}», лист «{guess['sheet']}»: программа узнала не все столбцы.<br>"
+        info = QLabel(f"Файл «{os.path.basename(path)}», лист «{guess['sheet']}»: {problem}.<br>"
                       f"Заголовки взяты из строки <b>{guess.get('row0', 0) + guess['head'] + 1}</b>. Укажите, какой "
                       f"столбец что значит. {need}")
         info.setWordWrap(True)

@@ -3,6 +3,7 @@ import os
 
 from openpyxl import Workbook
 
+from analysis_list_map import as_list
 from excel_com import WriteError
 from registry_read import read_registry
 from report_fast import table_sheet
@@ -24,7 +25,7 @@ def payments_of(paths, inn: str, mappings=None, progress=lambda p, t: None) -> t
     out, registries, mappings = [], 0, mappings or {}
     for k, path in enumerate(paths):
         progress(int(85 * k / len(paths)), f"Ищу в {os.path.basename(path)} ({k + 1} из {len(paths)})…")
-        if mappings.get(path) == "list":            # пользователь сказал: это список организаций, не реестр
+        if as_list(mappings.get(path)):             # пользователь сказал: это список организаций, не реестр
             continue
         try:
             sheets, _ = read_registry(path, mappings.get(path))

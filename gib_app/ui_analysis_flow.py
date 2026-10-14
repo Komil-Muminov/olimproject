@@ -4,6 +4,7 @@ import os
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from analysis_jobs import make_pivot, make_report
+from analysis_list_map import FIELDS as LIST_FIELDS, TITLES as LIST_TITLES, list_ok
 from analysis_scan import AS_LIST, auto_mode, scan_files
 from report_inn import clean_inn, write_inn_payments
 from report_paths import analysis_report_path, inn_report_path, pivot_report_path
@@ -56,6 +57,8 @@ def run(win, kind: str = "report"):
 def _scanned(win, res):
     if "needs_mapping" in res:
         return _ask_columns(win, res["needs_mapping"], res["guess"])
+    if "needs_inn" in res:
+        return _ask_inn(win, res["needs_inn"], res["guess"])
     raw, pair = res["raw"], None            # сравнение: первая часть → последняя
     mode = auto_mode(raw)
     if win.an_kind == "pivot":
@@ -79,6 +82,16 @@ def _ask_columns(win, path: str, guess: dict):
         win.an_mappings[path] = AS_LIST
     else:
         return
+    run(win, win.an_kind)
+
+
+def _ask_inn(win, path: str, guess: dict):
+    """ИНН в файле не нашёлся сам — пользователь указывает столбец с ИНН (и, если есть, название, сумму)."""
+    dlg = ColumnDialog(win, path, guess, LIST_FIELDS, LIST_TITLES, list_ok, need="Обязательно: <b>ИНН</b>.",
+                       warn="Укажите столбец с ИНН.", required=("inn",), problem="программа не нашла столбец с ИНН")
+    if dlg.exec() != QDialog.Accepted:
+        return
+    win.an_mappings[path] = dict(dlg.mapping(), kind=AS_LIST)
     run(win, win.an_kind)
 
 

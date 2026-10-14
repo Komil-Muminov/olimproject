@@ -2,6 +2,7 @@
 глубокого анализа. Ошибки — те же правила, что в проверке ИНН (inn_check)."""
 import os
 
+from analysis_list_map import mapped_table
 from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
@@ -35,9 +36,14 @@ class ListCollector:
         self.details = {"dup_row": [], "bad_list": []}      # группы листа «Ошибки в таблицах»
         self.bad = set()        # ИНН (как в файле) с ошибкой
 
-    def add_file(self, path: str, sheets: dict) -> int:
-        """→ сколько таблиц с ИНН нашлось в файле."""
+    def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
+        """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
         fname, before = os.path.basename(path), len(self.parts)
+        if mapping:
+            s = mapped_table(sheets[mapping["sheet"]], mapping)
+            if s.all_rows:
+                self._add_side(fname, mapping["sheet"], sheets[mapping["sheet"]], s, 1)
+            return len(self.parts) - before
         for sheet, data in sheets.items():
             found = find_tables(data)
             if found:
