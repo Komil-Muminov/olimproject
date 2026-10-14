@@ -5,7 +5,16 @@ import os
 from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
 from compare_finder import find_tables
 from inn_check import _name_key, check_inn
-from utils import cell_val, to_num_safe
+from utils import cell_val, norm_text, to_num_safe
+
+# деньги в двух столбцах (ушло / пришло) — считаются оба
+TWO_SIDED = ("дебет", "кредит", "debit", "credit", "приход", "расход")
+
+
+def money_cols(data, s) -> list:
+    """Столбцы сумм таблицы: Дебет и Кредит (Приход/Расход) — оба, иначе — первый столбец сумм."""
+    both = [c for c in s.value_cols if norm_text(cell_val(data, s.header, c) or "").startswith(TWO_SIDED)]
+    return both if len(both) > 1 else s.value_cols[:1]
 
 
 class ListCollector:
@@ -32,14 +41,14 @@ class ListCollector:
     def _add_side(self, fname, sheet, data, s, on_sheet):
         i = len(self.parts)
         where = f"«{sheet}» {s.span}" if on_sheet > 1 else f"«{sheet}»"
-        metric = s.value_cols[0] if s.value_cols else None          # первый столбец сумм таблицы
+        metric = money_cols(data, s)
         self.parts.append(Part(f"{s.year} · {where}" if s.year else where, fname, "list",
-                               (int(s.year) if s.year else 9999, 0, i), has_sums=metric is not None))
+                               (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric)))
         for k, rows in s.all_rows.items():
             o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "dup": False})
             o["names"] += [n for n in (str(cell_val(data, r, s.name_col) or "").strip() if s.name_col else ""
                                        for r in rows) if n]
-            o["sums"][i] = round(sum(to_num_safe(cell_val(data, r, metric)) for r in rows), 2) if metric else 0.0
+            o["sums"][i] = round(sum(to_num_safe(cell_val(data, r, c)) for r in rows for c in metric), 2)
             o["counts"][i] = len(rows)
             o["dup"] = o["dup"] or len(rows) > 1
 
