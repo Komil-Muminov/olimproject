@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from registry_columns import HEAD_ROWS, guess_header, registry_columns
+from registry_columns import HEAD_ROWS, guess_header, registry_columns, two_row_columns
 from utils import to_number
 
 
@@ -83,7 +83,10 @@ def read_registry(path: str, mapping: dict | None = None):
         head = []
         for i, values in enumerate(rows):
             head.append(values)
-            cols = mapping["cols"] if mapping and i == mapping["head"] else (None if mapping else registry_columns(values))
+            if mapping:
+                cols = mapping["cols"] if i == mapping["head"] else None
+            else:
+                cols = registry_columns(values) or (i > 0 and two_row_columns(head[-2], values))
             if cols:
                 sheets.append((name, sheet.height, _payments(rows, cols, start + i + 2)))
                 break

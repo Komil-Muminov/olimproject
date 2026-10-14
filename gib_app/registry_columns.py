@@ -38,6 +38,25 @@ def registry_columns(head) -> dict | None:
     return cols if is_enough(cols) else None
 
 
+def _text(v) -> str:
+    return "" if v is None else str(v).strip()
+
+
+def two_row_columns(top, bottom) -> dict | None:
+    """Шапка в две строки: «Плательщик» (объединённая ячейка) над «Наименование | ИНН» → заголовки
+    «ИНН Плательщик», «Наименование Плательщик»… Верхний текст тянется вправо над подписями нижней строки."""
+    pairs, last = [], ""
+    for i in range(max(len(top), len(bottom))):
+        t, b = _text(top[i] if i < len(top) else None), _text(bottom[i] if i < len(bottom) else None)
+        last = t or (last if b else "")
+        pairs.append((b, last))
+    for first, second in ((0, 1), (1, 0)):          # «ИНН Плательщик» или «Плательщик ИНН»
+        cols = registry_columns([" ".join(x for x in (p[first], p[second]) if x) for p in pairs])
+        if cols:
+            return cols
+    return None
+
+
 def guess_header(rows: list, finder=None) -> dict:
     """Самая похожая на шапку строка среди первых: больше всего узнанных заголовков, иначе — больше
     всего текстовых ячеек. → {"head": номер строки, "heads": [текст], "sample": [первая строка данных],
