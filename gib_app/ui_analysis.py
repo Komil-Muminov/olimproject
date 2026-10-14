@@ -63,6 +63,12 @@ def build_analysis_card(win):
     win.an_other_btn.clicked.connect(win.choose_file)
     btns.addWidget(win.an_other_btn)
     btns.addStretch()
+    win.an_pivot_btn = QPushButton("📈  Сводная таблица")
+    win.an_pivot_btn.setObjectName("secondary")
+    win.an_pivot_btn.setToolTip("Отдельный файл: настоящая сводная таблица Excel (pivot) со срезами —\n"
+                                "что случилось → организации, по частям; кнопки-фильтры сверху")
+    win.an_pivot_btn.clicked.connect(lambda: flow.run(win, "pivot"))
+    btns.addWidget(win.an_pivot_btn)
     win.an_run_btn = QPushButton("📊  Анализировать")
     win.an_run_btn.setObjectName("primary")
     win.an_run_btn.setToolTip("Прочитать файлы и создать Excel: организации, что случилось, ошибки")

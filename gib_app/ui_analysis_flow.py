@@ -7,7 +7,8 @@ from analysis_model import FLAGS, STATUSES
 from analysis_scan import AS_LIST, scan_files
 from report_analysis import write_analysis_report
 from report_inn import clean_inn, write_inn_payments
-from report_paths import analysis_report_path, inn_report_path
+from report_pivot import write_pivot_report
+from report_paths import analysis_report_path, inn_report_path, pivot_report_path
 from ui_column_dialog import ColumnDialog
 from ui_result import show_result
 from utils import format_money
@@ -28,7 +29,7 @@ def start(win, paths: list):
 
 
 def _run(win, func, *args, done):
-    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn, win.an_pivot_btn):
         b.setEnabled(False)
     win.an_progress.setVisible(True)
     win.an_progress.setValue(0)
@@ -42,11 +43,13 @@ def _run(win, func, *args, done):
 def _idle(win):
     win.worker = None
     win.an_progress.setVisible(False)
-    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn, win.an_pivot_btn):
         b.setEnabled(True)
 
 
-def run(win):
+def run(win, kind: str = "report"):
+    """kind: "report" — Excel «Анализ»; "pivot" — отдельный файл со сводной таблицей."""
+    win.an_kind = kind
     if not win.worker:
         _run(win, scan_files, win.an_paths, win.an_mappings, done=lambda res: _scanned(win, res))
 
@@ -54,6 +57,8 @@ def run(win):
 def _scanned(win, res):
     if "needs_mapping" in res:
         return _ask_columns(win, res["needs_mapping"], res["guess"])
+    if win.an_kind == "pivot":
+        return _run(win, write_pivot_report, pivot_report_path(), res["data"], done=lambda r: _pivot_done(win, r))
     _run(win, write_analysis_report, analysis_report_path(), res["data"], done=lambda r: _done(win, r, res["data"]))
 
 
@@ -73,7 +78,18 @@ def _ask_columns(win, path: str, guess: dict):
         win.an_mappings[path] = AS_LIST
     else:
         return
-    run(win)
+    run(win, win.an_kind)
+
+
+def _pivot_done(win, res):
+    show_result(win, True, "✓  Сводная таблица готова", [
+        f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
+        f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
+        f"Лист «Сводная»: что случилось → организации ({_int(res['orgs'])}), по частям ({res['parts']}), "
+        "сверху срезы — кнопки-фильтры.",
+        f"Лист «Данные»: {_int(res['rows'])} строк — из них построена сводная."],
+        path=res["path"], note="Исходные файлы не изменены.")
+    win.back_page = ANALYSIS_PAGE
 
 
 def _done(win, res, data):
