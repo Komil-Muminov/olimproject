@@ -58,7 +58,9 @@ def _scanned(win, res):
     if "needs_mapping" in res:
         return _ask_columns(win, res["needs_mapping"], res["guess"])
     if "needs_inn" in res:
-        return _ask_inn(win, res["needs_inn"], res["guess"])
+        return _ask_list(win, res["needs_inn"], res["guess"], "программа не нашла столбец с ИНН")
+    if "needs_amount" in res:
+        return _ask_list(win, res["needs_amount"], res["guess"], "несколько столбцов с числами — какой из них сумма?")
     raw, pair = res["raw"], None            # сравнение: первая часть → последняя
     mode = auto_mode(raw)
     if win.an_kind == "pivot":
@@ -85,10 +87,11 @@ def _ask_columns(win, path: str, guess: dict):
     run(win, win.an_kind)
 
 
-def _ask_inn(win, path: str, guess: dict):
-    """ИНН в файле не нашёлся сам — пользователь указывает столбец с ИНН (и, если есть, название, сумму)."""
-    dlg = ColumnDialog(win, path, guess, LIST_FIELDS, LIST_TITLES, list_ok, need="Обязательно: <b>ИНН</b>.",
-                       warn="Укажите столбец с ИНН.", required=("inn",), problem="программа не нашла столбец с ИНН")
+def _ask_list(win, path: str, guess: dict, problem: str):
+    """Список организаций: пользователь указывает столбец с ИНН (обязательно), название и сумму."""
+    dlg = ColumnDialog(win, path, guess, LIST_FIELDS, LIST_TITLES, list_ok, need="Обязательно: <b>ИНН</b>. "
+                       "Сумма — какой столбец считать деньгами («— нет —», если денег нет).",
+                       warn="Укажите столбец с ИНН.", required=("inn",), problem=problem)
     if dlg.exec() != QDialog.Accepted:
         return
     win.an_mappings[path] = dict(dlg.mapping(), kind=AS_LIST)

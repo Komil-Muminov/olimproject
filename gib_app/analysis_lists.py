@@ -2,7 +2,7 @@
 глубокого анализа. Ошибки — те же правила, что в проверке ИНН (inn_check)."""
 import os
 
-from analysis_list_map import mapped_table
+from analysis_list_map import FIND, mapped_table, side_guess
 from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
@@ -12,10 +12,26 @@ from utils import cell_val, norm_text, to_num_safe
 TWO_SIDED = ("дебет", "кредит", "debit", "credit", "приход", "расход")
 
 
+def _named(data, s, words) -> list:
+    """Столбцы с числами, чей заголовок начинается с одного из words."""
+    return [c for c in s.value_cols if norm_text(cell_val(data, s.header, c) or "").startswith(words)]
+
+
 def money_cols(data, s) -> list:
-    """Столбцы сумм таблицы: Дебет и Кредит (Приход/Расход) — оба, иначе — первый столбец сумм."""
-    both = [c for c in s.value_cols if norm_text(cell_val(data, s.header, c) or "").startswith(TWO_SIDED)]
-    return both if len(both) > 1 else s.value_cols[:1]
+    """Столбцы сумм таблицы: Дебет и Кредит (Приход/Расход) — оба; иначе столбец «Сумма», иначе первый с числами."""
+    both = _named(data, s, TWO_SIDED)
+    return both if len(both) > 1 else (_named(data, s, FIND["amount"])[:1] or s.value_cols[:1])
+
+
+def money_unclear(sheets: dict) -> dict | None:
+    """Несколько столбцов с числами и ни один не «Сумма» (и не Дебет/Кредит) — какой считать деньгами,
+    скажет пользователь. → догадка для окна выбора столбцов или None."""
+    for sheet, data in sheets.items():
+        found = find_tables(data)
+        for s in (found[1] if found else []):
+            if len(s.value_cols) > 1 and len(_named(data, s, TWO_SIDED)) < 2 and not _named(data, s, FIND["amount"]):
+                return side_guess(data, sheet, s)
+    return None
 
 
 def payments_like(sheets: dict) -> bool:

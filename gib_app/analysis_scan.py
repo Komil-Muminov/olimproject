@@ -4,7 +4,7 @@ import os
 
 from analysis_checks import mark_same_names
 from analysis_list_map import AS_LIST, as_list, list_guess  # noqa: F401  (AS_LIST — для окна)
-from analysis_lists import ListCollector, payments_like
+from analysis_lists import ListCollector, money_unclear, payments_like
 from analysis_model import AnalysisData
 from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
@@ -17,7 +17,8 @@ ASK_SCORE = 2           # столько узнанных заголовков �
 
 
 def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
-    """→ {"raw": (реестры, списки, пути)}, {"needs_inn": путь, "guess": …} (ИНН не нашёлся — указать столбец)
+    """→ {"raw": (реестры, списки, пути)}, {"needs_inn"/"needs_amount": путь, "guess": …} (ИНН не нашёлся /
+    непонятно, где сумма — указать столбцы)
     или {"needs_mapping": путь, "guess": …} (похоже на реестр, но
     столбцы не узнаны — спросить пользователя)."""
     mappings = mappings or {}
@@ -47,6 +48,9 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
         if guess and path not in mappings and (guess["score"] >= ASK_SCORE or payments_like(data)):
             return {"needs_mapping": path, "guess": guess}
         m = mappings.get(path)
+        unclear = money_unclear(data) if m in (None, AS_LIST) else None
+        if unclear:                     # несколько столбцов с числами — какой из них сумма?
+            return {"needs_amount": path, "guess": unclear}
         found = lists.add_file(path, data, m if isinstance(m, dict) and as_list(m) else None)
         if found:
             continue

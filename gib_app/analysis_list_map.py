@@ -40,6 +40,13 @@ def list_guess(sheets: dict) -> dict | None:
     return dict(guess_header(filled[name], _find), sheet=name)
 
 
+def side_guess(data: list, sheet: str, s) -> dict:
+    """Для окна выбора столбцов — по найденной таблице: ИНН и название уже выбраны, сумму выберет пользователь."""
+    row = lambda r: [str(v).strip() if v is not None else "" for v in (data[r - 1] if r <= len(data) else [])]
+    return {"sheet": sheet, "head": s.header - 1, "heads": row(s.header), "sample": row(s.header + 1),
+            "cols": {"inn": s.key_col - 1, "name": s.name_col - 1 if s.name_col else None, "amount": None}}
+
+
 def _key(v) -> str | None:
     """ИНН из ячейки, указанной пользователем: цифры (без пробелов), иначе текст как есть."""
     if v is None or isinstance(v, bool):

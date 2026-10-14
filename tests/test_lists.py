@@ -70,6 +70,21 @@ class AskInnTest(unittest.TestCase):
         ents = lists.entities(0, 1)
         self.assertEqual((len(ents), sum(e.sums[0] for e in ents), ents[0].name), (5, 50.0, "Орг 0"))
 
+    def test_which_column_is_money(self):
+        """Два столбца с числами, ни один не «Сумма» — спросить; по выбору считается нужный."""
+        path = os.path.join(tempfile.mkdtemp(), "числа.xlsx")
+        wb = Workbook()
+        wb.active.append(["ИНН", "Наименование", "Количество", "Оплачено"])
+        for i, inn in enumerate(INNS):
+            wb.active.append([inn, f"Орг {i}", 3, 100])
+        wb.save(path)
+        res = scan_files([path])
+        self.assertEqual((res["needs_amount"], res["guess"]["cols"]), (path, {"inn": 0, "name": 1, "amount": None}))
+        mapping = {"sheet": res["guess"]["sheet"], "head": 0, "cols": dict(res["guess"]["cols"], amount=3),
+                   "kind": AS_LIST}
+        _, lists, _ = scan_files([path], {path: mapping})["raw"]
+        self.assertEqual({e.sums[0] for e in lists.entities(0, 1)}, {100.0})
+
 
 if __name__ == "__main__":
     unittest.main()
