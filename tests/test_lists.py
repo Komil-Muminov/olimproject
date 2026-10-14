@@ -36,6 +36,16 @@ class ListMoneyTest(unittest.TestCase):
         self.assertFalse(payments_like({"Л": [["ИНН", "Название"]] + [[i, "А"] for i in INNS]}))
         self.assertEqual(set(_sums(head, rows).values()), {20.0})    # 10 как плательщик + 10 как получатель
 
+    def test_inn_inside_text(self):
+        rows = [[f"ООО «Альфа {i}» (ИНН {inn})", 100] for i, inn in enumerate(INNS)]
+        rows[1][0] = f"Бета, РМА: {INNS[1]}"
+        lists = ListCollector()
+        lists.add_file("t.xlsx", {"Л": [["Контрагент", "Сумма"]] + rows})
+        ents = {e.inn: e for e in lists.entities(0, 1)}
+        self.assertEqual(set(ents), set(INNS))
+        self.assertEqual((ents[INNS[0]].name, ents[INNS[1]].name, ents[INNS[0]].sums), ("ООО «Альфа 0»", "Бета", [100.0]))
+        self.assertEqual(lists.details["bad_list"], [])                   # текст вокруг ИНН — не ошибка
+
 
 if __name__ == "__main__":
     unittest.main()

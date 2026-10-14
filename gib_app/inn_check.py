@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from compare_finder import find_tables
+from compare_finder import find_tables, key_in_text, name_at as _name_at
 from constants import SUM_ROW_LABELS as TOTAL_LABELS
 from utils import cell_val as _cell, norm_text
 
@@ -67,7 +67,7 @@ def check_inn(sheets):
             res.tables.append(t)
 
             def name_at(r):
-                return str(_cell(data, r, s.name_col) or "").strip() if s.name_col else ""
+                return _name_at(data, r, s)
 
             # дубликаты внутри таблицы
             for k, rows in s.all_rows.items():
@@ -86,6 +86,8 @@ def check_inn(sheets):
                 if any(norm_text(v).startswith(TOTAL_LABELS) for v in block_vals if isinstance(v, str)):
                     continue
                 raw_v = _cell(data, r, s.key_col)
+                if s.in_text:
+                    raw_v = key_in_text(raw_v)
                 raw = _raw_key(raw_v)
                 name = name_at(r)
                 if raw is None:

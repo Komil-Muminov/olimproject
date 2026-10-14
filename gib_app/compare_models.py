@@ -17,6 +17,7 @@ class SideList:
     side: str = ""                               # «левая часть» / «правая часть» листа
     header: int = 0                              # строка шапки
     last_row: int = 0                            # последняя заполненная строка таблицы
+    in_text: bool = False                        # ИНН внутри текста: «ООО А (ИНН 123456789)»
 
     @property
     def span(self) -> str:

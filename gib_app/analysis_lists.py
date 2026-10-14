@@ -3,7 +3,7 @@
 import os
 
 from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
-from compare_finder import find_tables
+from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
 from utils import cell_val, norm_text, to_num_safe
 
@@ -55,8 +55,7 @@ class ListCollector:
                                (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric)))
         for k, rows in s.all_rows.items():
             o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "dup": False})
-            o["names"] += [n for n in (str(cell_val(data, r, s.name_col) or "").strip() if s.name_col else ""
-                                       for r in rows) if n]
+            o["names"] += [n for n in (name_at(data, r, s) for r in rows) if n]
             o["sums"][i] = round(sum(to_num_safe(cell_val(data, r, c)) for r in rows for c in metric), 2)
             o["counts"][i] = len(rows)
             o["dup"] = o["dup"] or len(rows) > 1
