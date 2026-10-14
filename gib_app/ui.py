@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
         self.plan = self.worker = self.backup = self.result_path = None
         self._gib_text = ""
         self.mode = "fill"
-        self.st_path = self.tg_path = self.st_pays = self.tg_sheets = None
+        self.st_path = self.tg_path = self.st_pays = self.tg_sheets = self.st_mapping = self.tg_cols = None
         self.registry, self.reg_paths, self.back_page = None, [], 0
 
         root = QWidget()

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from excel_transfer import transfer_and_fill
 from statement import read_statement, target_sheets
+from ui_fill_columns import ask_statement_columns, ask_target_columns
 from ui_helpers import format_done_summary, rows_list
 from ui_result import show_result
 from utils import format_money
@@ -38,23 +39,34 @@ def pick(win, title):
 
 
 def set_statement(win, path):
+    mapping = None
     try:
-        _, pays = read_statement(path)
+        sheet, pays = read_statement(path)
+        if sheet is None:                       # столбцы не узнаны — пусть укажет пользователь
+            mapping = ask_statement_columns(win, path)
+            if mapping:
+                _, pays = read_statement(path, mapping)
     except Exception as e:
         QMessageBox.critical(win, "Ошибка", f"Не удалось открыть выписку:\n{path}\n\n{e}")
         return
-    win.st_path, win.st_pays = path, pays
+    win.st_path, win.st_pays, win.st_mapping = path, pays, mapping
     win.st_label.setText(os.path.basename(path))
     update_fill_info(win)
 
 
 def set_target(win, path):
+    cols = None
     try:
         sheets = target_sheets(path)
+        if not sheets:                          # таблица не узнана и пустого листа нет — спросить
+            picked = ask_target_columns(win, path)
+            if picked:
+                sheet, lay, cols = picked
+                sheets = [(sheet, lay)]
     except Exception as e:
         QMessageBox.critical(win, "Ошибка", f"Не удалось открыть файл:\n{path}\n\n{e}")
         return
-    win.tg_path, win.tg_sheets = path, sheets
+    win.tg_path, win.tg_sheets, win.tg_cols = path, sheets, cols
     win.tg_label.setText(os.path.basename(path))
     win.sheet_combo.blockSignals(True)
     win.sheet_combo.clear()
@@ -107,7 +119,7 @@ def run_fill(win):
     win.fill_progress.setVisible(True)
     win.fill_progress.setValue(0)
     win.worker = Worker(transfer_and_fill, win.st_path, win.tg_path, name,
-                        lay.header_row if lay else None, lay.purpose_col if lay else None)
+                        lay.header_row if lay else None, lay.purpose_col if lay else None, win.st_mapping, win.tg_cols)
     win.worker.progress.connect(lambda v, t: (win.fill_progress.setValue(v), win.fill_progress.setFormat(f"{t}  %p%")))
     win.worker.done.connect(win._filled)
     win.worker.failed.connect(win._failed)

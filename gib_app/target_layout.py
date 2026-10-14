@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from openpyxl.utils import get_column_letter
 
 from constants import XL_DOWN
-from excel_columns import col_values, row_values, sum_row_below, used_bounds
+from excel_columns import col_values, insert_column, row_values, sum_row_below, used_bounds
 from excel_reconcile import SIMPLE_SUM_RE
+from gib_columns import target_cols
 from statement import doc_text
 from utils import find_col, norm_text, to_number
 
@@ -27,14 +28,16 @@ class Target:
     rash: int | None = None
 
 
-def locate(ws, header_row: int, purpose_col: int) -> Target:
+def locate(ws, header_row: int, purpose_col: int, user_cols: dict | None = None) -> Target:
+    """Таблица на листе. user_cols — столбцы, указанные пользователем (с 0): num, doc, date."""
     _, last_col = used_bounds(ws)
-    heads = [norm_text(v) for v in row_values(ws, header_row, last_col)]
+    head = row_values(ws, header_row, last_col)
+    found = target_cols(head)
+    found.update({k: v for k, v in (user_cols or {}).items() if k != "purpose"})
+    one = lambda k: found[k] + 1 if found.get(k) is not None else None
     t = Target(header_row, purpose_col, header_row + 1, header_row, sum_row_below(ws, header_row, purpose_col))
-    t.num = find_col(heads, ("р/т", "р\\т", "т/р", "№ п/п", "п/п"))
-    t.doc = next((c for c, h in enumerate(heads, 1) if "хуччат" in h or "№ док" in h), None)
-    t.date = find_col(heads, ("сана", "дата"))
-    t.rash = find_col(heads, ("расход",), purpose_col)
+    t.num, t.doc, t.date = one("num"), one("doc"), one("date")
+    t.rash = find_col([norm_text(v) for v in head], ("расход",), purpose_col) or ensure_reconciliation(ws, header_row, head)
     end = (t.sum_row - 1) if t.sum_row else max(used_bounds(ws)[0], header_row + 1)
     texts = col_values(ws, purpose_col, header_row + 1, end)
     nums = col_values(ws, t.num, header_row + 1, end) if t.num else [None] * len(texts)
@@ -46,6 +49,15 @@ def locate(ws, header_row: int, purpose_col: int) -> Target:
     filled = [header_row + 1 + i for i, v in enumerate(texts) if str(v or "").strip()]
     t.last_filled = max(filled) if filled else t.first_row - 1
     return t
+
+
+def ensure_reconciliation(ws, header_row: int, head: list) -> int:
+    """Нет «Расходы» — добавить «Ҳамагӣ» и «Расходы» справа от шапки (туда пойдут суммы из выписки,
+    на них держится сверка). → номер столбца «Расходы»."""
+    pos = max((c for c, v in enumerate(head, 1) if v not in (None, "")), default=0) + 1
+    insert_column(ws, header_row, pos, "Ҳамагӣ")
+    insert_column(ws, header_row, pos + 1, "Расходы")
+    return pos + 1
 
 
 def _amount(formula, value):

@@ -38,13 +38,14 @@ def registry_columns(head) -> dict | None:
     return cols if is_enough(cols) else None
 
 
-def guess_header(rows: list) -> dict:
+def guess_header(rows: list, finder=None) -> dict:
     """Самая похожая на шапку строка среди первых: больше всего узнанных заголовков, иначе — больше
     всего текстовых ячеек. → {"head": номер строки, "heads": [текст], "sample": [первая строка данных],
-    "cols": {…}, "score": узнано}."""
+    "cols": {…}, "score": узнано}. finder — свой поиск столбцов (по умолчанию — столбцы реестра)."""
+    finder = finder or find_columns
     best = {"head": 0, "heads": [], "cols": {}, "score": -1, "texts": -1}
     for i, values in enumerate(rows[:HEAD_ROWS]):
-        cols = find_columns(values)
+        cols = finder(values)
         score = sum(c is not None for c in cols.values())
         texts = sum(isinstance(v, str) and bool(v.strip()) for v in values)
         if (score, texts) > (best["score"], best["texts"]):

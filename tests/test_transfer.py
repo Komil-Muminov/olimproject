@@ -5,7 +5,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
-from statement import Payment, doc_text, statement_header, to_date  # noqa: E402
+from gib_columns import target_cols  # noqa: E402
+from statement import Payment, _payments, doc_text, statement_header, to_date  # noqa: E402
 from target_layout import _amount, payment_key, split_new  # noqa: E402
 from utils import find_col  # noqa: E402
 
@@ -13,7 +14,17 @@ from utils import find_col  # noqa: E402
 class TestStatement(unittest.TestCase):
     def test_header_found(self):
         data = [["", "Выписка"], ["", "№ док-та", "Дата Док-а", "Дата Учета", "Основание", "Доходы", "Расходы"]]
-        self.assertEqual(statement_header(data), (2, 5, 7, 2, 3))
+        self.assertEqual(statement_header(data), (2, {"purpose": 4, "amount": 6, "doc": 1, "date": 2}))
+
+    def test_unknown_headers_and_user_columns(self):
+        data = [["Тавсиф", "Маблаг", "Ракам"], ["Пардохт ГИБ 2211-100,00", 100, "7"], ["Итого", 100, None]]
+        self.assertIsNone(statement_header(data))
+        pays = _payments(data, 1, {"purpose": 0, "amount": 1, "doc": 2, "date": None})
+        self.assertEqual([(p.row, p.amount, p.doc, p.gibs) for p in pays], [(2, 100.0, "7", {"2211": 100.0})])
+
+    def test_target_columns(self):
+        cols = target_cols(["р/т", "Номгӯи корхонаҳо", "№ ҳуҷҷат", "Сана", "", "Ҳамагӣ", "Расходы"])
+        self.assertEqual(cols, {"purpose": 1, "rash": 6, "doc": 2, "date": 3, "num": 0})
 
     def test_date_and_doc(self):
         self.assertEqual(to_date("22.12.2025"), datetime(2025, 12, 22))

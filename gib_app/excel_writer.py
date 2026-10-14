@@ -88,8 +88,8 @@ def fill_in_place(path, sheet_name, purpose_col, header_row, items, first_row=No
                     ws.Cells(r, col).Interior.Pattern = -4142      # наша подсветка больше не нужна
         for code in created:
             ws.Cells(header_row, gib_cols[code]).Interior.Color = XL_GREEN
-        if recon["sum_row"]:        # итог «Чамъ» у столбцов ГИБ, где его ещё нет
-            for col in gib_cols.values():
+        if recon["sum_row"]:        # итог «Чамъ» у «Ҳамагӣ» и столбцов ГИБ, где его ещё нет
+            for col in [recon["total"], *gib_cols.values()]:
                 cell = ws.Cells(recon["sum_row"], col)
                 if cell.Formula in ("", None):
                     cell.Formula = f"=SUM({cell_name(first_row, col)}:{cell_name(recon['sum_row'] - 1, col)})"

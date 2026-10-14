@@ -6,9 +6,9 @@ from constants import SUM_ROW_LABELS
 from detect import by_header
 from excel_reader import Book
 from parser import parse_purpose_ex
-from utils import find_col, norm_text, to_number
+from gib_columns import statement_cols, statement_ok
+from utils import norm_text, to_number
 
-PURPOSE_HEADERS = ("основание", "назначение", "наименование")
 BUDGET_WORDS = ("буҷет", "бучет", "бюджет", "budget")
 
 
@@ -44,37 +44,43 @@ def doc_text(v) -> str:
 
 
 def statement_header(data):
-    """(строка шапки, назначение, расходы, № док, дата) — по заголовкам «Основание» и «Расходы»."""
+    """(строка шапки с 1, столбцы с 0) — по заголовкам «Основание» и «Расходы»; не нашлось — None."""
     for r, row in enumerate(data[:60], 1):
-        heads = [norm_text(v) for v in row]
-        pc = find_col(heads, PURPOSE_HEADERS)
-        ac = find_col(heads, ("расход",), pc or 0)
-        if pc and ac:
-            return r, pc, ac, find_col(heads, ("№ док", "№док", "номер док", "№")), find_col(heads, ("дата док", "дата"))
+        cols = statement_cols(row)
+        if statement_ok(cols):
+            return r, cols
     return None
 
 
-def read_statement(path: str):
-    """Все платежи (расходы > 0) из выписки: (лист, [Payment])."""
+def read_statement(path: str, mapping: dict | None = None):
+    """Все платежи (расходы > 0) из выписки: (лист, [Payment]); шапка не найдена — (None, []).
+    mapping — столбцы, указанные пользователем: {"sheet", "head" (с 0), "cols" (с 0)}."""
     for name, data in Book(path).sheets.items():
-        head = statement_header(data)
-        if not head:
-            continue
-        hr, pc, ac, dc, tc = head
-        out = []
-        for r in range(hr + 1, len(data) + 1):
-            text = Book.value(data, r, pc)
-            amount = to_number(Book.value(data, r, ac))
-            if not isinstance(text, str) or not text.strip() or not amount or amount <= 0:
+        if mapping:
+            if name != mapping["sheet"]:
                 continue
-            if norm_text(text).startswith(SUM_ROW_LABELS):      # «Обороты за период:», «Итого»
+            hr, cols = mapping["head"] + 1, mapping["cols"]
+        else:
+            head = statement_header(data)
+            if not head:
                 continue
-            gibs, longs = parse_purpose_ex(text)
-            out.append(Payment(r, text.strip(), round(amount, 2),
-                               Book.value(data, r, dc) if dc else None,
-                               to_date(Book.value(data, r, tc)) if tc else None, gibs, longs))
-        return name, out
+            hr, cols = head
+        return name, _payments(data, hr, cols)
     return None, []
+
+
+def _payments(data, hr: int, cols: dict) -> list:
+    get = lambda r, k: Book.value(data, r, cols[k] + 1) if cols.get(k) is not None else None
+    out = []
+    for r in range(hr + 1, len(data) + 1):
+        text, amount = get(r, "purpose"), to_number(get(r, "amount"))
+        if not isinstance(text, str) or not text.strip() or not amount or amount <= 0:
+            continue
+        if norm_text(text).startswith(SUM_ROW_LABELS):      # «Обороты за период:», «Итого»
+            continue
+        gibs, longs = parse_purpose_ex(text)
+        out.append(Payment(r, text.strip(), round(amount, 2), get(r, "doc"), to_date(get(r, "date")), gibs, longs))
+    return out
 
 
 def target_sheets(path: str) -> list:

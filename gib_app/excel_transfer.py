@@ -34,9 +34,10 @@ def _write_rows(ws, t, start, rows):
 
 
 def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpose_col,
-                      progress=lambda p, t: None):
+                      st_mapping=None, tg_cols=None, progress=lambda p, t: None):
+    """st_mapping / tg_cols — столбцы выписки и файла, указанные пользователем (если по заголовкам не узнались)."""
     progress(2, "Читаю выписку…")
-    _, payments = read_statement(statement_path)
+    _, payments = read_statement(statement_path, st_mapping)
     if not payments:
         raise WriteError("В выписке не нашлось платежей (нужны столбцы «Основание» и «Расходы»).")
     progress(5, "Открываю файл, куда заполнять…")
@@ -46,7 +47,7 @@ def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpo
         ws = get_sheet(wb, sheet_name)
         if header_row is None:          # пустой лист — сначала создаём таблицу
             header_row, purpose_col = create_table(ws)
-        t = locate(ws, header_row, purpose_col)
+        t = locate(ws, header_row, purpose_col, tg_cols)
         use_doc = bool(t.doc) and any(p.doc not in (None, "") for p in payments)
         new, skipped = split_new(payments, existing_keys(ws, t, use_doc), use_doc)
         progress(15, "Переношу платежи…")
