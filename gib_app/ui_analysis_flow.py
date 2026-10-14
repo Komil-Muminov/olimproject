@@ -106,7 +106,7 @@ def export_payments(win):
     if win.worker:
         return
     if not inn.isdigit():
-        QMessageBox.information(win, "Платежи", "Введите ИНН цифрами, например 040000011.")
+        QMessageBox.information(win, "Всё по ИНН", "Введите ИНН цифрами, например 040000011.")
         return
     _run(win, write_inn_payments, inn_report_path(inn), win.an_paths, inn, win.an_mappings,
          done=lambda res: _payments_done(win, res))
@@ -114,15 +114,15 @@ def export_payments(win):
 
 def _payments_done(win, res):
     if not res["path"]:
-        QMessageBox.information(win, "Платежи", f"ИНН {res['inn']} не найден в реестрах ни среди плательщиков, "
-                                "ни среди получателей.")
+        QMessageBox.information(win, "Всё по ИНН", f"ИНН {res['inn']} не найден ни в одном из выбранных файлов.")
         return
-    show_result(win, True, "✓  Платежи выгружены", [
+    pays = [f"Платил: <b>{_int(res['paid'])}</b> платежей на <b>{format_money(res['paid_sum'])}</b>",
+            f"Получал: <b>{_int(res['got'])}</b> платежей на <b>{format_money(res['got_sum'])}</b>"] if res["registries"] else []
+    show_result(win, True, "✓  Всё по ИНН — готово", [
         f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
         f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
         f"ИНН <b>{res['inn']}</b>",
-        f"Платил: <b>{_int(res['paid'])}</b> платежей на <b>{format_money(res['paid_sum'])}</b>",
-        f"Получал: <b>{_int(res['got'])}</b> платежей на <b>{format_money(res['got_sum'])}</b>"],
+        f"В таблицах: <b>{_int(res['tables'])}</b> строк (лист «Из таблиц» — с подписью файла, листа и столбца)"] + pays,
         path=res["path"], note="Исходные файлы не изменены.")
     win.back_page = ANALYSIS_PAGE
 

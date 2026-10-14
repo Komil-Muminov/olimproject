@@ -222,11 +222,13 @@ class TestInnPayments(unittest.TestCase):
         self.assertIsNone(none["path"])                     # ничего не нашлось — файл не создаётся
 
     def test_no_registries(self):
-        from excel_com import WriteError
+        """Реестров нет — ИНН ищется в таблицах; листов «Платил» / «Получал» нет."""
+        from openpyxl import load_workbook
         from report_inn import write_inn_payments
         lst = self._book([["Номи корхона", "РМА"], ["Орг", "040000011"]])
-        with self.assertRaises(WriteError):
-            write_inn_payments(os.path.join(tempfile.mkdtemp(), "x.xlsx"), [lst], "040000011")
+        res = write_inn_payments(os.path.join(tempfile.mkdtemp(), "x.xlsx"), [lst], "040000011")
+        self.assertEqual((res["tables"], res["registries"]), (1, 0))
+        self.assertEqual(load_workbook(res["path"]).sheetnames, ["Где нашлось", "Из таблиц"])
 
 
 class TestPaths(unittest.TestCase):

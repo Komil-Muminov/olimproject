@@ -19,5 +19,5 @@ def analysis_report_path() -> str:
 
 
 def inn_report_path(inn: str) -> str:
-    """«Платежи ИНН 040000011.xlsx» в папке «Свод по глубокому анализу»."""
-    return unique_path(os.path.join(analysis_dir(), f"Платежи ИНН {inn}"))
+    """«Всё по ИНН 040000011.xlsx» в папке «Свод по глубокому анализу»."""
+    return unique_path(os.path.join(analysis_dir(), f"Всё по ИНН {inn}"))

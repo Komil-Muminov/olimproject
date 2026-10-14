@@ -46,7 +46,7 @@ def build_analysis_card(win):
     inn_lay = QVBoxLayout(inn_box)
     inn_lay.setContentsMargins(18, 14, 18, 14)
     inn_lay.setSpacing(8)
-    title = QLabel("📄  Платежи одной организации")
+    title = QLabel("📄  Всё по одной организации")
     title.setObjectName("actionTitle")
     inn_lay.addWidget(title)
     inn_row = QHBoxLayout()
@@ -57,7 +57,8 @@ def build_analysis_card(win):
     win.an_inn.returnPressed.connect(lambda: flow.export_payments(win))
     inn_row.addWidget(win.an_inn, 1)
     win.an_pay_btn = QPushButton("В Excel")
-    win.an_pay_btn.setToolTip("Все платежи этой организации из реестров: где платила и где получала")
+    win.an_pay_btn.setToolTip("Где встречается этот ИНН во всех выбранных файлах: строки таблиц (с подписью — "
+                              "файл, лист, столбец) и платежи из реестров (где платила и где получала)")
     win.an_pay_btn.clicked.connect(lambda: flow.export_payments(win))
     inn_row.addWidget(win.an_pay_btn)
     inn_lay.addLayout(inn_row)
