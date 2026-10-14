@@ -3,11 +3,11 @@ import os
 
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from analysis_jobs import make_pivot, make_report
+from analysis_jobs import make_report
 from analysis_list_map import FIELDS as LIST_FIELDS, TITLES as LIST_TITLES, list_ok
 from analysis_scan import AS_LIST, auto_mode, scan_files
 from report_inn import clean_inn, write_inn_payments
-from report_paths import analysis_report_path, inn_report_path, pivot_report_path
+from report_paths import analysis_report_path, inn_report_path
 from ui_column_dialog import ColumnDialog
 from ui_analysis_result import result_view
 from ui_result import show_result
@@ -29,7 +29,7 @@ def start(win, paths: list):
 
 
 def _run(win, func, *args, done):
-    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn, win.an_pivot_btn):
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
         b.setEnabled(False)
     win.an_progress.setVisible(True)
     win.an_progress.setValue(0)
@@ -43,13 +43,12 @@ def _run(win, func, *args, done):
 def _idle(win):
     win.worker = None
     win.an_progress.setVisible(False)
-    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn, win.an_pivot_btn):
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
         b.setEnabled(True)
 
 
-def run(win, kind: str = "report"):
-    """kind: "report" — Excel «Анализ»; "pivot" — отдельный файл со сводной таблицей."""
-    win.an_kind = kind
+def run(win):
+    """«Анализ»: прочитать файлы в фоне, потом записать Excel."""
     if not win.worker:
         _run(win, scan_files, win.an_paths, win.an_mappings, done=lambda res: _scanned(win, res))
 
@@ -63,8 +62,6 @@ def _scanned(win, res):
         return _ask_list(win, res["needs_amount"], res["guess"], "несколько столбцов с числами — какой из них сумма?")
     raw, pair = res["raw"], None            # сравнение: первая часть → последняя
     mode = auto_mode(raw)
-    if win.an_kind == "pivot":
-        return _run(win, make_pivot, pivot_report_path(), raw, mode, pair, done=lambda r: _pivot_done(win, r))
     _run(win, make_report, analysis_report_path(), raw, mode, pair, done=lambda r: _done(win, r, r["data"]))
 
 
@@ -84,7 +81,7 @@ def _ask_columns(win, path: str, guess: dict):
         win.an_mappings[path] = AS_LIST
     else:
         return
-    run(win, win.an_kind)
+    run(win)
 
 
 def _ask_list(win, path: str, guess: dict, problem: str):
@@ -95,18 +92,7 @@ def _ask_list(win, path: str, guess: dict, problem: str):
     if dlg.exec() != QDialog.Accepted:
         return
     win.an_mappings[path] = dict(dlg.mapping(), kind=AS_LIST)
-    run(win, win.an_kind)
-
-
-def _pivot_done(win, res):
-    show_result(win, True, "✓  Сводная таблица готова", [
-        f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
-        f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
-        f"Лист «Сводная»: что случилось → организации ({_int(res['orgs'])}), по частям ({res['parts']}), "
-        "сверху срезы — кнопки-фильтры.",
-        f"Лист «Данные»: {_int(res['rows'])} строк — из них построена сводная."],
-        path=res["path"], note="Исходные файлы не изменены.")
-    win.back_page = ANALYSIS_PAGE
+    run(win)
 
 
 def _done(win, res, data):

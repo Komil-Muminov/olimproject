@@ -163,14 +163,6 @@ class TestRegistryStats(unittest.TestCase):
         rules = sum(len(cf.rules) for cf in ws.conditional_formatting)
         self.assertEqual(rules, 6)                          # 5 цветов строк + оранжевые ошибки
 
-    def test_pivot_rows(self):
-        from report_pivot import pivot_rows
-        rows = pivot_rows(self._data())
-        by = {(r[0], r[2], r[3]): r for r in rows}
-        r = by[("333333333", PAYER, "2. Май–Авг 2024")]                 # части пронумерованы по порядку
-        self.assertEqual((r[4], r[5], r[6], r[7]), (500.0, 1, GREW, "странная дата"))
-        self.assertNotIn(("444444444", PAYER, "1. Янв–Апр 2024"), by)    # нет в части — нет строки
-
     def test_change_and_compare_pair(self):
         from analysis_model import change
         d = self._data()

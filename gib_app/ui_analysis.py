@@ -1,4 +1,4 @@
-"""Экран глубокого анализа: выбранные файлы и три действия — «Анализ», «Сводная таблица», платежи по ИНН."""
+"""Экран глубокого анализа: выбранные файлы и два действия — «Анализ» и платежи по ИНН."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout
@@ -10,8 +10,6 @@ ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организа
                 "Цвет строки — что случилось: Новый · Пропал · Вырос · Уменьшился · Без изменений · Появился и пропал.\n"
                 "Оранжевая ячейка — ошибка: двойной платёж, неправильный ИНН, странная дата, повтор ИНН.\n"
                 "В Excel есть легенда; наведите на цвет или заголовок — подсказка.")
-PIVOT_TIP = ("Отдельный файл: настоящая сводная таблица Excel (pivot).\n"
-             "Что случилось → организации, части по столбцам, итоги; сверху кнопки-фильтры (срезы).")
 
 
 def _action(win, title: str, sub: str, tip: str, slot):
@@ -40,10 +38,7 @@ def build_analysis_card(win):
     row.setSpacing(14)
     win.an_run_btn = _action(win, "📊  Анализ", "Excel: организации по частям, что случилось, ошибки",
                              ANALYSIS_TIP, lambda: flow.run(win))
-    win.an_pivot_btn = _action(win, "📈  Сводная таблица", "Pivot со срезами — отдельным файлом",
-                               PIVOT_TIP, lambda: flow.run(win, "pivot"))
     row.addWidget(win.an_run_btn)
-    row.addWidget(win.an_pivot_btn)
     lay.addLayout(row)
 
     inn_box = QFrame()
