@@ -6,10 +6,10 @@ CHIPS_PER_ROW = 4
 
 
 def show_result(win, ok: bool, head: str, lines: list, warn: str = "", path=None, backup=None,
-                note: str = "", chips=None):
+                note: str = "", chips=None, after: str = ""):
     """ok — зелёный/красный заголовок; path — что откроет «Открыть в Excel»;
     backup — копия до изменений (кнопка «Открыть копию»), note — серая строка внизу;
-    chips — [(заголовок, [(текст, цвет, подсказка)])] — метки под текстом."""
+    chips — [(заголовок, [(текст, цвет, подсказка)])] — метки под текстом; after — текст под метками."""
     win.worker = None
     win.result_path = path
     win.result_head.setText(head)
@@ -18,6 +18,8 @@ def show_result(win, ok: bool, head: str, lines: list, warn: str = "", path=None
     win.result_head.style().polish(win.result_head)
     win.result_text.setText("<br>".join(lines))
     _fill_chips(win.result_chips, chips or [])
+    win.result_after.setText(after)
+    win.result_after.setVisible(bool(after))
     win.result_warn.setText(warn)
     win.backup = backup
     win.backup_label.setText(f"🛡  Копия файла до изменений: {backup}" if backup else note)

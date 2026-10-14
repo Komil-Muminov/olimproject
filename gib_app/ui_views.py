@@ -105,6 +105,11 @@ def build_result_card(win):
     rl.addWidget(win.result_text)
     win.result_chips = chips_box()
     rl.addWidget(win.result_chips)
+    win.result_after = QLabel()             # текст под метками (например, ошибки по файлам)
+    win.result_after.setObjectName("bigText")
+    win.result_after.setWordWrap(True)
+    win.result_after.setTextFormat(Qt.RichText)
+    rl.addWidget(win.result_after)
 
     win.result_warn = QLabel()
     win.result_warn.setObjectName("warn")

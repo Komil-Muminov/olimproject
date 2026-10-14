@@ -1,5 +1,7 @@
 """Листы ошибок: каждый вид ошибки — на своём листе (только если такие ошибки есть). Сверху — что это
 и как проверить (наведите на заголовок — подсказка), дальше таблица с фильтром."""
+from collections import Counter
+
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.comments import Comment
 from openpyxl.styles import Font
@@ -91,3 +93,20 @@ def _sheet(wb, g, rows) -> str:
             else _cell(ws, v, **shade) for i, v in enumerate(r, 1)])
     ws.auto_filter.ref = f"A{HEAD_ROW}:{get_column_letter(len(widths))}{HEAD_ROW + len(rows)}"
     return name
+
+
+def error_counts(details: dict) -> list:
+    """Для экрана итога — те же числа, что на листах: [(лист, {файл: сколько}, всего)]. Двойной платёж
+    считается в файле, где повтор; «одно название — разные ИНН» — по всем файлам сразу (без разбивки)."""
+    out = []
+    for g, (name, *_) in GROUPS.items():
+        rows = details.get(g)
+        if not rows:
+            continue
+        if g == "same_name":
+            out.append((name, {}, len({r[0] for r in rows})))
+            continue
+        if g == "dup":
+            rows = [r[1:] for r in rows if r[6] == "повтор"]
+        out.append((name, dict(Counter(r[0] for r in rows)), len(rows)))
+    return out

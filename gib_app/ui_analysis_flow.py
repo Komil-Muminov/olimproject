@@ -96,8 +96,8 @@ def _ask_list(win, path: str, guess: dict, problem: str):
 
 
 def _done(win, res, data):
-    lines, chips = result_view(res, data)
-    show_result(win, True, "✓  Анализ готов", lines, path=res["path"], chips=chips)
+    lines, chips, errors = result_view(res, data)
+    show_result(win, True, "✓  Анализ готов", lines, path=res["path"], chips=chips, after=errors)
     win.back_page = ANALYSIS_PAGE
 
 
