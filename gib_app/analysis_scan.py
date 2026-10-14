@@ -5,7 +5,7 @@ import os
 from analysis_checks import mark_same_names
 from analysis_lists import ListCollector
 from analysis_model import AnalysisData
-from analysis_periods import FILES, registry_slots
+from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
 from excel_com import WriteError
 from excel_reader import Book
@@ -62,6 +62,13 @@ def preview_parts(reg, lists, mode: str = FILES) -> list:
     """Части в порядке времени (для выбора «было → стало») — без подсчёта организаций."""
     _, parts, order = _order(reg, lists, mode)
     return [parts[i] for i in order]
+
+
+def auto_mode(raw) -> str:
+    """Разбивка без вопросов: по файлам; если часть получается одна (один файл) — по кварталам/месяцам."""
+    reg, lists, _ = raw
+    modes = available_modes(reg) if reg.files else [FILES]
+    return next((m for m in modes if len(preview_parts(reg, lists, m)) > 1), FILES)
 
 
 def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:

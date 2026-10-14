@@ -4,12 +4,10 @@ import os
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from analysis_jobs import make_pivot, make_report
-from analysis_periods import FILES
-from analysis_scan import AS_LIST, scan_files
+from analysis_scan import AS_LIST, auto_mode, scan_files
 from report_inn import clean_inn, write_inn_payments
 from report_paths import analysis_report_path, inn_report_path, pivot_report_path
 from ui_column_dialog import ColumnDialog
-from ui_compare_dialog import CompareDialog, needs_choice
 from ui_analysis_result import result_view
 from ui_result import show_result
 from utils import format_money
@@ -58,12 +56,8 @@ def run(win, kind: str = "report"):
 def _scanned(win, res):
     if "needs_mapping" in res:
         return _ask_columns(win, res["needs_mapping"], res["guess"])
-    raw, mode, pair = res["raw"], FILES, None
-    if needs_choice(raw):                   # части по файлам / кварталам / месяцам и «было → стало»
-        dlg = CompareDialog(win, raw)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        mode, pair = dlg.choice()
+    raw, pair = res["raw"], None            # сравнение: первая часть → последняя
+    mode = auto_mode(raw)
     if win.an_kind == "pivot":
         return _run(win, make_pivot, pivot_report_path(), raw, mode, pair, done=lambda r: _pivot_done(win, r))
     _run(win, make_report, analysis_report_path(), raw, mode, pair, done=lambda r: _done(win, r, r["data"]))
