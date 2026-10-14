@@ -6,9 +6,11 @@ from PySide6.QtWidgets import QDialog, QMessageBox
 from analysis_model import FLAGS, STATUSES
 from analysis_scan import AS_LIST, scan_files
 from report_analysis import write_analysis_report
-from report_paths import analysis_report_path
+from report_inn import clean_inn, write_inn_payments
+from report_paths import analysis_report_path, inn_report_path
 from ui_column_dialog import ColumnDialog
 from ui_result import show_result
+from utils import format_money
 from worker import Worker
 
 ANALYSIS_PAGE = 3
@@ -26,8 +28,8 @@ def start(win, paths: list):
 
 
 def _run(win, func, *args, done):
-    win.an_run_btn.setEnabled(False)
-    win.an_other_btn.setEnabled(False)
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
+        b.setEnabled(False)
     win.an_progress.setVisible(True)
     win.an_progress.setValue(0)
     win.worker = Worker(func, *args)
@@ -40,8 +42,8 @@ def _run(win, func, *args, done):
 def _idle(win):
     win.worker = None
     win.an_progress.setVisible(False)
-    win.an_run_btn.setEnabled(True)
-    win.an_other_btn.setEnabled(True)
+    for b in (win.an_run_btn, win.an_other_btn, win.an_pay_btn):
+        b.setEnabled(True)
 
 
 def run(win):
@@ -84,6 +86,32 @@ def _done(win, res, data):
         lines.append("Что случилось: " + " · ".join(f"{s} <b>{_int(st[s])}</b>" for s in STATUSES if st[s]))
     lines.append("Ошибки: " + (" · ".join(f"{f} <b>{_int(fl[f])}</b>" for f in FLAGS if fl[f]) or "не найдено ✓"))
     show_result(win, True, "✓  Анализ готов", lines, path=res["path"], note="Исходные файлы не изменены.")
+    win.back_page = ANALYSIS_PAGE
+
+
+def export_payments(win):
+    inn = clean_inn(win.an_inn.text())
+    if win.worker:
+        return
+    if not inn.isdigit():
+        QMessageBox.information(win, "Платежи", "Введите ИНН цифрами, например 040000011.")
+        return
+    _run(win, write_inn_payments, inn_report_path(inn), win.an_paths, inn, win.an_mappings,
+         done=lambda res: _payments_done(win, res))
+
+
+def _payments_done(win, res):
+    if not res["path"]:
+        QMessageBox.information(win, "Платежи", f"ИНН {res['inn']} не найден в реестрах ни среди плательщиков, "
+                                "ни среди получателей.")
+        return
+    show_result(win, True, "✓  Платежи выгружены", [
+        f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
+        f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
+        f"ИНН <b>{res['inn']}</b>",
+        f"Платил: <b>{_int(res['paid'])}</b> платежей на <b>{format_money(res['paid_sum'])}</b>",
+        f"Получал: <b>{_int(res['got'])}</b> платежей на <b>{format_money(res['got_sum'])}</b>"],
+        path=res["path"], note="Исходные файлы не изменены.")
     win.back_page = ANALYSIS_PAGE
 
 

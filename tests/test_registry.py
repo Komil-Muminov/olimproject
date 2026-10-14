@@ -163,6 +163,36 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual(inn_in_name("счёт 20204972221022300242"), "")
 
 
+class TestInnPayments(unittest.TestCase):
+    def _book(self, rows):
+        path = os.path.join(tempfile.mkdtemp(), "r.xlsx")
+        wb = Workbook()
+        for row in rows:
+            wb.active.append(row)
+        wb.save(path)
+        return path
+
+    def test_payments_of_one_inn(self):
+        from report_inn import clean_inn, write_inn_payments
+        self.assertEqual(clean_inn(" 4000 0011 "), "040000011")
+        reg = self._book([["Плательщик", "ИНН Плат", "Сумма", "Получатель", "ИНН получ"],
+                          ["А", "040000011", 100, "Б", "222222222"], ["В", "333333333", 50, "А", "040000011"],
+                          ["В", "333333333", 70, "Г", "444444444"]])
+        out = os.path.join(tempfile.mkdtemp(), "p.xlsx")
+        res = write_inn_payments(out, [reg], "40000011")
+        self.assertEqual((res["paid"], res["got"], res["paid_sum"], res["got_sum"]), (1, 1, 100.0, 50.0))
+        self.assertTrue(os.path.exists(out))
+        none = write_inn_payments(os.path.join(tempfile.mkdtemp(), "n.xlsx"), [reg], "999999999")
+        self.assertIsNone(none["path"])                     # ничего не нашлось — файл не создаётся
+
+    def test_no_registries(self):
+        from excel_com import WriteError
+        from report_inn import write_inn_payments
+        lst = self._book([["Номи корхона", "РМА"], ["Орг", "040000011"]])
+        with self.assertRaises(WriteError):
+            write_inn_payments(os.path.join(tempfile.mkdtemp(), "x.xlsx"), [lst], "040000011")
+
+
 class TestPaths(unittest.TestCase):
     def test_report_goes_to_analysis_folder(self):
         path = analysis_report_path()

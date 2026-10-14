@@ -1,6 +1,6 @@
 """Экран глубокого анализа: выбранные файлы и одна кнопка «Анализировать» — результат в Excel."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QVBoxLayout
 
 import ui_analysis_flow as flow
 
@@ -34,6 +34,21 @@ def build_analysis_card(win):
     how.setTextFormat(Qt.RichText)
     lay.addWidget(how)
     lay.addStretch()
+    inn_row = QHBoxLayout()
+    cap = QLabel("Платежи одной организации:")
+    cap.setObjectName("fileCaption")
+    inn_row.addWidget(cap)
+    win.an_inn = QLineEdit()
+    win.an_inn.setPlaceholderText("ИНН, например 040000011")
+    win.an_inn.setMaxLength(20)
+    win.an_inn.setClearButtonEnabled(True)
+    win.an_inn.returnPressed.connect(lambda: flow.export_payments(win))
+    inn_row.addWidget(win.an_inn, 1)
+    win.an_pay_btn = QPushButton("📄  Платежи этого ИНН — в Excel")
+    win.an_pay_btn.setToolTip("Все платежи этой организации из реестров: где платила и где получала")
+    win.an_pay_btn.clicked.connect(lambda: flow.export_payments(win))
+    inn_row.addWidget(win.an_pay_btn)
+    lay.addLayout(inn_row)
     win.an_progress = QProgressBar()
     win.an_progress.setVisible(False)
     lay.addWidget(win.an_progress)
