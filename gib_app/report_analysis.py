@@ -1,5 +1,5 @@
 """Excel глубокого анализа: лист «Анализ» (цвет строки — что случилось, столбец «Ошибки», легенда и
-подсказки при наведении) и лист «Ошибки подробно»."""
+подсказки при наведении) и листы с ошибками подробно."""
 from collections import Counter
 from datetime import datetime
 
@@ -10,9 +10,9 @@ from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from analysis_model import (APPEARED, DETAIL_HEAD, FELL, FLAG_HINTS, FLAGS, GAP, GONE, GREW, SAME, STATUS_HINTS,
-                            status)
-from report_fast import table_sheet, title_rows
+from analysis_model import APPEARED, FELL, FLAG_HINTS, FLAGS, GAP, GONE, GREW, SAME, status, status_hints
+from report_errors import write_errors_sheets
+from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
 
 COLORS = {APPEARED: "DCFCE7", GONE: "FEE2E2", GREW: "DBEAFE", FELL: "FEF9C3", SAME: "FFFFFF", GAP: "EDE9FE"}
@@ -53,8 +53,9 @@ def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
     order = " → ".join(f"«{p.label}»" for p in parts)
     title_rows(ws, "ГЛУБОКИЙ АНАЛИЗ", "0F172A", f"Создано {datetime.now():%d.%m.%Y %H:%M} · части по порядку: {order}"
                + (". «Что случилось» — между первой и последней частью." if len(parts) > 1 else ""), n)
-    _legend(ws, len(parts) > 1)
-    hints = _head_hints(parts, with_role)
+    hints_st = status_hints(parts)
+    _legend(ws, hints_st)
+    hints = _head_hints(parts, with_role, hints_st)
     ws.append([_cell(ws, t, hints.get(t), font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER,
                      alignment=CENTER) for t in head])
     for k, (e, st) in enumerate(rows, 1):
@@ -75,40 +76,35 @@ def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
                     formula=[f'${letter(st_col)}{HEAD_ROW + 1}="{st}"'], fill=_cf_fill(color)))
         ws.conditional_formatting.add(f"{letter(err_col)}{HEAD_ROW + 1}:{letter(err_col)}{last}", FormulaRule(
             formula=[f'LEN(${letter(err_col)}{HEAD_ROW + 1})>0'], fill=_cf_fill(ERR_COLOR), font=Font(bold=True)))
-    progress(80, "Пишу лист «Ошибки подробно»…")
-    table_sheet(wb, "Ошибки подробно", "ОШИБКИ ПОДРОБНО", "C2410C",
-                "Каждая строка — одна найденная ошибка: где она, что не так и как, вероятно, должно быть.",
-                ["№"] + DETAIL_HEAD, [7, 18, 16, 36, 22, 46, 12, 12, 16, 50],
-                [[k] + r for k, r in enumerate(sorted(data.details, key=lambda r: FLAGS.index(r[0])), 1)],
-                money=(9,), dates=(8,))
+    progress(80, "Пишу листы с ошибками…")
+    write_errors_sheets(wb, data.details)
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),
             "flags": Counter(f for e, _ in rows for f in e.flags)}
 
 
-def _legend(ws, compare: bool):
+def _legend(ws, hints_st: dict):
     """Строка 4: цвета «что случилось» и цвет ошибок — с подсказками при наведении."""
     cells = [None, None, _cell(ws, "Цвет строки (наведите — подсказка) →", font=Font(bold=True),
                                alignment=Alignment(horizontal="right", vertical="center"))]
-    if compare:
-        cells += [_cell(ws, st, STATUS_HINTS[st], fill=fill_color(c), border=BORDER, alignment=CENTER)
+    if hints_st:
+        cells += [_cell(ws, st, hints_st[st], fill=fill_color(c), border=BORDER, alignment=CENTER)
                   for st, c in COLORS.items()]
     else:
         cells += [_cell(ws, "одна часть — сравнивать не с чем", font=Font(italic=True, color="64748B"))]
     cells += [_cell(ws, "Ошибки", "\n".join(f"• {f}: {FLAG_HINTS[f]}" for f in FLAGS) +
-                    "\nПодробно — на листе «Ошибки подробно».", fill=fill_color(ERR_COLOR), border=BORDER,
+                    "\nПодробно — на листе «Ошибки в реестрах» / «Ошибки в таблицах».", fill=fill_color(ERR_COLOR), border=BORDER,
                     alignment=CENTER, font=Font(bold=True))]
     ws.append(cells)
 
 
-def _head_hints(parts, with_role) -> dict:
+def _head_hints(parts, with_role, hints_st: dict) -> dict:
     hints = {"ИНН": "ИНН организации (как записан в файле).",
              "Название": "Самое частое написание названия у этого ИНН.",
              "Кто": "плательщик — кто платил; получатель — кому платили; организация — из обычной таблицы с ИНН.",
              "Всего": "Сумма по всем частям.",
-             "Что случилось": "Сравнение первой и последней части:\n" +
-                              "\n".join(f"• {st}: {h}" for st, h in STATUS_HINTS.items()),
+             "Что случилось": "\n".join(hints_st.values()) or "Одна часть — сравнивать не с чем.",
              "Ошибки": "\n".join(f"• {f}: {h}" for f, h in FLAG_HINTS.items()),
              "Названий": "Сколько разных написаний названия у этого ИНН (пусто — одно)."}
     hints.update({p.label: f"Сумма за часть «{p.label}» (файл {p.source})." if p.has_sums else

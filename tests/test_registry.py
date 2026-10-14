@@ -141,7 +141,8 @@ class TestRegistryStats(unittest.TestCase):
         d = self._data()
         p = self._payers(d)
         self.assertEqual((p["222222222"].flags, p["0"].flags, p["333333333"].flags), ({DUP_PAY}, {BAD_INN}, {ODD_DATE}))
-        self.assertEqual(Counter(r[0] for r in d.details), Counter({DUP_PAY: 1, BAD_INN: 1, ODD_DATE: 1}))
+        self.assertEqual({g: len(r) for g, r in d.details.items() if r}, {"dup": 1, "bad_pay": 1, "odd": 1})
+        self.assertEqual(d.details["bad_pay"][0][5:9], ["плательщика", "Орг 0", "0", "вместо ИНН стоит 0 (не указан)"])
 
     def test_excel_report(self):
         from openpyxl import load_workbook
@@ -151,10 +152,12 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual((res["statuses"][GONE], res["flags"][DUP_PAY]), (2, 2))
         wb = load_workbook(path)
         ws = wb["Анализ"]
-        self.assertEqual(wb.sheetnames, ["Анализ", "Ошибки подробно"])
+        self.assertEqual(wb.sheetnames, ["Анализ", "Ошибки в реестрах"])
         self.assertEqual(ws.cell(5, 2).value, "ИНН")
-        self.assertIn("Сравнение первой и последней части", ws.cell(5, ws.max_column - 2).comment.text)
-        self.assertIn("В первой части", ws.cell(4, 4).comment.text)                 # подсказка в легенде («Новый»)
+        self.assertIn("Новый: в «Янв–Апр 2024» этой организации не было", ws.cell(5, ws.max_column - 2).comment.text)
+        self.assertIn("а в «Май–Авг 2024» она есть", ws.cell(4, 4).comment.text)   # подсказка в легенде («Новый»)
+        err = wb["Ошибки в реестрах"]
+        self.assertEqual(err.cell(4, 1).value, "ДВОЙНОЙ ПЛАТЁЖ — 1")                # группы с заголовками
         rules = sum(len(cf.rules) for cf in ws.conditional_formatting)
         self.assertEqual(rules, 6)                          # 5 цветов строк + оранжевые ошибки
 

@@ -3,11 +3,13 @@
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 INN_RE = re.compile(r"^\d{9}$")
 MONTHS = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
 MAIN_SHARE = 0.01          # месяц, где меньше 1% строк файла, — «чужой» (странная дата)
 KEEP_ROWS = 2000           # подробности храним, пока месяц маленький
+ODD_GAP_DAYS = 31          # дата документа дальше месяца от периода файла — «странная»
 
 
 @dataclass
@@ -76,7 +78,9 @@ class Registry:
             self._party(book, inn, name, f, p.amount)
             if not INN_RE.match(inn):
                 self.bad_inn.append((f, p, side, inn))
-        key = hash((p.doc, p.date, p.payer_inn, p.rec_inn, p.amount))
+        # двойной платёж: совпадает всё, включая основание (банк платит за разных людей одинаковыми суммами
+        # с короткими номерами — их основания разные, это не повтор)
+        key = hash((p.doc, p.date, p.payer_inn, p.rec_inn, p.amount, " ".join(p.purpose.lower().split())))
         first = self._seen.get(key)
         if first is None:
             self._seen[key] = (f, p.row)
@@ -97,9 +101,14 @@ class Registry:
         for f, info in enumerate(self.files):
             main = info.main_months = sorted(m for m, c in info.months.items() if c >= info.rows * MAIN_SHARE)
             info.label = period_label(main)
+            if main:
+                lo = date(*main[0], 1) - timedelta(days=ODD_GAP_DAYS)
+                y, m = main[-1]
+                hi = date(y + m // 12, m % 12 + 1, 1) + timedelta(days=ODD_GAP_DAYS - 1)
             for m, kept in self._month_rows[f].items():
-                if m not in main and kept:
-                    self.odd_dates += [(f, p) for p in kept]
+                # платёжка от 31.12 в январском файле — обычное дело; странно, если дата дальше месяца
+                if m not in main and kept and main:
+                    self.odd_dates += [(f, p) for p in kept if not lo <= p.date <= hi]
         self._month_rows = []
         # порядок файлов — по времени, чтобы «пропал / появился» считались правильно
         self.order = sorted(range(len(self.files)), key=lambda f: self.files[f].main_months[:1] or [(9999, 0)])

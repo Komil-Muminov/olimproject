@@ -54,7 +54,7 @@ def build(reg, lists, paths) -> AnalysisData:
     """Части реестров и списков → одна таблица; части по порядку времени."""
     rparts = registry_parts(reg) if reg.files else []
     parts = rparts + lists.parts
-    n, details, ents = len(parts), [], []
+    n, details, ents = len(parts), {}, []
     if reg.files:
         details, marked = registry_errors(reg)
         ents = registry_entities(reg, marked)
@@ -66,4 +66,4 @@ def build(reg, lists, paths) -> AnalysisData:
     for e in ents:
         e.sums = [e.sums[i] for i in order]
         e.counts = [e.counts[i] for i in order]
-    return AnalysisData([parts[i] for i in order], ents, details + lists.details, paths)
+    return AnalysisData([parts[i] for i in order], ents, {**details, **lists.details}, paths)

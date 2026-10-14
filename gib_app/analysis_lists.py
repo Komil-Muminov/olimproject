@@ -14,7 +14,7 @@ class ListCollector:
     def __init__(self):
         self.parts = []
         self.orgs = {}          # ключ ИНН (без нулей впереди) → {"inn", "names", "sums", "counts", "dup"}
-        self.details = []       # строки «Ошибки подробно»
+        self.details = {"dup_row": [], "bad_list": []}      # группы листа «Ошибки в таблицах»
         self.bad = set()        # ИНН (как в файле) с ошибкой
 
     def add_file(self, path: str, sheets: dict) -> int:
@@ -47,11 +47,10 @@ class ListCollector:
         res = check_inn(sheets)
         if not res:
             return
-        self.details += [[DUP_ROW, fname, f"{t.label}, строки {', '.join(map(str, rows))}", inn, name,
-                          None, None, None, f"записан {len(rows)} раза"] for t, inn, name, rows in res.duplicates]
-        self.details += [[BAD_INN, fname, f"{t.label}, строка {row}", raw or "(пусто)", name, None, None, None,
-                          problem + (f"; должно быть {fix}" if fix else "")]
-                         for t, row, raw, name, problem, fix in res.invalid]
+        self.details["dup_row"] += [[fname, t.label, ", ".join(map(str, rows)), inn, name, f"{len(rows)} раза"]
+                                    for t, inn, name, rows in res.duplicates]
+        self.details["bad_list"] += [[fname, t.label, row, raw or "(пусто)", name, problem, fix]
+                                     for t, row, raw, name, problem, fix in res.invalid]
         self.bad |= {raw for _, row, raw, *_ in res.invalid if raw}
 
     def entities(self, offset: int, n_parts: int) -> list:

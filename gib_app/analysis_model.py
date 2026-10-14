@@ -7,14 +7,24 @@ from dataclasses import dataclass, field
 APPEARED, GONE, GREW, FELL, SAME, GAP = "Новый", "Пропал", "Вырос", "Уменьшился", "Без изменений", \
     "Появился и пропал"
 STATUSES = (APPEARED, GONE, GREW, FELL, SAME, GAP)
-STATUS_HINTS = {
-    APPEARED: "В первой части этой организации нет, в последней — есть.",
-    GONE: "В первой части организация есть, в последней — нет.",
-    GREW: "Есть и в первой, и в последней части; в последней сумма больше.",
-    FELL: "Есть и в первой, и в последней части; в последней сумма меньше.",
-    SAME: "Есть и в первой, и в последней части; сумма одинаковая.",
-    GAP: "Нет ни в первой, ни в последней части — была только в средних.",
-}
+
+
+def status_hints(parts: list) -> dict:
+    """Подсказки к цветам — с названиями первой и последней части: понятно, что с чем сравнивается."""
+    if len(parts) < 2:
+        return {}
+    a, b = f"«{parts[0].label}»", f"«{parts[-1].label}»"
+    mid = ", ".join(f"«{p.label}»" for p in parts[1:-1])
+    return {
+        APPEARED: f"Новый: в {a} этой организации не было, а в {b} она есть.",
+        GONE: f"Пропал: в {a} организация была, а в {b} её уже нет.",
+        GREW: f"Вырос: организация есть и в {a}, и в {b}; в {b} сумма больше, чем в {a}.",
+        FELL: f"Уменьшился: организация есть и в {a}, и в {b}; в {b} сумма меньше, чем в {a}.",
+        SAME: f"Без изменений: организация есть и в {a}, и в {b}, сумма одинаковая "
+              f"(если в одной из таблиц сумм нет — значит, просто есть и там, и там).",
+        GAP: f"Появился и пропал: нет ни в {a}, ни в {b} — была только в середине"
+             + (f" ({mid})." if mid else "."),
+    }
 
 DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW = "двойной платёж", "неправильный ИНН", "странная дата", "повтор ИНН"
 FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW)
@@ -27,7 +37,6 @@ FLAG_HINTS = {
 }
 
 PAYER, RECIPIENT, ORG = "плательщик", "получатель", "организация"
-DETAIL_HEAD = ["Ошибка", "Файл", "Где", "ИНН", "Название", "№ док.", "Дата", "Сумма", "Пояснение"]
 
 
 @dataclass
@@ -58,7 +67,7 @@ class Entity:
 class AnalysisData:
     parts: list                      # [Part] — по порядку времени
     entities: list                   # [Entity]
-    details: list = field(default_factory=list)     # строки листа «Ошибки подробно» (DETAIL_HEAD)
+    details: dict = field(default_factory=dict)     # группа ошибок → строки (report_errors.GROUPS)
     paths: list = field(default_factory=list)
 
     @property
