@@ -3,6 +3,11 @@ from PySide6.QtCore import QThread, Signal
 
 from excel_com import WriteError
 
+# Запущенные потоки держим здесь до их полного завершения. Иначе, когда окно забывает поток сразу после
+# сигнала done (а поток ещё не вышел из run), Python удаляет объект и Qt аварийно закрывает программу
+# («QThread: Destroyed while thread is still running»). Так было при «Сводной»: два потока подряд.
+_RUNNING = set()
+
 
 class Worker(QThread):
     progress = Signal(int, str)
@@ -12,6 +17,8 @@ class Worker(QThread):
     def __init__(self, func, *args):
         super().__init__()
         self.func, self.args = func, args
+        _RUNNING.add(self)
+        self.finished.connect(lambda: _RUNNING.discard(self))
 
     def run(self):
         try:

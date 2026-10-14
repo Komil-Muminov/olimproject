@@ -5,7 +5,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+
+import crash_log  # noqa: E402
 
 from styles import STYLE  # noqa: E402
 from ui import MainWindow  # noqa: E402
@@ -29,6 +31,7 @@ def main():
     app.setStyleSheet(STYLE)
     app.setWindowIcon(QIcon(resource("icon.png")))
     w = MainWindow()
+    crash_log.install(lambda text: QMessageBox.critical(w, "Ошибка программы", text))
     w.show()
     sys.exit(app.exec())
 
