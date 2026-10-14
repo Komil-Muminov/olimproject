@@ -17,6 +17,15 @@ def money_cols(data, s) -> list:
     return both if len(both) > 1 else s.value_cols[:1]
 
 
+def payments_like(sheets: dict) -> bool:
+    """Два столбца ИНН в одной таблице (плательщик и получатель) — похоже на реестр платежей."""
+    for data in sheets.values():
+        found = find_tables(data)
+        if found and len({tuple(s.block) for s in found[1]}) < len(found[1]):
+            return True
+    return False
+
+
 class ListCollector:
     """Собирает таблицы с ИНН из нескольких файлов: одна организация (ИНН) — одна строка."""
 

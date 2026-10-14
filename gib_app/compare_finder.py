@@ -90,7 +90,7 @@ def find_tables(data: list[list]):
         s.cols.sort()
         texts = Counter()
         for c in s.cols:
-            if c == s.key_col:
+            if c in key_cols:           # столбцы ИНН — не суммы, даже если это числа
                 continue
             col_vals = [row[c - 1] for row in data[header:] if c - 1 < len(row) and row[c - 1] not in (None, "")]
             if not col_vals:

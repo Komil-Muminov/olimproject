@@ -3,7 +3,7 @@
 import os
 
 from analysis_checks import mark_same_names
-from analysis_lists import ListCollector
+from analysis_lists import ListCollector, payments_like
 from analysis_model import AnalysisData
 from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
@@ -38,12 +38,14 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
                     if i % 50000 == 0:
                         progress(base + int(95 / n * i / max(total, 1)), f"Считаю {name} ({k + 1} из {n})…")
             continue
-        if guess and guess["score"] >= ASK_SCORE and path not in mappings:
-            return {"needs_mapping": path, "guess": guess}
         try:
-            found = lists.add_file(path, Book(path).sheets)
+            data = Book(path).sheets
         except Exception as e:
             raise WriteError(f"Не удалось прочитать «{name}»:\n{e}")
+        # похоже на реестр (узнаны заголовки или два столбца ИНН), но столбцы не узнаны — спросить
+        if guess and path not in mappings and (guess["score"] >= ASK_SCORE or payments_like(data)):
+            return {"needs_mapping": path, "guess": guess}
+        found = lists.add_file(path, data)
         if not found:
             raise WriteError(f"В «{name}» не нашлось ни платежей, ни таблиц с ИНН.")
     progress(97, "Подвожу итоги…")
