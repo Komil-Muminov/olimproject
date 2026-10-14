@@ -28,10 +28,12 @@ class CompareDialog(QDialog):
         form = QFormLayout()
         self.modes = QButtonGroup(self)
         row = QHBoxLayout()
-        for mode in (available_modes(self.reg) if self.reg.files else [FILES]):
+        modes = available_modes(self.reg) if self.reg.files else [FILES]
+        start = next((m for m in modes if len(preview_parts(self.reg, self.lists, m)) > 1), FILES)
+        for mode in modes:
             rb = QRadioButton(MODE_TITLES[mode])
             rb.setProperty("mode", mode)
-            rb.setChecked(mode == FILES)
+            rb.setChecked(mode == start)
             rb.toggled.connect(lambda on: on and self._fill())
             self.modes.addButton(rb)
             row.addWidget(rb)
@@ -41,6 +43,7 @@ class CompareDialog(QDialog):
         self.was, self.now = QComboBox(), QComboBox()
         form.addRow("Было", self.was)
         form.addRow("Стало", self.now)
+        self.form = form
         lay.addLayout(form)
         self.warn = QLabel()
         self.warn.setObjectName("warn")
@@ -67,13 +70,20 @@ class CompareDialog(QDialog):
             box.addItems(labels)
             box.setCurrentIndex(index)
             box.blockSignals(False)
+            self.form.setRowVisible(box, len(labels) > 1)
         self._check()
 
+    def _single(self) -> bool:
+        return self.was.count() < 2
+
     def _check(self):
-        same = self.was.currentIndex() == self.now.currentIndex()
+        """Одна часть — сравнивать не с чем, просто «Дальше»."""
+        same = not self._single() and self.was.currentIndex() == self.now.currentIndex()
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(not same)
-        self.warn.setText("Выберите разные части." if same else "")
+        self.warn.setText("Выберите разные части." if same else
+                          "Одна часть — сравнения не будет." if self._single() else "")
 
     def choice(self) -> tuple:
-        """→ (разбивка, (было, стало))."""
-        return self.mode(), (self.was.currentIndex(), self.now.currentIndex())
+        """→ (разбивка, (было, стало) или None, если часть одна)."""
+        pair = None if self._single() else (self.was.currentIndex(), self.now.currentIndex())
+        return self.mode(), pair
