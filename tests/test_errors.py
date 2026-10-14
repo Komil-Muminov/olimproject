@@ -23,5 +23,20 @@ class ErrorCountsTest(unittest.TestCase):
         ])
 
 
+class InnRuleTest(unittest.TestCase):
+    """Ошибка в ИНН — только если цифр не 9."""
+
+    def test_nine_digits(self):
+        from registry_stats import inn_ok
+        self.assertEqual([inn_ok(x) for x in ("040000011", "040 000 011", "04-000-0011", "40000011", "0", "")],
+                         [True, True, True, False, False, False])
+
+    def test_problem_text(self):
+        from analysis_registry import inn_problem
+        self.assertEqual(inn_problem("40000011"), "8 цифр вместо 9 — возможно, потерян 0 в начале (должно быть 040000011)")
+        self.assertEqual(inn_problem("12A45"), "4 цифр вместо 9 (есть буквы или знаки)")
+        self.assertEqual(inn_problem("0"), "вместо ИНН стоит 0 (не указан)")
+
+
 if __name__ == "__main__":
     unittest.main()

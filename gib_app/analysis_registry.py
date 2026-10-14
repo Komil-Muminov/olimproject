@@ -5,7 +5,7 @@ import re
 from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, RECIPIENT, Entity, Pair, Part
 from analysis_periods import pair_totals, party_totals
 from inn_check import _name_key
-from registry_stats import INN_RE
+from registry_stats import INN_DIGITS, inn_ok
 
 INN_IN_TEXT = re.compile(r"(?<!\d)\d{9}(?!\d)")
 SIDE_OF = {PAYER: "плательщика", RECIPIENT: "получателя"}
@@ -19,14 +19,14 @@ def inn_in_name(name: str) -> str:
 
 def inn_problem(inn: str) -> str:
     """Что не так с ИНН — простыми словами."""
+    digits = re.sub(r"\D", "", inn or "")
     if not inn:
         return "ИНН пустой"
-    if inn.isdigit() and not inn.strip("0"):
+    if digits and not digits.strip("0"):
         return "вместо ИНН стоит 0 (не указан)"
-    if not inn.isdigit():
-        return "в ИНН есть буквы или знаки"
-    tail = " — возможно, потерян 0 в начале (должно быть " + inn.zfill(9) + ")" if len(inn) == 8 else ""
-    return f"{len(inn)} цифр вместо 9{tail}"
+    signs = " (есть буквы или знаки)" if digits != inn else ""
+    tail = f" — возможно, потерян 0 в начале (должно быть {digits.zfill(INN_DIGITS)})" if len(digits) == 8 else ""
+    return f"{len(digits)} цифр вместо {INN_DIGITS}{signs}{tail}"
 
 
 def registry_parts(slots: list) -> list:
@@ -65,7 +65,7 @@ def registry_entities(reg, marked: dict, slots: list) -> list:
         for inn, party in book.items():
             sums, counts = party_totals(party, slots)
             e = Entity(inn, party.name, role, sums, counts, names=max(1, len({_name_key(n) for n in party.names})))
-            if not INN_RE.match(inn):
+            if not inn_ok(inn):
                 e.flags.add(BAD_INN)
             e.flags.update(flag for flag in (DUP_PAY, ODD_DATE) if (role, inn) in marked[flag])
             out.append(e)

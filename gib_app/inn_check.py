@@ -3,11 +3,11 @@
 Проверяются все таблицы с ИНН на всех листах файла. Файл не меняется.
 """
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 
 from compare_finder import find_tables, key_in_text, name_at as _name_at
 from constants import SUM_ROW_LABELS as TOTAL_LABELS
+from registry_stats import INN_DIGITS
 from utils import cell_val as _cell, norm_text
 
 
@@ -77,9 +77,7 @@ def check_inn(sheets):
                 for r in rows:
                     by_inn.setdefault(k, []).append((name_at(r), t, r))
 
-            # неправильные ИНН: длина — по самой частой длине в этом столбце
-            lengths = Counter(len(s.keys[k]) for k in s.keys)
-            normal = lengths.most_common(1)[0][0] if lengths else 9
+            # неправильные ИНН: не 9 цифр
             for r in range(header + 1, s.last_row + 1):
                 row = data[r - 1] if r <= len(data) else []
                 block_vals = [row[c - 1] for c in s.block if c - 1 < len(row)]
@@ -94,16 +92,15 @@ def check_inn(sheets):
                     if len(name) > 3:
                         res.invalid.append((t, r, "", name, "ИНН не указан", ""))
                     continue
-                digits = re.sub(r"\s+", "", raw)
-                if not digits.isdigit():
-                    res.invalid.append((t, r, raw, name, "в ИНН есть буквы или знаки", ""))
-                elif digits != raw:
-                    res.invalid.append((t, r, raw, name, "в ИНН есть пробелы", digits))
-                elif len(digits) < normal and isinstance(raw_v, (int, float)) and len(digits.zfill(normal)) == normal:
-                    res.invalid.append((t, r, raw, name, f"потерялся ноль в начале ({len(digits)} цифр вместо {normal})",
-                                        digits.zfill(normal)))
-                elif len(digits) != normal:
-                    res.invalid.append((t, r, raw, name, f"{len(digits)} цифр вместо {normal}", ""))
+                # ошибка — только если цифр не 9 (пробелы и знаки ошибкой не считаются)
+                digits = re.sub(r"\D", "", raw)
+                if len(digits) == INN_DIGITS:
+                    continue
+                if len(digits) == INN_DIGITS - 1 and isinstance(raw_v, (int, float)):
+                    res.invalid.append((t, r, raw, name, f"потерялся ноль в начале ({len(digits)} цифр вместо "
+                                        f"{INN_DIGITS})", digits.zfill(INN_DIGITS)))
+                else:
+                    res.invalid.append((t, r, raw, name, f"{len(digits)} цифр вместо {INN_DIGITS}", ""))
 
     if not res.tables:
         return None

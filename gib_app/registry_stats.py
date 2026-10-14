@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-INN_RE = re.compile(r"^\d{9}$")
+INN_DIGITS = 9
 MONTHS = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
 MAIN_SHARE = 0.01          # месяц, где меньше 1% строк файла, — «чужой» (странная дата)
 KEEP_ROWS = 2000           # подробности храним, пока месяц маленький
@@ -86,7 +86,7 @@ class Registry:
             if inn is None:             # в документе нет этой стороны
                 continue
             self._party(book, inn, name, f, p.amount, m)
-            if not INN_RE.match(inn):
+            if not inn_ok(inn):
                 self.bad_inn.append((f, p, side, inn))
         if p.payer_inn is not None and p.rec_inn is not None:
             for book, key in ((self.pairs_f, f), (self.pairs_m, m)):
@@ -127,6 +127,11 @@ class Registry:
         self._month_rows = []
         # порядок файлов — по времени, чтобы «пропал / появился» считались правильно
         self.order = sorted(range(len(self.files)), key=lambda f: self.files[f].main_months[:1] or [(9999, 0)])
+
+
+def inn_ok(inn: str) -> bool:
+    """ИНН правильный, если в нём ровно 9 цифр (пробелы и знаки ошибкой не считаются)."""
+    return len(re.sub(r"\D", "", inn or "")) == INN_DIGITS
 
 
 def period_label(months: list) -> str:
