@@ -9,7 +9,7 @@ from report_inn import clean_inn, write_inn_payments
 from report_pivot import write_pivot_report
 from report_paths import analysis_report_path, inn_report_path, pivot_report_path
 from ui_column_dialog import ColumnDialog
-from ui_analysis_result import result_lines
+from ui_analysis_result import result_view
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -93,7 +93,8 @@ def _pivot_done(win, res):
 
 
 def _done(win, res, data):
-    show_result(win, True, "✓  Анализ готов", result_lines(res, data), path=res["path"])
+    lines, chips = result_view(res, data)
+    show_result(win, True, "✓  Анализ готов", lines, path=res["path"], chips=chips)
     win.back_page = ANALYSIS_PAGE
 
 

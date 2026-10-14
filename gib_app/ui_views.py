@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui_helpers import BACKUP_NOTE
+from ui_result import chips_box
 
 
 def build_header(win):
@@ -102,6 +103,8 @@ def build_result_card(win):
     win.result_text.setWordWrap(True)
     win.result_text.setTextFormat(Qt.RichText)
     rl.addWidget(win.result_text)
+    win.result_chips = chips_box()
+    rl.addWidget(win.result_chips)
 
     win.result_warn = QLabel()
     win.result_warn.setObjectName("warn")

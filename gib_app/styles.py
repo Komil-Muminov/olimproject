@@ -46,4 +46,6 @@ QPushButton#actionCard:hover { border: 1px solid #2563EB; background: #F8FAFF; }
 QPushButton#actionCard:disabled { color: #94A3B8; }
 QFrame#actionBox { background: white; border: 1px solid #E2E8F0; border-radius: 14px; }
 QLabel#actionTitle { font-size: 11pt; font-weight: 600; color: #0F172A; }
+QLabel#chip { border-radius: 6px; padding: 4px 10px; font-size: 10.5pt; color: #0F172A; }
+QLabel#chipTitle { font-size: 11pt; font-weight: 600; color: #0F172A; padding-top: 8px; }
 """

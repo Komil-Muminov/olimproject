@@ -2,7 +2,7 @@
 import os
 from html import escape
 
-from analysis_model import FLAGS, STATUSES, part_summary
+from analysis_model import FLAG_HINTS, FLAGS, STATUSES, part_summary, status_hints
 from report_analysis import COLORS, ERR_COLOR
 
 MUTED = "#64748B"
@@ -27,10 +27,6 @@ def _delta(n, sign: str, color: str) -> str:
     return "—" if not n else f"<span style='color:{color}'>{sign}{_int(n)}</span>"
 
 
-def _chip(text: str, color: str) -> str:
-    return f"<span style='background:#{color}'>&nbsp;{text}&nbsp;</span>"
-
-
 def _parts_table(data) -> str:
     rows = part_summary(data)
     compare = len(rows) > 1
@@ -46,15 +42,21 @@ def _parts_table(data) -> str:
     return "<table cellspacing='0' cellpadding='5' width='100%'>" + "".join(out) + "</table>"
 
 
-def result_lines(res: dict, data) -> list:
+def result_view(res: dict, data) -> tuple:
+    """→ (строки текста, метки [(заголовок, [(текст, цвет, подсказка)])]) для экрана «Анализ готов»."""
     st, fl = res["statuses"], res["flags"]
     lines = [f"<span style='color:{MUTED}'>{escape(os.path.basename(res['path']))} · папка «Свод по глубокому "
              f"анализу»</span>", "", _parts_table(data)]
+    chips = []
     if len(data.parts) > 1:
-        lines += ["", f"<b>За весь период</b> <span style='color:{MUTED}'>(первая часть → последняя)</span>",
-                  " ".join(_chip(f"{s} {_int(st[s])}", COLORS[s] if COLORS[s] != "FFFFFF" else "F1F5F9")
-                           for s in STATUSES if st[s])]
+        lines.append(f"<span style='color:{MUTED}; font-size:10pt'>Появились / Пропали — по сравнению "
+                     f"с предыдущим файлом. Наведите на метку ниже — подсказка.</span>")
+        hints = status_hints(data.parts)
+        chips.append((f"За весь период: «{data.parts[0].label}» → «{data.parts[-1].label}»",
+                      [(f"{s}: {_int(st[s])}", COLORS[s] if COLORS[s] != "FFFFFF" else "F1F5F9", hints[s])
+                       for s in STATUSES if st[s]]))
     errors = [f for f in FLAGS if fl[f]]
-    lines += ["", "<b>Ошибки</b>", " ".join(_chip(f"{f} {_int(fl[f])}", ERR_COLOR) for f in errors)
-              if errors else "<span style='color:#15803D'>не найдено ✓</span>"]
-    return lines
+    chips.append(("Ошибки", [(f"{f[:1].upper() + f[1:]}: {_int(fl[f])}", ERR_COLOR,
+                              FLAG_HINTS[f] + " Подробно — на листе с ошибками в Excel.") for f in errors]
+                  or [("Не найдено ✓", "DCFCE7", "Ни одной ошибки в выбранных файлах.")]))
+    return lines, chips
