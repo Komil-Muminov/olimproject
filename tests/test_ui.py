@@ -31,29 +31,26 @@ class TestMainWindow(unittest.TestCase):
         self.assertGreater(dlg.table.rowCount(), 0)
         dlg.close()
 
-    def test_registry_inn_search(self):
+    def test_analysis_screen_filters(self):
         from ui import MainWindow
-        from registry_stats import Registry, Party
+        from analysis_lists import ListCollector
+        from analysis_scan import build
+        from registry_stats import Registry
+        import ui_analysis_flow
+        rows = [["Номи корхона", "РМА", "Маблағ 2024", None, "Номи корхона", "РМА", "Маблағ 2025"]]
+        rows += [[f"Орг {i}", f"0100000{i:02d}", 100.0, None, f"Орг {i}", f"0100000{i:02d}", 100.0 + 7.5 * i]
+                 for i in range(12)]
+        c = ListCollector()
+        c.add_file("t.xlsx", {"Лист1": rows})
         w = MainWindow()
-        reg = Registry()
-        f = reg.start_file("test.xlsx", "Лист1")
-        p = Party("040000011")
-        p.names["ООО Тест"] = 1
-        p.sums[f] = 50000.0
-        p.counts[f] = 3
-        reg.payers["040000011"] = p
-        reg.finish()
-        w.registry = reg
-        self.assertTrue(w.reg_found_box.isHidden())
-        w.reg_inn.setText(" 40000011 ")                     # потерянный ноль и пробелы
-        w.reg_find_btn.click()
-        self.assertIn("040000011", w.reg_found.text())
-        self.assertFalse(w.reg_found_box.isHidden())
-        self.assertFalse(w.reg_export_btn.isHidden())
-        w.reg_inn.setText("123")
-        w.reg_find_btn.click()
-        self.assertIn("не найден", w.reg_found.text())
-        self.assertTrue(w.reg_export_btn.isHidden())
+        ui_analysis_flow._scanned(w, {"data": build(Registry(), c, ["t.xlsx"], {})})
+        self.assertEqual((w.an_parts.count(), w.an_model.rowCount()), (2, 12))
+        w.an_status["вырос"].setChecked(True)                 # фильтр «вырос»: 11 из 12
+        self.assertEqual(w.an_model.rowCount(), 11)
+        self.assertIn("вырос (11)", w.an_status["вырос"].text())
+        w.an_query.setText("010000005")
+        ui_analysis_flow.apply(w)
+        self.assertEqual(w.an_model.rowCount(), 1)
         w.close()
 
 if __name__ == "__main__":

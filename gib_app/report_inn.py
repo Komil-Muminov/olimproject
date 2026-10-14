@@ -3,12 +3,25 @@ import os
 
 from openpyxl import Workbook
 
-from registry_scan import payments_of
+from registry_read import read_registry
 from report_fast import table_sheet
 
 HEAD = ["№", "Файл", "Строка", "№ док.", "Дата", "Плательщик", "ИНН плат.", "Получатель", "ИНН получ.", "Сумма",
         "Основание"]
 WIDTHS = [7, 14, 9, 13, 12, 36, 12, 36, 12, 16, 60]
+
+
+def payments_of(paths, inn: str, mappings=None, progress=lambda p, t: None) -> list:
+    """Все платежи, где ИНН — плательщик или получатель: [(файл, Payment)]."""
+    out = []
+    for k, path in enumerate(paths):
+        progress(int(80 * k / len(paths)), f"Ищу в {os.path.basename(path)}…")
+        if (mappings or {}).get(path) == "list":
+            continue
+        sheets, _ = read_registry(path, (mappings or {}).get(path))
+        for _, _, rows in sheets:
+            out += [(path, p) for p in rows if inn in (p.payer_inn, p.rec_inn)]
+    return out
 
 
 def write_inn_payments(path: str, paths: list, inn: str, mappings=None, progress=lambda p, t: None) -> dict:

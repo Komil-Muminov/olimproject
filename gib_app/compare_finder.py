@@ -1,23 +1,11 @@
-"""Поиск таблиц и списков с ИНН на листе для сопоставления."""
+"""Поиск таблиц с ИНН на листе (любое расположение: одна или несколько таблиц рядом)."""
 import re
 from collections import Counter
 
-from constants import COMPARE_STEMS
 from utils import cell_val, norm_text, to_number
 from compare_models import SideList
 
 KEY_RE = re.compile(r"^\d{8,14}$")
-
-
-def compare_keyword(sheet_name: str) -> str | None:
-    """Ключевое слово сравнения в названии листа (или None)."""
-    t = norm_text(sheet_name)
-    for stem in COMPARE_STEMS:
-        if stem in t:
-            return stem
-    if re.search(r"(^|[^a-z])vs([^a-z]|$)", t):
-        return "vs"
-    return None
 
 
 def key_of(v) -> str | None:
@@ -124,15 +112,4 @@ def find_tables(data: list[list]):
                 s.keys[match_key(k)] = k
         years = Counter(y for c in s.value_cols for y in re.findall(r"20\d\d", str(cell_val(data, header, c) or "")))
         s.year = max(years) if years else None
-    return header, sides
-
-
-def find_lists(data: list[list]):
-    """Два списка на листе (для сравнения) — первые два из find_tables."""
-    found = find_tables(data)
-    if not found or len(found[1]) < 2:
-        return None
-    header, sides = found
-    sides = sides[:2]
-    sides[0].side, sides[1].side = "левая часть", "правая часть"
     return header, sides

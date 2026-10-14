@@ -1,8 +1,6 @@
 """Анализ книги Excel и подготовка плана действий."""
-from compare import best_compare, find_compares
 from detect import by_header, detect, sheet_score
 from excel_reader import Book
-from inn_check import check_inn
 from parser import parse_purpose_ex
 from utils import to_number
 
@@ -13,10 +11,6 @@ class Plan:
     def __init__(self, path: str):
         self.path = path
         book = Book(path)
-        self.compares = find_compares(book.sheets)
-        self.inn = check_inn(book.sheets)
-        best = best_compare(self.compares)
-        self.compare = self.compares[best] if self.compares else None
 
         scores = {n: sheet_score(d) for n, d in book.sheets.items()}
         self.sheet = max(scores, key=scores.get) if scores else None

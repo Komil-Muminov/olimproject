@@ -1,7 +1,7 @@
-"""Компоновка карточек интерфейса (карточка анализа и карточка результата)."""
+"""Шапка окна, карточка файла (для «Встроить автоматику») и карточка результата."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QFrame, QHBoxLayout, QLabel,
+    QFrame, QHBoxLayout, QLabel,
     QProgressBar, QPushButton, QVBoxLayout
 )
 
@@ -15,8 +15,8 @@ def build_header(win):
     title = QLabel("Распределение по ГИБ")
     title.setObjectName("appTitle")
     info.addWidget(title)
-    sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — сравнение и проверка по ИНН, "
-                 "реестры платежей.")
+    sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — таблица организаций по ИНН "
+                 "с фильтрами.")
     sub.setObjectName("muted")
     info.addWidget(sub)
     header.addLayout(info)
@@ -45,31 +45,6 @@ def build_found_card(win):
     win.found_text.setWordWrap(True)
     win.found_text.setTextFormat(Qt.RichText)
     fl.addWidget(win.found_text)
-
-    win.cmp_row = QFrame()
-    win.cmp_row.setObjectName("cmpBox")
-    cl = QVBoxLayout(win.cmp_row)
-    cl.setContentsMargins(0, 4, 0, 0)
-    cl.setSpacing(6)
-
-    title = QLabel("Сравнение по ИНН  ·  выберите лист")
-    title.setObjectName("cmpTitle")
-    cl.addWidget(title)
-
-    win.sheet_opts = QVBoxLayout()
-    win.sheet_opts.setSpacing(2)
-    cl.addLayout(win.sheet_opts)
-
-    win.sheet_group = QButtonGroup(win)
-    win.sheet_group.setExclusive(True)
-    win.sheet_group.idClicked.connect(win._compare_sheet_changed)
-
-    win.cmp_info = QLabel()
-    win.cmp_info.setObjectName("cmpInfo")
-    win.cmp_info.setWordWrap(True)
-    win.cmp_info.setTextFormat(Qt.RichText)
-    cl.addWidget(win.cmp_info)
-    fl.addWidget(win.cmp_row)
 
     win.warn_text = QLabel()
     win.warn_text.setObjectName("warn")
@@ -106,20 +81,6 @@ def build_found_card(win):
                               "когда вы вставляете назначения прямо в Excel.")
     win.embed_btn.clicked.connect(win.embed)
     btns.addWidget(win.embed_btn)
-
-    win.cmp_btn = QPushButton("🔍  Сравнить по ИНН")
-    win.cmp_btn.setObjectName("primary")
-    win.cmp_btn.setToolTip("Создаёт новый файл с различиями двух списков: новые, пропавшие,\n"
-                            "изменившиеся суммы и дубликаты. Исходный файл не меняется.")
-    win.cmp_btn.clicked.connect(win.run_compare)
-    btns.addWidget(win.cmp_btn)
-
-    win.chk_btn = QPushButton("🧾  Проверить ИНН")
-    win.chk_btn.setObjectName("secondary")
-    win.chk_btn.setToolTip("Создаёт новый файл: дубликаты ИНН, один ИНН — разные названия,\n"
-                            "неправильные ИНН. Проверяются все таблицы с ИНН на всех листах.")
-    win.chk_btn.clicked.connect(win.run_check)
-    btns.addWidget(win.chk_btn)
 
     fl.addLayout(btns)
     return card

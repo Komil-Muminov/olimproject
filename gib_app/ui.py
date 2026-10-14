@@ -4,11 +4,10 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from constants import EXCEL_EXT
+import ui_analysis_flow
 import ui_flow
-import ui_registry_flow
-from ui_actions import (execute_check, execute_compare, execute_embed, load_plan,
-                        render_found_info, update_option_marks)
-from ui_registry import build_registry_card
+from ui_actions import execute_embed, load_plan
+from ui_analysis import build_analysis_card
 from ui_start import build_start_card
 from ui_views import build_found_card, build_header, build_result_card
 
@@ -17,15 +16,13 @@ class MainWindow(QMainWindow):
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("Распределение по ГИБ")
-        avail = QApplication.primaryScreen().availableGeometry().height()
-        self.resize(900, max(640, min(760, avail - 60)))       # повыше, если экран позволяет
+        avail = QApplication.primaryScreen().availableGeometry()
+        self.resize(max(900, min(1180, avail.width() - 80)), max(640, min(760, avail.height() - 60)))  # больше, если экран позволяет
         self.setAcceptDrops(True)
         self.settings = settings or QSettings("Olim", "GibDistributor")
         self.plan = self.worker = self.backup = self.result_path = None
-        self._gib_text = ""
-        self.mode = "fill"
         self.st_path = self.tg_path = self.st_pays = self.tg_sheets = self.st_mapping = self.tg_cols = None
-        self.registry, self.reg_paths, self.back_page = None, [], 0
+        self.analysis, self.back_page = None, 0
 
         root = QWidget()
         root.setObjectName("root")
@@ -42,7 +39,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(build_start_card(self))
         self.pages.addWidget(build_found_card(self))
         self.pages.addWidget(build_result_card(self))
-        self.pages.addWidget(build_registry_card(self))
+        self.pages.addWidget(build_analysis_card(self))
         self.update_start()
 
     def update_start(self):
@@ -52,11 +49,6 @@ class MainWindow(QMainWindow):
         if not self.worker:
             self.pages.setCurrentIndex(self.back_page)
             self.back_page = 0
-
-    def registry_back(self):
-        if not self.worker:
-            self.registry = None            # освободить память (свод большой)
-            self.pages.setCurrentIndex(0)
 
     def choose_statement(self):
         path = ui_flow.pick(self, "1. Выберите выписку")
@@ -105,7 +97,7 @@ class MainWindow(QMainWindow):
         if self.worker:
             return
         if ui_flow.current_mode(self) == "analysis":
-            paths, _ = QFileDialog.getOpenFileNames(self, "Выберите файл (или несколько реестров платежей)",
+            paths, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы (можно несколько)",
                                                     self.settings.value("last_dir", ""), ui_flow.EXCEL_FILTER)
         else:
             path, _ = QFileDialog.getOpenFileName(self, "Выберите файл", self.settings.value("last_dir", ""),
@@ -117,24 +109,12 @@ class MainWindow(QMainWindow):
     def open_files(self, paths):
         self.settings.setValue("last_dir", os.path.dirname(paths[0]))
         if ui_flow.current_mode(self) == "analysis":
-            ui_registry_flow.start_scan(self, paths)
+            ui_analysis_flow.start(self, paths)
         else:
             self.load(paths[0])
 
     def load(self, path):
-        load_plan(self, path, ui_flow.current_mode(self))
-
-    def _compare_sheet_changed(self, i):
-        if self.plan and 0 <= i < len(self.plan.compares):
-            self.plan.compare = self.plan.compares[i]
-            update_option_marks(self)
-            render_found_info(self)
-
-    def run_check(self):
-        execute_check(self)
-
-    def run_compare(self):
-        execute_compare(self)
+        load_plan(self, path)
 
     def embed(self):
         execute_embed(self)

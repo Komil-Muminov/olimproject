@@ -5,7 +5,11 @@ from datetime import date
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
-from registry_analysis import gone_and_new, jumps, party_rows, search  # noqa: E402
+from analysis_filter import Filters, apply  # noqa: E402
+from analysis_lists import ListCollector  # noqa: E402
+from analysis_model import APPEARED, BAD_INN, DUP_PAY, GONE, GREW, ODD_DATE, PAYER  # noqa: E402
+from analysis_registry import inn_in_name  # noqa: E402
+from analysis_scan import build  # noqa: E402
 import tempfile  # noqa: E402
 
 from openpyxl import Workbook  # noqa: E402
@@ -14,8 +18,7 @@ from registry_columns import guess_header, registry_columns  # noqa: E402
 from registry_read import Payment, inn_text, read_registry, to_payment  # noqa: E402
 from registry_stats import Registry, period_label  # noqa: E402
 from app_paths import ANALYSIS_FOLDER  # noqa: E402
-from report_paths import registry_report_path  # noqa: E402
-from report_registry_errors import inn_in_name  # noqa: E402
+from report_paths import analysis_report_path  # noqa: E402
 
 HEAD = ["№ Документа", "Дата документа", "Дата учета", "Плательщик", "ИНН Плат", "Счет Плательщика", "Сумма",
         "БИК плат", "Получатель", "ИНН получ", "Счет Получателя", "БИК Получ", "КоррСчет получ", "ТипДокумента",
@@ -121,19 +124,31 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual([(p.row, side) for _, p, side, _ in self.reg.bad_inn], [(302, "плательщик")])
         self.assertEqual([(p.row, first) for _, p, first in self.reg.dups], [(303, (0, 300))])
 
-    def test_gone_new_jumps(self):
-        rows = party_rows(self.reg.payers, self.reg)
-        gone, new = gone_and_new(rows)
-        self.assertEqual([r.inn for r in gone], ["222222222"])
-        self.assertEqual([r.inn for r in new], ["444444444"])
-        jj = jumps(rows, self.reg)
-        self.assertEqual([(j[0].inn, j[3], j[4]) for j in jj], [("333333333", 50.0, 500.0)])
+    def _data(self):
+        return build(self.reg, ListCollector(), [], {})
 
-    def test_search_restores_zero(self):
-        self.reg.payers["011111111"] = self.reg.payers.pop("111111111")
-        res = search(self.reg, "11111111")
-        self.assertEqual(res["payer"].sums, [2000.0, 2000.0])
-        self.assertIsNone(res["rec"])
+    def _inns(self, rows):
+        return sorted({e.inn for e, _, _ in rows})
+
+    def test_what_happened(self):
+        d = self._data()
+        rows, st, _ = apply(d, Filters([0, 1], role=PAYER))
+        by = {e.inn: s for e, s, _ in rows}
+        self.assertEqual((by["222222222"], by["444444444"], by["333333333"]), (GONE, APPEARED, GREW))
+        gone = self._inns(apply(d, Filters([0, 1], role=PAYER, statuses={GONE}))[0])
+        self.assertEqual(gone, ["0", "222222222"])          # «0» платил только в 1-м файле
+        self.assertEqual(st[GONE], 2)
+
+    def test_error_filters(self):
+        d = self._data()
+        pick = lambda flag: self._inns(apply(d, Filters([0, 1], role=PAYER, flags={flag}))[0])
+        self.assertEqual((pick(DUP_PAY), pick(BAD_INN), pick(ODD_DATE)), (["222222222"], ["0"], ["333333333"]))
+
+    def test_search_sum_and_parts(self):
+        d = self._data()
+        self.assertEqual(self._inns(apply(d, Filters([0, 1], role=PAYER, query="4444"))[0]), ["444444444"])
+        self.assertEqual(self._inns(apply(d, Filters([0, 1], role=PAYER, min_sum=500, max_sum=600))[0]), ["333333333"])
+        self.assertNotIn("444444444", self._inns(apply(d, Filters([0], role=PAYER))[0]))     # только 1-я часть
 
     def test_inn_in_name(self):
         self.assertEqual(inn_in_name("Сарраесати хазинадори ИНН 010010058"), "010010058")
@@ -142,9 +157,24 @@ class TestRegistryStats(unittest.TestCase):
 
 class TestPaths(unittest.TestCase):
     def test_report_goes_to_analysis_folder(self):
-        path = registry_report_path("Янв–Дек 2024")
+        path = analysis_report_path()
         self.assertEqual(os.path.basename(os.path.dirname(path)), ANALYSIS_FOLDER)
-        self.assertTrue(os.path.basename(path).startswith("Свод по ИНН (Янв–Дек 2024)"))
+        self.assertTrue(os.path.basename(path).startswith("Анализ "))
+
+
+class TestLists(unittest.TestCase):
+    def test_two_tables_side_by_side(self):
+        rows = [["№", "Номи корхона", "РМА", "Маблағ 2024", None, "№", "Номи корхона", "РМА", "Маблағ 2025"]]
+        for i in range(12):
+            rows.append([i + 1, f"Орг {i}", f"0100000{i:02d}", 100.0, None, i + 1, f"Орг {i}", f"0100000{i:02d}",
+                         100.0 if i < 10 else 300.0])
+        rows.append([13, "Только слева", "020000001", 50.0, None, 13, "Только справа", "030000001", 70.0])
+        c = ListCollector()
+        self.assertEqual(c.add_file("t.xlsx", {"Лист1": rows}), 2)
+        d = build(Registry(), c, ["t.xlsx"], {})
+        self.assertEqual([p.label for p in d.parts], ["2024 · «Лист1» A–D", "2025 · «Лист1» F–I"])
+        rows_, st, _ = apply(d, Filters([0, 1]))
+        self.assertEqual((st[GONE], st[APPEARED], st[GREW]), (1, 1, 2))
 
 
 if __name__ == "__main__":

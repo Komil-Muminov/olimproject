@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
 from parser import parse_purpose, parse_purpose_ex, to_number
-from compare_finder import compare_keyword, key_of, match_key
+from compare_finder import key_of, match_key
 from excel_io import parse_cell, cell_name, gib_code
 
 
@@ -63,12 +63,6 @@ class TestParser(unittest.TestCase):
 
 
 class TestCompareHelpers(unittest.TestCase):
-    def test_compare_keywords(self):
-        self.assertIsNotNone(compare_keyword("Муқоиса"))
-        self.assertIsNotNone(compare_keyword("Сравнение 2024"))
-        self.assertIsNotNone(compare_keyword("List vs List2"))
-        self.assertIsNone(compare_keyword("Выписка январ"))
-
     def test_key_of(self):
         self.assertEqual(key_of("012345678"), "012345678")
         self.assertEqual(key_of(12345678.0), "12345678")

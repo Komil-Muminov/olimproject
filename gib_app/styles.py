@@ -24,15 +24,6 @@ QPushButton#modeCard:hover { border-color: #93C5FD; }
 QPushButton#modeCard:checked { border-color: #2563EB; background: #EFF6FF; color: #1E3A8A; }
 QRadioButton { font-size: 11pt; color: #0F172A; padding: 4px 0; }
 QLabel#fileCaption { font-size: 11pt; font-weight: 600; color: #334155; }
-QFrame#cmpBox { background: transparent; border: none; }
-QLabel#cmpTitle { font-size: 11pt; font-weight: 600; color: #334155; padding-bottom: 4px; }
-QLabel#cmpInfo { font-size: 10pt; color: #64748B; padding-top: 6px; }
-QLabel#cmpArrow { font-size: 22pt; color: #94A3B8; padding: 0 4px; }
-QLabel#listCard { background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 8px; }
-QPushButton#sheetOption { background: transparent; border: none; border-radius: 8px; padding: 9px 12px;
-                          text-align: left; font-size: 10.5pt; color: #64748B; }
-QPushButton#sheetOption:hover { background: #F1F5F9; }
-QPushButton#sheetOption:checked { background: #EFF6FF; color: #1E3A8A; }
 QComboBox#bigSelect { background: white; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px;
                       font-size: 11pt; color: #0F172A; min-height: 22px; }
 QComboBox#bigSelect:hover { border-color: #2563EB; }
@@ -48,6 +39,13 @@ QPushButton#secondary:disabled { color: #94A3B8; border-color: #CBD5E1; }
 QProgressBar { border: 1px solid #E2E8F0; border-radius: 6px; text-align: center; height: 20px; background: #F1F5F9; }
 QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
 QHeaderView::section { background: #F8FAFC; color: #475569; font-weight: 600; font-size: 9.5pt; padding: 4px 6px; border: none; border-bottom: 1px solid #E2E8F0; }
-QFrame#foundBox { background: white; border: 1px solid #E2E8F0; border-radius: 12px; }
 QLabel#regInfo { font-size: 10.5pt; color: #0F172A; }
+QLabel#filterCaption { color: #475569; font-weight: 600; }
+QPushButton#chip { background: white; border: 1px solid #CBD5E1; border-radius: 14px; padding: 4px 12px; color: #334155; }
+QPushButton#chip:hover { border-color: #2563EB; }
+QPushButton#chip:checked { background: #2563EB; border-color: #2563EB; color: white; }
+QListWidget#partsList { background: white; border: 1px solid #E2E8F0; border-radius: 8px; padding: 2px; }
+QListWidget#partsList::item { padding: 2px 10px 2px 2px; }
+QTableView#anTable { background: white; alternate-background-color: #F8FAFC; border: 1px solid #E2E8F0;
+                     border-radius: 8px; selection-background-color: #DBEAFE; selection-color: #0F172A; }
 """
