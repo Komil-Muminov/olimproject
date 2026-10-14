@@ -95,7 +95,7 @@ def _legend(ws, hints_st: dict):
     else:
         cells += [_cell(ws, "одна часть — сравнивать не с чем", font=Font(italic=True, color="64748B"))]
     cells += [_cell(ws, "Ошибки", "\n".join(f"• {f}: {FLAG_HINTS[f]}" for f in FLAGS) +
-                    "\nПодробно — на листе «Ошибки в реестрах» / «Ошибки в таблицах».", fill=fill_color(ERR_COLOR), border=BORDER,
+                    "\nПодробно — на листах ошибок (у каждого вида — свой лист).", fill=fill_color(ERR_COLOR), border=BORDER,
                     alignment=CENTER, font=Font(bold=True))]
     ws.append(cells)
 

@@ -49,7 +49,7 @@ class ListCollector:
     def __init__(self):
         self.parts = []
         self.orgs = {}          # ключ ИНН (без нулей впереди) → {"inn", "names", "sums", "counts", "dup"}
-        self.details = {"dup_row": [], "bad_list": []}      # группы листа «Ошибки в таблицах»
+        self.details = {"dup_row": [], "bad_list": []}      # группы листов ошибок в таблицах
         self.bad = set()        # ИНН (как в файле) с ошибкой
 
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:

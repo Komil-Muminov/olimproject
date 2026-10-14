@@ -39,7 +39,7 @@ def _sides(p):
 
 
 def registry_errors(reg) -> tuple:
-    """→ ({группа ошибок: [строки]} для листа «Ошибки в реестрах», {флаг: {(роль, ИНН)}} — у кого какая)."""
+    """→ ({группа ошибок: [строки]} для листов ошибок, {флаг: {(роль, ИНН)}} — у кого какая)."""
     fname = lambda f: os.path.basename(reg.files[f].path)
     groups, marked = {"dup": [], "bad_pay": [], "odd": []}, {DUP_PAY: set(), ODD_DATE: set()}
     for n, (f, p, (f0, row0)) in enumerate(reg.dups, 1):
