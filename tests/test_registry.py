@@ -141,7 +141,9 @@ class TestRegistryStats(unittest.TestCase):
         d = self._data()
         p = self._payers(d)
         self.assertEqual((p["222222222"].flags, p["0"].flags, p["333333333"].flags), ({DUP_PAY}, {BAD_INN}, {ODD_DATE}))
-        self.assertEqual({g: len(r) for g, r in d.details.items() if r}, {"dup": 1, "bad_pay": 1, "odd": 1})
+        self.assertEqual({g: len(r) for g, r in d.details.items() if r}, {"dup": 2, "bad_pay": 1, "odd": 1})
+        first, again = d.details["dup"]                       # пара: где впервые и где повтор
+        self.assertEqual((first[2], first[6], again[2], again[6]), (300, "платёж", 303, "повтор"))
         self.assertEqual(d.details["bad_pay"][0][5:9], ["плательщика", "Орг 0", "0", "вместо ИНН стоит 0 (не указан)"])
 
     def test_excel_report(self):

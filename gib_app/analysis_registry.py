@@ -48,11 +48,12 @@ def registry_errors(reg) -> tuple:
     """→ ({группа ошибок: [строки]} для листа «Ошибки в реестрах», {флаг: {(роль, ИНН)}} — у кого какая)."""
     fname = lambda f: os.path.basename(reg.files[f].path)
     groups, marked = {"dup": [], "bad_pay": [], "odd": []}, {DUP_PAY: set(), ODD_DATE: set()}
-    for f, p, (f0, row0) in reg.dups:
+    for n, (f, p, (f0, row0)) in enumerate(reg.dups, 1):
         marked[DUP_PAY].update(_sides(p))
-        where = f"строка {row0}" if f0 == f else f"{fname(f0)}, строка {row0}"
-        groups["dup"].append([fname(f), p.row, p.doc, p.date, p.amount, where, p.payer, p.payer_inn, p.rec,
-                              p.rec_inn, p.purpose])
+        # пара строк: где платёж записан впервые и где повтор (данные те же — отличается только строка)
+        tail = [p.payer, p.payer_inn, p.rec, p.rec_inn, p.purpose]
+        groups["dup"] += [[n, fname(f0), row0, p.doc, p.date, p.amount, "платёж"] + tail,
+                          [n, fname(f), p.row, p.doc, p.date, p.amount, "повтор"] + tail]
     for f, p, side, inn in reg.bad_inn:
         name = p.payer if side == PAYER else p.rec
         groups["bad_pay"].append([fname(f), p.row, p.doc, p.date, p.amount, SIDE_OF[side], name,

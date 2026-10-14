@@ -8,13 +8,13 @@ from openpyxl.utils import get_column_letter
 from report_fast import DATE, title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
 
-PAY_HEAD = ["Файл", "Строка", "№ док.", "Дата", "Сумма"]
+PAY_HEAD = ["Файл", "Строка в файле", "№ док.", "Дата", "Сумма"]
 # группа: (заголовок, цвет, что это и как проверить, шапка)
 GROUPS = {
     "dup": ("ДВОЙНОЙ ПЛАТЁЖ", "B91C1C",
-            "Один и тот же платёж записан дважды: совпадают №, дата, плательщик, получатель, сумма и основание. "
-            "Проверьте, не провели ли платёж два раза. «Повтор строки» — где этот платёж уже был.",
-            PAY_HEAD + ["Повтор строки", "Плательщик", "ИНН плательщика", "Получатель", "ИНН получателя",
+            "Каждая пара строк — один и тот же платёж: «платёж» — где он записан впервые, «повтор» — где ещё раз "
+            "(совпадают №, дата, плательщик, получатель, сумма и основание). Проверьте, не провели ли его дважды.",
+            PAY_HEAD + ["Что это", "Плательщик", "ИНН плательщика", "Получатель", "ИНН получателя",
                         "Основание"]),
     "bad_pay": ("НЕПРАВИЛЬНЫЙ ИНН", "EA580C",
                 "ИНН должен быть из 9 цифр. «ИНН в названии» — если в названии организации вписан ИНН, скорее "
@@ -37,6 +37,8 @@ SHEETS = {
     "Ошибки в таблицах": (("dup_row", "bad_list"), [6, 16, 40, 16, 16, 44, 36, 16], (), ()),
 }
 BIGGEST_FIRST = ("dup", "bad_pay")      # крупные суммы сверху
+PAIRED = ("dup",)                       # строки идут парами: первый столбец — номер пары
+PAIR_SHADE = "F1F5F9"
 
 
 def _cell(ws, v, **style):
@@ -70,18 +72,26 @@ def _sheet(wb, name, groups, widths, money, dates):
                "Ошибки по группам. В каждой группе: что это, как проверить и строки, где найдено.", len(widths))
     for g, rows in groups:
         title, color, hint, head = GROUPS[g]
+        paired = g in PAIRED
         if g in BIGGEST_FIRST:
-            rows = sorted(rows, key=lambda r: -(r[4] or 0))
+            rows = sorted(rows, key=lambda r: (-(r[4 + paired] or 0), r[0] if paired else 0))
+        count = len({r[0] for r in rows}) if paired else len(rows)
         band = fill_color(color)
-        t = _cell(ws, f"{title} — {len(rows)}", font=Font(bold=True, size=13, color="FFFFFF"), fill=band,
+        t = _cell(ws, f"{title} — {count}", font=Font(bold=True, size=13, color="FFFFFF"), fill=band,
                   alignment=Alignment(vertical="center", indent=1))
         t.comment = Comment(hint, "Распределение по ГИБ", width=320, height=90)
         ws.append([t] + [_cell(ws, None, fill=band) for _ in head])
         ws.append([_cell(ws, hint, font=Font(italic=True, color="475569"))])
         ws.append([_cell(ws, h, font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER, alignment=CENTER)
                    for h in ["№"] + head])
+        pair_no = {}
         for k, r in enumerate(rows, 1):
-            ws.append([k] + [_cell(ws, v, number_format=NUM) if i in money and v is not None
-                             else _cell(ws, v, number_format=DATE) if i in dates and v is not None
-                             else v for i, v in enumerate(r, 1)])
+            if paired:                      # № — номер пары по порядку, пары через одну с фоном
+                k = pair_no.setdefault(r[0], len(pair_no) + 1)
+                r = r[1:]
+            shade = {"fill": fill_color(PAIR_SHADE)} if paired and k % 2 == 0 else {}
+            ws.append([_cell(ws, k, **shade)] + [
+                _cell(ws, v, number_format=NUM, **shade) if i in money and v is not None
+                else _cell(ws, v, number_format=DATE, **shade) if i in dates and v is not None
+                else _cell(ws, v, **shade) for i, v in enumerate(r, 1)])
         ws.append([])
