@@ -41,10 +41,14 @@ Private Const MAX_LIST As Long = 20
 Private Const CODE_LEN As Long = 4
 ' Наибольшее число строк, добавляемых за один раз
 Private Const MAX_ADD_ROWS As Long = 5000
-' Формат ячейки назначения, которым помечена зафиксированная строка:
-' выглядит как обычный, но отличается от текстового "@" и переезжает
-' вместе со строкой при сортировке. Незафиксированные назначения - "@".
-Private Const FROZEN_FMT As String = "General;-General;General;@"
+' Формат сумм по статьям, которым помечено зафиксированное распределение:
+' выглядит как обычный "0.00", но отличается от него и переезжает вместе
+' с суммой при сортировке. Ячейка назначения пометку не хранит, поэтому
+' назначения можно менять любым способом (в том числе вставкой).
+Private Const FROZEN_FMT As String = "0.00;-0.00;0.00;@"
+Private Const AMT_FMT As String = "0.00"
+' Пометка прежней версии (в ячейке назначения) - снимается кнопками
+Private Const OLD_FROZEN_FMT As String = "General;-General;General;@"
 Private Const NAME_FMT As String = "@"
 ' Скрытый лист со снимком строки "Чамъ" и всего, что ниже нее
 Private Const SNAP_SHEET As String = "gibSnapshot"
@@ -286,10 +290,10 @@ Public Sub GIB_AddRowsN(ByVal rowCount As Long)
 End Sub
 
 ' Текст последнего отчета (для проверки работы).
-' Кнопка "Зафиксировать распределение": все строки, в которых уже есть суммы
-' по статьям, помечаются как зафиксированные. После этого изменение текста
-' назначения в них не стирает и не пересчитывает суммы (ни при правке,
-' ни кнопкой "Пересчитать ГИБ"). Суммы в таких строках можно править вручную.
+' Кнопка "Зафиксировать распределение": суммы по статьям во всех строках,
+' где они есть, помечаются как зафиксированные. После этого изменение текста
+' назначения (вручную, вставкой, заменой) не стирает и не пересчитывает их
+' (и кнопка "Пересчитать ГИБ" тоже). Суммы можно править вручную.
 Public Sub GIB_FreezeDistribution()
     Dim ws As Worksheet
     Dim L As TLayout
@@ -306,12 +310,9 @@ Public Sub GIB_FreezeDistribution()
     started = True
     ClearStatus
     For r = L.FirstRow To L.LastRow
-        If RowHasAmounts(ws, L, r) Then
-            SetFrozen ws.Cells(r, L.NameCol), True
+        If SetRowFrozen(ws, L, r, True) Then
             SetFlag ws.Cells(r, L.NameCol), False
             cnt = cnt + 1
-        Else
-            SetFrozen ws.Cells(r, L.NameCol), False
         End If
     Next r
     EndWork st
@@ -369,10 +370,7 @@ Public Sub GIB_UnfreezeDistribution()
     ClearStatus
     n = CollectRows(sel, rowList)
     For i = 1 To n
-        If ws.Cells(rowList(i), L.NameCol).NumberFormat = FROZEN_FMT Then
-            SetFrozen ws.Cells(rowList(i), L.NameCol), False
-            cnt = cnt + 1
-        End If
+        If SetRowFrozen(ws, L, rowList(i), False) Then cnt = cnt + 1
     Next i
     EndWork st
     started = False
@@ -590,6 +588,9 @@ Private Sub WriteRow(ByVal ws As Worksheet, L As TLayout, ByVal r As Long, _
         Next k
         isFormula = (Left$(SafeStr(fArr(idx)), 1) = "=")
         v = vArr(idx)
+        ' строка не зафиксирована (иначе WriteRow не вызывается): пометка,
+        ' унаследованная ячейкой от соседней строки, снимается
+        If ws.Cells(r, col).NumberFormat = FROZEN_FMT Then ws.Cells(r, col).NumberFormat = AMT_FMT
         If has Then
             want = Round(want, 2)
             If isFormula Or VarType(v) <> vbDouble Then
@@ -620,21 +621,49 @@ Private Function RowHasAmounts(ByVal ws As Worksheet, L As TLayout, ByVal r As L
     Next j
 End Function
 
-' Строка зафиксирована кнопкой "Зафиксировать распределение" и в ней есть
-' суммы. Пустая строка с пометкой (например, новая строка, унаследовавшая
-' оформление соседней) зафиксированной не считается.
+' Строка зафиксирована: в ней есть сумма по статье с пометкой фиксации.
+' Пустые ячейки с пометкой (новая строка, унаследовавшая оформление
+' соседней) не считаются.
 Private Function IsFrozenRow(ByVal ws As Worksheet, L As TLayout, ByVal r As Long) As Boolean
-    If ws.Cells(r, L.NameCol).NumberFormat <> FROZEN_FMT Then Exit Function
-    IsFrozenRow = RowHasAmounts(ws, L, r)
+    Dim vArr As Variant, j As Long
+
+    If L.AreaLast < L.AreaFirst Then Exit Function
+    vArr = RowArray(ws, r, L.AreaFirst, L.AreaLast, False)
+    For j = 1 To L.AreaLast - L.AreaFirst + 1
+        If Not IsEmpty(vArr(j)) Then
+            If ws.Cells(r, L.AreaFirst + j - 1).NumberFormat = FROZEN_FMT Then
+                IsFrozenRow = True
+                Exit Function
+            End If
+        End If
+    Next j
 End Function
 
-Private Sub SetFrozen(ByVal c As Range, ByVal frozenOn As Boolean)
-    If frozenOn Then
-        If c.NumberFormat <> FROZEN_FMT Then c.NumberFormat = FROZEN_FMT
-    ElseIf c.NumberFormat = FROZEN_FMT Then
-        c.NumberFormat = NAME_FMT
-    End If
-End Sub
+' Ставит (frozenOn) или снимает пометку фиксации с сумм по статьям строки r.
+' True: при фиксации - в строке есть суммы, при снятии - пометка была.
+' Заодно снимается пометка прежней версии с ячейки назначения.
+Private Function SetRowFrozen(ByVal ws As Worksheet, L As TLayout, ByVal r As Long, _
+                              ByVal frozenOn As Boolean) As Boolean
+    Dim vArr As Variant, j As Long
+    Dim c As Range
+
+    Set c = ws.Cells(r, L.NameCol)
+    If c.NumberFormat = OLD_FROZEN_FMT Then c.NumberFormat = NAME_FMT
+    If L.AreaLast < L.AreaFirst Then Exit Function
+    vArr = RowArray(ws, r, L.AreaFirst, L.AreaLast, False)
+    For j = 1 To L.AreaLast - L.AreaFirst + 1
+        Set c = ws.Cells(r, L.AreaFirst + j - 1)
+        If frozenOn Then
+            If Not IsEmpty(vArr(j)) Then
+                If c.NumberFormat <> FROZEN_FMT Then c.NumberFormat = FROZEN_FMT
+                SetRowFrozen = True
+            End If
+        ElseIf c.NumberFormat = FROZEN_FMT Then
+            c.NumberFormat = AMT_FMT
+            If Not IsEmpty(vArr(j)) Then SetRowFrozen = True
+        End If
+    Next j
+End Function
 
 ' Пересчет подсветки после ручного ввода сумм в область ГИБ: подсветка
 ' снимается, как только в строке появилась сумма.
@@ -795,7 +824,7 @@ End Sub
 ' и оформлением строк данных. Возвращает номер первой новой строки;
 ' L обновляется под новое расположение таблицы.
 Private Function InsertTableRows(ByVal ws As Worksheet, L As TLayout, ByVal cnt As Long) As Long
-    Dim insAt As Long, r As Long
+    Dim insAt As Long, r As Long, c As Long
 
     If L.SumRow > 0 Then insAt = L.SumRow Else insAt = L.LastRow + 1
     ws.Range(ws.Rows(insAt), ws.Rows(insAt + cnt - 1)).Insert Shift:=xlShiftDown, CopyOrigin:=xlFormatFromLeftOrAbove
@@ -803,8 +832,16 @@ Private Function InsertTableRows(ByVal ws As Worksheet, L As TLayout, ByVal cnt 
     If GetLayout(ws, L) Then
         For r = insAt To insAt + cnt - 1
             SetFlag ws.Cells(r, L.NameCol), False
-            SetFrozen ws.Cells(r, L.NameCol), False   ' пометка соседней строки
         Next r
+        ' пометка фиксации, унаследованная от строки выше
+        For c = L.AreaFirst To L.AreaLast
+            If ws.Cells(insAt, c).NumberFormat = FROZEN_FMT Then
+                ws.Range(ws.Cells(insAt, c), ws.Cells(insAt + cnt - 1, c)).NumberFormat = AMT_FMT
+            End If
+        Next c
+        If ws.Cells(insAt, L.NameCol).NumberFormat = OLD_FROZEN_FMT Then
+            ws.Range(ws.Cells(insAt, L.NameCol), ws.Cells(insAt + cnt - 1, L.NameCol)).NumberFormat = NAME_FMT
+        End If
         SetGridBorders ws, L, insAt, insAt + cnt - 1
     End If
     InsertTableRows = insAt

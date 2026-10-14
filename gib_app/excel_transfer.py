@@ -2,7 +2,8 @@
 (после последней заполненной строки, до «Чамъ»), затем суммы раскладываются по ГИБ."""
 from datetime import datetime
 
-from excel_com import WriteError, excel_workbook, get_sheet, make_backup
+from excel_com import WriteError, excel_workbook, get_sheet, make_backup, set_number_format
+from excel_freeze import clear_freeze_marks
 from excel_writer import fill_in_place
 from statement import doc_text, read_statement
 from target_layout import create_table, existing_keys, locate, make_room, split_new
@@ -12,10 +13,7 @@ def _put(ws, col, r1, values, text=False):
     if col and values:
         rng = ws.Range(ws.Cells(r1, col), ws.Cells(r1 + len(values) - 1, col))
         if text:
-            try:
-                rng.NumberFormat = "@"      # текстом, как в выписке (свой формат даты ломает некоторые книги)
-            except Exception:
-                pass
+            set_number_format(rng, "@")     # текстом, как в выписке
         rng.Value = [(v,) for v in values]
 
 
@@ -54,6 +52,7 @@ def transfer_and_fill(statement_path, target_path, sheet_name, header_row, purpo
         old_sum = t.sum_row
         start = make_room(ws, t, len(new)) if new else t.last_filled + 1
         if new:
+            clear_freeze_marks(ws, header_row, purpose_col, start, start + len(new) - 1)
             _write_rows(ws, t, start, new)
         wb.Save()
 

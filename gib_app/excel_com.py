@@ -111,3 +111,26 @@ def get_sheet(wb, name: str):
         return wb.Worksheets(name)
     except Exception:
         raise WriteError(f"Лист «{name}» не найден.")
+
+
+EN_LCID = 0x409
+
+
+def _invoke_fmt(rng, put: bool, fmt=None):
+    """Формат чисел с английским языком, как его видит VBA («0.00», «General»). Обычное
+    rng.NumberFormat через pywin32 работает с языком Windows: «0.00» отклоняется, «General» = «Основной»."""
+    import pythoncom
+    obj = rng._oleobj_
+    disp = obj.GetIDsOfNames("NumberFormat")
+    if put:
+        return obj.Invoke(disp, EN_LCID, pythoncom.DISPATCH_PROPERTYPUT, 0, fmt)
+    return obj.Invoke(disp, EN_LCID, pythoncom.DISPATCH_PROPERTYGET, 1)
+
+
+def number_format(rng):
+    """Формат диапазона (None — в диапазоне разные форматы)."""
+    return _invoke_fmt(rng, False)
+
+
+def set_number_format(rng, fmt: str):
+    _invoke_fmt(rng, True, fmt)
