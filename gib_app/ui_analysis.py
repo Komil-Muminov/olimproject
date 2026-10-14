@@ -1,21 +1,28 @@
-"""Экран глубокого анализа: выбранные файлы и одна кнопка «Анализировать» — результат в Excel."""
+"""Экран глубокого анализа: выбранные файлы и три действия — «Анализ», «Сводная таблица», платежи по ИНН."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout
+)
 
 import ui_analysis_flow as flow
 
-HOW = ("<b>Что будет в Excel</b><br>"
-       "• Каждая организация (ИНН) — одна строка: суммы по каждой части (файл, период, таблица на листе) и всего.<br>"
-       "• <b>Цвет строки</b> — что случилось между первой и последней частью: "
-       "<span style='background:#DCFCE7'>&nbsp;Новый&nbsp;</span> "
-       "<span style='background:#FEE2E2'>&nbsp;Пропал&nbsp;</span> "
-       "<span style='background:#DBEAFE'>&nbsp;Вырос&nbsp;</span> "
-       "<span style='background:#FEF9C3'>&nbsp;Уменьшился&nbsp;</span> "
-       "Без изменений "
-       "<span style='background:#EDE9FE'>&nbsp;Появился и пропал&nbsp;</span><br>"
-       "• <b>Ошибки</b> — <span style='background:#FED7AA'>&nbsp;оранжевая ячейка&nbsp;</span>: двойной платёж, "
-       "неправильный ИНН, странная дата, повтор ИНН. Подробно — на листе «Ошибки в реестрах» (или «в таблицах»).<br>"
-       "• Наведите на заголовок или цвет в легенде — появится подсказка. Отбирать — обычным фильтром Excel.")
+ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организация — строка, суммы по частям.\n"
+                "Цвет строки — что случилось: Новый · Пропал · Вырос · Уменьшился · Без изменений · Появился и пропал.\n"
+                "Оранжевая ячейка — ошибка: двойной платёж, неправильный ИНН, странная дата, повтор ИНН.\n"
+                "В Excel есть легенда; наведите на цвет или заголовок — подсказка.")
+PIVOT_TIP = ("Отдельный файл: настоящая сводная таблица Excel (pivot).\n"
+             "Что случилось → организации, части по столбцам, итоги; сверху кнопки-фильтры (срезы).")
+
+
+def _action(win, title: str, sub: str, tip: str, slot):
+    """Большая кнопка-карточка: название и одна строка пояснения."""
+    b = QPushButton(f"{title}\n{sub}")
+    b.setObjectName("actionCard")
+    b.setToolTip(tip)
+    b.setCursor(Qt.PointingHandCursor)
+    b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    b.clicked.connect(slot)
+    return b
 
 
 def build_analysis_card(win):
@@ -23,38 +30,48 @@ def build_analysis_card(win):
     card.setObjectName("card")
     lay = QVBoxLayout(card)
     lay.setContentsMargins(28, 24, 28, 24)
-    lay.setSpacing(12)
+    lay.setSpacing(14)
     win.an_files = QLabel()
     win.an_files.setObjectName("fileName")
     win.an_files.setWordWrap(True)
     lay.addWidget(win.an_files)
-    how = QLabel(HOW)
-    how.setObjectName("regInfo")
-    how.setWordWrap(True)
-    how.setTextFormat(Qt.RichText)
-    lay.addWidget(how)
-    lay.addStretch()
+
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    win.an_run_btn = _action(win, "📊  Анализ", "Excel: организации по частям, что случилось, ошибки",
+                             ANALYSIS_TIP, lambda: flow.run(win))
+    win.an_pivot_btn = _action(win, "📈  Сводная таблица", "Pivot со срезами — отдельным файлом",
+                               PIVOT_TIP, lambda: flow.run(win, "pivot"))
+    row.addWidget(win.an_run_btn)
+    row.addWidget(win.an_pivot_btn)
+    lay.addLayout(row)
+
+    inn_box = QFrame()
+    inn_box.setObjectName("actionBox")
+    inn_lay = QVBoxLayout(inn_box)
+    inn_lay.setContentsMargins(18, 14, 18, 14)
+    inn_lay.setSpacing(8)
+    title = QLabel("📄  Платежи одной организации")
+    title.setObjectName("actionTitle")
+    inn_lay.addWidget(title)
     inn_row = QHBoxLayout()
-    cap = QLabel("Платежи одной организации:")
-    cap.setObjectName("fileCaption")
-    inn_row.addWidget(cap)
     win.an_inn = QLineEdit()
     win.an_inn.setPlaceholderText("ИНН, например 040000011")
     win.an_inn.setMaxLength(20)
     win.an_inn.setClearButtonEnabled(True)
     win.an_inn.returnPressed.connect(lambda: flow.export_payments(win))
     inn_row.addWidget(win.an_inn, 1)
-    win.an_pay_btn = QPushButton("📄  Платежи этого ИНН — в Excel")
+    win.an_pay_btn = QPushButton("В Excel")
     win.an_pay_btn.setToolTip("Все платежи этой организации из реестров: где платила и где получала")
     win.an_pay_btn.clicked.connect(lambda: flow.export_payments(win))
     inn_row.addWidget(win.an_pay_btn)
-    lay.addLayout(inn_row)
+    inn_lay.addLayout(inn_row)
+    lay.addWidget(inn_box)
+    lay.addStretch()
+
     win.an_progress = QProgressBar()
     win.an_progress.setVisible(False)
     lay.addWidget(win.an_progress)
-    note = QLabel("Исходные файлы не меняются. Excel сохранится в папку «Свод по глубокому анализу».")
-    note.setObjectName("muted")
-    lay.addWidget(note)
     btns = QHBoxLayout()
     back = QPushButton("←  Назад")
     back.clicked.connect(lambda: flow.back(win))
@@ -63,16 +80,8 @@ def build_analysis_card(win):
     win.an_other_btn.clicked.connect(win.choose_file)
     btns.addWidget(win.an_other_btn)
     btns.addStretch()
-    win.an_pivot_btn = QPushButton("📈  Сводная таблица")
-    win.an_pivot_btn.setObjectName("secondary")
-    win.an_pivot_btn.setToolTip("Отдельный файл: настоящая сводная таблица Excel (pivot) со срезами —\n"
-                                "что случилось → организации, по частям; кнопки-фильтры сверху")
-    win.an_pivot_btn.clicked.connect(lambda: flow.run(win, "pivot"))
-    btns.addWidget(win.an_pivot_btn)
-    win.an_run_btn = QPushButton("📊  Анализировать")
-    win.an_run_btn.setObjectName("primary")
-    win.an_run_btn.setToolTip("Прочитать файлы и создать Excel: организации, что случилось, ошибки")
-    win.an_run_btn.clicked.connect(lambda: flow.run(win))
-    btns.addWidget(win.an_run_btn)
+    note = QLabel("Исходные файлы не меняются · результат — в папке «Свод по глубокому анализу»")
+    note.setObjectName("muted")
+    btns.addWidget(note)
     lay.addLayout(btns)
     return card

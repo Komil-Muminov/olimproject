@@ -3,13 +3,13 @@ import os
 
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from analysis_model import FLAGS, STATUSES
 from analysis_scan import AS_LIST, scan_files
 from report_analysis import write_analysis_report
 from report_inn import clean_inn, write_inn_payments
 from report_pivot import write_pivot_report
 from report_paths import analysis_report_path, inn_report_path, pivot_report_path
 from ui_column_dialog import ColumnDialog
+from ui_analysis_result import result_lines
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -93,15 +93,7 @@ def _pivot_done(win, res):
 
 
 def _done(win, res, data):
-    st, fl = res["statuses"], res["flags"]
-    parts = " → ".join(p.label for p in data.parts)
-    lines = [f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
-             f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", "",
-             f"Организаций: <b>{_int(res['rows'])}</b> · частей: {len(data.parts)} ({parts})"]
-    if st:
-        lines.append("Что случилось: " + " · ".join(f"{s} <b>{_int(st[s])}</b>" for s in STATUSES if st[s]))
-    lines.append("Ошибки: " + (" · ".join(f"{f} <b>{_int(fl[f])}</b>" for f in FLAGS if fl[f]) or "не найдено ✓"))
-    show_result(win, True, "✓  Анализ готов", lines, path=res["path"], note="Исходные файлы не изменены.")
+    show_result(win, True, "✓  Анализ готов", result_lines(res, data), path=res["path"])
     win.back_page = ANALYSIS_PAGE
 
 

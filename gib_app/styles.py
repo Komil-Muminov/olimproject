@@ -40,4 +40,10 @@ QProgressBar { border: 1px solid #E2E8F0; border-radius: 6px; text-align: center
 QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
 QHeaderView::section { background: #F8FAFC; color: #475569; font-weight: 600; font-size: 9.5pt; padding: 4px 6px; border: none; border-bottom: 1px solid #E2E8F0; }
 QLabel#regInfo { font-size: 10.5pt; color: #0F172A; }
+QPushButton#actionCard { background: white; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px;
+                         text-align: left; font-size: 11pt; color: #334155; }
+QPushButton#actionCard:hover { border: 1px solid #2563EB; background: #F8FAFF; }
+QPushButton#actionCard:disabled { color: #94A3B8; }
+QFrame#actionBox { background: white; border: 1px solid #E2E8F0; border-radius: 14px; }
+QLabel#actionTitle { font-size: 11pt; font-weight: 600; color: #0F172A; }
 """

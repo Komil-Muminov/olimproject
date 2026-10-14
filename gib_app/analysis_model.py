@@ -92,3 +92,21 @@ def status(e: Entity, parts: list) -> str:
         return SAME
     a, b = e.sums[0], e.sums[-1]
     return GREW if b - a > 0.005 else FELL if a - b > 0.005 else SAME
+
+
+def part_summary(data: AnalysisData) -> list:
+    """По каждой части: организаций, сумма, сколько появилось и пропало по сравнению с предыдущей частью.
+    Сумма платежей — по плательщикам (иначе каждый платёж посчитается дважды)."""
+    money_role = PAYER if PAYER in data.roles else None
+    out = []
+    for i, p in enumerate(data.parts):
+        here = [e for e in data.entities if e.counts[i]]
+        prev = [e.counts[i - 1] > 0 for e in data.entities] if i else None
+        out.append({
+            "part": p, "orgs": len(here),
+            "sum": round(sum(e.sums[i] for e in here if money_role is None or e.role == money_role), 2)
+            if p.has_sums else None,
+            "new": sum(1 for k, e in enumerate(data.entities) if e.counts[i] and not prev[k]) if i else None,
+            "gone": sum(1 for k, e in enumerate(data.entities) if prev[k] and not e.counts[i]) if i else None,
+        })
+    return out
