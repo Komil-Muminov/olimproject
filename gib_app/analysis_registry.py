@@ -1,8 +1,8 @@
-"""Реестры платежей → части и организации единой таблицы анализа (плательщики и получатели)."""
+"""Реестры платежей → части и организации глубокого анализа (плательщики и получатели)."""
 import os
 import re
 
-from analysis_model import BAD_INN, DUP_PAY, NAMES, ODD_DATE, PAYER, RECIPIENT, Entity, Part
+from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, RECIPIENT, Entity, Part
 from inn_check import _name_key
 from registry_stats import INN_RE
 
@@ -31,37 +31,38 @@ def _sides(p):
     return [(role, inn) for role, inn in ((PAYER, p.payer_inn), (RECIPIENT, p.rec_inn)) if inn is not None]
 
 
-def registry_entities(reg) -> tuple:
-    """→ (организации, подробности ошибок {(флаг, "payments"): [(ключ, строка)]})."""
+def _pair(a, b) -> str:
+    return " → ".join(str(x) for x in (a, b) if x not in (None, ""))
+
+
+def registry_errors(reg) -> tuple:
+    """→ (строки «Ошибки подробно», {флаг: {(роль, ИНН)}} — у кого какая ошибка)."""
     fname = lambda f: os.path.basename(reg.files[f].path)
-    details = {DUP_PAY: [], BAD_INN: [], ODD_DATE: []}
-    marked = {DUP_PAY: set(), ODD_DATE: set()}
+    rows, marked = [], {DUP_PAY: set(), ODD_DATE: set()}
     for f, p, first in reg.dups:
-        row = [fname(f), p.row, p.doc, p.date, p.payer, p.payer_inn, p.rec, p.rec_inn, p.amount,
-               fname(first[0]), first[1]]
-        for key in _sides(p):
-            marked[DUP_PAY].add(key)
-            details[DUP_PAY].append((key, row))
+        marked[DUP_PAY].update(_sides(p))
+        rows.append([DUP_PAY, fname(f), f"строка {p.row}", _pair(p.payer_inn, p.rec_inn), _pair(p.payer, p.rec),
+                     p.doc, p.date, p.amount, f"такой же платёж: {fname(first[0])}, строка {first[1]}"])
     for f, p, side, inn in reg.bad_inn:
         name = p.payer if side == PAYER else p.rec
-        details[BAD_INN].append(((side, inn), [fname(f), p.row, side, inn or "(пусто)", name, inn_in_name(name),
-                                               p.doc, p.date, p.amount]))
+        hint = inn_in_name(name)
+        rows.append([BAD_INN, fname(f), f"строка {p.row}", inn or "(пусто)", name, p.doc, p.date, p.amount,
+                     f"ИНН {side}я" + (f"; в названии указан ИНН {hint}" if hint else "")])
     for f, p in reg.odd_dates:
-        row = [fname(f), reg.files[f].label, p.row, p.doc, p.date, p.payer, p.rec, p.amount]
-        for key in _sides(p):
-            marked[ODD_DATE].add(key)
-            details[ODD_DATE].append((key, row))
+        marked[ODD_DATE].update(_sides(p))
+        rows.append([ODD_DATE, fname(f), f"строка {p.row}", _pair(p.payer_inn, p.rec_inn), _pair(p.payer, p.rec),
+                     p.doc, p.date, p.amount, f"период файла: {reg.files[f].label}"])
+    return rows, marked
+
+
+def registry_entities(reg, marked: dict) -> list:
     out = []
     for book, role in ((reg.payers, PAYER), (reg.recs, RECIPIENT)):
         for inn, party in book.items():
             e = Entity(inn, party.name, role, [round(party.sums.get(f, 0.0), 2) for f in reg.order],
-                       [party.counts.get(f, 0) for f in reg.order])
+                       [party.counts.get(f, 0) for f in reg.order], names=max(1, len({_name_key(n) for n in party.names})))
             if not INN_RE.match(inn):
                 e.flags.add(BAD_INN)
-            if len({_name_key(n) for n in party.names}) > 1:
-                e.flags.add(NAMES)
-            for flag in (DUP_PAY, ODD_DATE):
-                if (role, inn) in marked[flag]:
-                    e.flags.add(flag)
+            e.flags.update(flag for flag in (DUP_PAY, ODD_DATE) if (role, inn) in marked[flag])
             out.append(e)
-    return out, {(flag, "payments"): rows for flag, rows in details.items()}
+    return out

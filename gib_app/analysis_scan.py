@@ -4,7 +4,7 @@ import os
 
 from analysis_lists import ListCollector
 from analysis_model import AnalysisData
-from analysis_registry import registry_entities, registry_parts
+from analysis_registry import registry_entities, registry_errors, registry_parts
 from excel_com import WriteError
 from excel_reader import Book
 from registry_read import read_registry
@@ -47,24 +47,23 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
     progress(97, "Подвожу итоги…")
     if reg.files:
         reg.finish()
-    return {"data": build(reg, lists, list(paths), mappings)}
+    return {"data": build(reg, lists, list(paths))}
 
 
-def build(reg, lists, paths, mappings) -> AnalysisData:
+def build(reg, lists, paths) -> AnalysisData:
     """Части реестров и списков → одна таблица; части по порядку времени."""
     rparts = registry_parts(reg) if reg.files else []
     parts = rparts + lists.parts
-    n, details, ents = len(parts), {}, []
+    n, details, ents = len(parts), [], []
     if reg.files:
-        ents, details = registry_entities(reg)
+        details, marked = registry_errors(reg)
+        ents = registry_entities(reg, marked)
         for e in ents:
             e.sums += [0.0] * len(lists.parts)
             e.counts += [0] * len(lists.parts)
     ents += lists.entities(len(rparts), n)
-    for flag, rows in lists.details.items():
-        details.setdefault(flag, []).extend(rows)
     order = sorted(range(n), key=lambda i: parts[i].order)
     for e in ents:
         e.sums = [e.sums[i] for i in order]
         e.counts = [e.counts[i] for i in order]
-    return AnalysisData([parts[i] for i in order], ents, details, reg if reg.files else None, paths, mappings)
+    return AnalysisData([parts[i] for i in order], ents, details + lists.details, paths)

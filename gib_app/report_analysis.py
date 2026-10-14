@@ -1,78 +1,117 @@
-"""«В Excel» из глубокого анализа: то, что сейчас видно в таблице, и подробности выбранных ошибок."""
+"""Excel глубокого анализа: лист «Анализ» (цвет строки — что случилось, столбец «Ошибки», легенда и
+подсказки при наведении) и лист «Ошибки подробно»."""
+from collections import Counter
 from datetime import datetime
 
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
+from openpyxl.comments import Comment
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
-from analysis_model import BAD_INN, DUP_PAY, DUP_ROW, NAMES, ODD_DATE, PAYER, entity_key
-from report_fast import table_sheet
+from analysis_model import (APPEARED, DETAIL_HEAD, FELL, FLAG_HINTS, FLAGS, GAP, GONE, GREW, SAME, STATUS_HINTS,
+                            status)
+from report_fast import table_sheet, title_rows
+from report_styles import BORDER, CENTER, NUM, fill_color
 
-DETAILS = {   # (флаг, вид данных) → (лист, цвет, пояснение, шапка, ширины, столбцы сумм, столбцы дат)
-    (DUP_PAY, "payments"): ("Двойные платежи", "B91C1C", "Платёж повторяется: одинаковые №, дата, оба ИНН и сумма.",
-                            ["№", "Файл", "Строка", "№ док.", "Дата", "Плательщик", "ИНН плат.", "Получатель",
-                             "ИНН получ.", "Сумма", "Первый раз: файл", "строка"],
-                            [7, 14, 9, 13, 12, 36, 12, 36, 12, 16, 14, 9], (10,), (5,)),
-    (BAD_INN, "payments"): ("Неправильные ИНН", "EA580C", "ИНН не из 9 цифр. Справа — ИНН, вписанный в название.",
-                            ["№", "Файл", "Строка", "Чей ИНН", "Что стоит", "Название", "ИНН из названия", "№ док.",
-                             "Дата", "Сумма"], [7, 14, 9, 13, 14, 46, 14, 13, 12, 16], (10,), (9,)),
-    (ODD_DATE, "payments"): ("Странные даты", "64748B", "Дата документа не из периода файла — возможно, опечатка.",
-                             ["№", "Файл", "Период", "Строка", "№ док.", "Дата документа", "Плательщик",
-                              "Получатель", "Сумма"], [7, 14, 15, 9, 13, 14, 40, 40, 16], (9,), (6,)),
-    (DUP_ROW, "list"): ("Повторы в таблице", "7C3AED", "Один ИНН записан в таблице несколько раз.",
-                        ["№", "Файл", "Таблица", "ИНН", "Название", "Строки", "Сколько раз"],
-                        [7, 16, 40, 13, 46, 18, 12], (), ()),
-    (NAMES, "list"): ("Разные названия", "0891B2", "У одного ИНН название записано по-разному.",
-                      ["№", "Файл", "Таблица", "ИНН", "Как записано", "Строка"], [7, 16, 40, 13, 56, 9], (), ()),
-    (BAD_INN, "list"): ("Неправильные ИНН (списки)", "EA580C", "ИНН выглядит неправильно; справа — как должно быть.",
-                        ["№", "Файл", "Таблица", "Строка", "Что стоит", "Название", "Проблема", "Как должно быть"],
-                        [7, 16, 40, 9, 16, 46, 36, 16], (), ()),
-}
+COLORS = {APPEARED: "DCFCE7", GONE: "FEE2E2", GREW: "DBEAFE", FELL: "FEF9C3", SAME: "FFFFFF", GAP: "EDE9FE"}
+ERR_COLOR = "FED7AA"
+HEAD_ROW = 5
+AUTHOR = "Распределение по ГИБ"
 
 
-def write_analysis_report(path, data, rows, sel, flags, progress=lambda p, t: None) -> dict:
-    """rows — видимые строки [(организация, что случилось, всего)]; sel — выбранные части;
-    flags — выбранные фильтры ошибок (по ним добавляются листы с подробностями)."""
-    labels = [data.parts[i].label for i in sel]
-    with_role = len(data.roles) > 1
-    head = ["№", "ИНН", "Название"] + (["Кто"] if with_role else []) + labels + ["Всего", "Что случилось", "Ошибки"]
-    first = 4 + with_role
-    progress(20, "Пишу таблицу…")
+def _cf_fill(color: str):
+    """Заливка для условного форматирования: Excel берёт цвет фона (bgColor), а не цвет узора."""
+    return PatternFill("solid", start_color=color, end_color=color)
+
+
+def _cell(ws, v, hint=None, **style):
+    c = WriteOnlyCell(ws, value=v)
+    for k, val in style.items():
+        setattr(c, k, val)
+    if hint:
+        c.comment = Comment(hint, AUTHOR, width=320, height=110)
+    return c
+
+
+def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
+    parts, with_role = data.parts, len(data.roles) > 1
+    rows = sorted(((e, status(e, parts)) for e in data.entities), key=lambda r: -r[0].total)
+    progress(15, "Пишу лист «Анализ»…")
     wb = Workbook(write_only=True)
-    table_sheet(wb, "Таблица", "ГЛУБОКИЙ АНАЛИЗ", "0F172A",
-                f"Создано {datetime.now():%d.%m.%Y %H:%M} · то, что было видно в программе после фильтров.",
-                head, [7, 13, 46] + [12] * with_role + [17] * len(labels) + [18, 16, 30],
-                [[n, e.inn, e.name] + ([e.role] if with_role else []) + [e.sums[i] if e.counts[i] else None for i in sel]
-                 + [total, st, ", ".join(sorted(e.flags))] for n, (e, st, total) in enumerate(rows, 1)],
-                money=range(first, first + len(labels) + 1))
-    shown = {entity_key(e) for e, _, _ in rows}
-    known = {entity_key(e) for e in data.entities}
-    sheets = 1
-    for (flag, kind), (name, color, hint, dhead, widths, money, dates) in DETAILS.items():
-        if flag not in flags:
-            continue
-        seen, found = set(), []
-        for key, r in data.details.get((flag, kind), []):       # один платёж — у плательщика и получателя
-            if (key in shown or key not in known) and id(r) not in seen:
-                seen.add(id(r))
-                found.append(r)
-        if found:
-            progress(40 + 8 * sheets, f"Пишу «{name}»…")
-            table_sheet(wb, name, name.upper(), color, hint, dhead, widths,
-                        [[n] + r for n, r in enumerate(found, 1)], money=money, dates=dates)
-            sheets += 1
-    if NAMES in flags and data.registry:
-        _registry_names(wb, data.registry, [e for e, _, _ in rows if NAMES in e.flags and e.role != "организация"])
+    ws = wb.create_sheet("Анализ")
+    ws.sheet_view.showGridLines = False
+    head = ["№", "ИНН", "Название"] + (["Кто"] if with_role else []) + [p.label for p in parts] + \
+        ["Всего", "Что случилось", "Ошибки", "Названий"]
+    n = len(head)
+    first_sum = 4 + with_role
+    st_col, err_col = first_sum + len(parts) + 1, first_sum + len(parts) + 2
+    for i, w in enumerate([7, 13, 46] + [12] * with_role + [17] * len(parts) + [18, 18, 30, 12], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = f"D{HEAD_ROW + 1}"
+    order = " → ".join(f"«{p.label}»" for p in parts)
+    title_rows(ws, "ГЛУБОКИЙ АНАЛИЗ", "0F172A", f"Создано {datetime.now():%d.%m.%Y %H:%M} · части по порядку: {order}"
+               + (". «Что случилось» — между первой и последней частью." if len(parts) > 1 else ""), n)
+    _legend(ws, len(parts) > 1)
+    hints = _head_hints(parts, with_role)
+    ws.append([_cell(ws, t, hints.get(t), font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER,
+                     alignment=CENTER) for t in head])
+    for k, (e, st) in enumerate(rows, 1):
+        sums = [(_cell(ws, e.sums[i], number_format=NUM) if p.has_sums else "есть") if e.counts[i] else None
+                for i, p in enumerate(parts)]
+        ws.append([k, e.inn, e.name] + ([e.role] if with_role else []) + sums
+                  + [_cell(ws, e.total, number_format=NUM), st, ", ".join(f for f in FLAGS if f in e.flags),
+                     e.names if e.names > 1 else None])
+        if k % 20000 == 0:
+            progress(15 + int(60 * k / len(rows)), "Пишу лист «Анализ»…")
+    last = HEAD_ROW + len(rows)
+    if rows:
+        letter = get_column_letter
+        ws.auto_filter.ref = f"A{HEAD_ROW}:{letter(n)}{last}"
+        for st, color in COLORS.items():
+            if color != "FFFFFF":
+                ws.conditional_formatting.add(f"A{HEAD_ROW + 1}:{letter(n)}{last}", FormulaRule(
+                    formula=[f'${letter(st_col)}{HEAD_ROW + 1}="{st}"'], fill=_cf_fill(color)))
+        ws.conditional_formatting.add(f"{letter(err_col)}{HEAD_ROW + 1}:{letter(err_col)}{last}", FormulaRule(
+            formula=[f'LEN(${letter(err_col)}{HEAD_ROW + 1})>0'], fill=_cf_fill(ERR_COLOR), font=Font(bold=True)))
+    progress(80, "Пишу лист «Ошибки подробно»…")
+    table_sheet(wb, "Ошибки подробно", "ОШИБКИ ПОДРОБНО", "C2410C",
+                "Каждая строка — одна найденная ошибка: где она, что не так и как, вероятно, должно быть.",
+                ["№"] + DETAIL_HEAD, [7, 18, 16, 36, 22, 46, 12, 12, 16, 50],
+                [[k] + r for k, r in enumerate(sorted(data.details, key=lambda r: FLAGS.index(r[0])), 1)],
+                money=(9,), dates=(8,))
     progress(95, "Сохраняю…")
     wb.save(path)
-    return {"path": path, "rows": len(rows)}
+    return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),
+            "flags": Counter(f for e, _ in rows for f in e.flags)}
 
 
-def _registry_names(wb, reg, ents):
-    """Варианты названий у ИНН из реестров (для видимых строк с «разные названия»)."""
-    out = []
-    for e in ents:
-        party = (reg.payers if e.role == PAYER else reg.recs).get(e.inn)
-        if party:
-            out += [[e.inn, e.role, name, cnt] for name, cnt in party.names.most_common()]
-    table_sheet(wb, "Названия в реестрах", "РАЗНЫЕ НАЗВАНИЯ (РЕЕСТРЫ)", "0891B2",
-                "Как записан один ИНН в разных платежах и сколько раз.", ["№", "ИНН", "Кто", "Как записано", "Раз"],
-                [7, 13, 12, 60, 9], [[n] + r for n, r in enumerate(out, 1)])
+def _legend(ws, compare: bool):
+    """Строка 4: цвета «что случилось» и цвет ошибок — с подсказками при наведении."""
+    cells = [None, None, _cell(ws, "Цвет строки (наведите — подсказка) →", font=Font(bold=True),
+                               alignment=Alignment(horizontal="right", vertical="center"))]
+    if compare:
+        cells += [_cell(ws, st, STATUS_HINTS[st], fill=fill_color(c), border=BORDER, alignment=CENTER)
+                  for st, c in COLORS.items()]
+    else:
+        cells += [_cell(ws, "одна часть — сравнивать не с чем", font=Font(italic=True, color="64748B"))]
+    cells += [_cell(ws, "Ошибки", "\n".join(f"• {f}: {FLAG_HINTS[f]}" for f in FLAGS) +
+                    "\nПодробно — на листе «Ошибки подробно».", fill=fill_color(ERR_COLOR), border=BORDER,
+                    alignment=CENTER, font=Font(bold=True))]
+    ws.append(cells)
+
+
+def _head_hints(parts, with_role) -> dict:
+    hints = {"ИНН": "ИНН организации (как записан в файле).",
+             "Название": "Самое частое написание названия у этого ИНН.",
+             "Кто": "плательщик — кто платил; получатель — кому платили; организация — из обычной таблицы с ИНН.",
+             "Всего": "Сумма по всем частям.",
+             "Что случилось": "Сравнение первой и последней части:\n" +
+                              "\n".join(f"• {st}: {h}" for st, h in STATUS_HINTS.items()),
+             "Ошибки": "\n".join(f"• {f}: {h}" for f, h in FLAG_HINTS.items()),
+             "Названий": "Сколько разных написаний названия у этого ИНН (пусто — одно)."}
+    hints.update({p.label: f"Сумма за часть «{p.label}» (файл {p.source})." if p.has_sums else
+                  f"В таблице «{p.label}» (файл {p.source}) нет сумм — «есть» значит, что организация там есть."
+                  for p in parts})
+    return hints

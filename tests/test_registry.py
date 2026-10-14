@@ -5,9 +5,10 @@ from datetime import date
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gib_app")))
 
-from analysis_filter import Filters, apply  # noqa: E402
+from collections import Counter  # noqa: E402
 from analysis_lists import ListCollector  # noqa: E402
-from analysis_model import APPEARED, BAD_INN, DUP_PAY, GONE, GREW, ODD_DATE, PAYER  # noqa: E402
+from analysis_model import APPEARED, BAD_INN, DUP_PAY, GONE, GREW, ODD_DATE, PAYER, status  # noqa: E402
+from report_analysis import write_analysis_report  # noqa: E402
 from analysis_registry import inn_in_name  # noqa: E402
 from analysis_scan import build  # noqa: E402
 import tempfile  # noqa: E402
@@ -125,30 +126,37 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual([(p.row, first) for _, p, first in self.reg.dups], [(303, (0, 300))])
 
     def _data(self):
-        return build(self.reg, ListCollector(), [], {})
+        return build(self.reg, ListCollector(), [])
 
-    def _inns(self, rows):
-        return sorted({e.inn for e, _, _ in rows})
+    def _payers(self, d):
+        return {e.inn: e for e in d.entities if e.role == PAYER}
 
     def test_what_happened(self):
         d = self._data()
-        rows, st, _ = apply(d, Filters([0, 1], role=PAYER))
-        by = {e.inn: s for e, s, _ in rows}
-        self.assertEqual((by["222222222"], by["444444444"], by["333333333"]), (GONE, APPEARED, GREW))
-        gone = self._inns(apply(d, Filters([0, 1], role=PAYER, statuses={GONE}))[0])
-        self.assertEqual(gone, ["0", "222222222"])          # «0» платил только в 1-м файле
-        self.assertEqual(st[GONE], 2)
+        p = self._payers(d)
+        self.assertEqual([status(p[i], d.parts) for i in ("222222222", "444444444", "333333333", "0")],
+                         [GONE, APPEARED, GREW, GONE])          # «0» платил только в 1-м файле
 
-    def test_error_filters(self):
+    def test_error_flags_and_details(self):
         d = self._data()
-        pick = lambda flag: self._inns(apply(d, Filters([0, 1], role=PAYER, flags={flag}))[0])
-        self.assertEqual((pick(DUP_PAY), pick(BAD_INN), pick(ODD_DATE)), (["222222222"], ["0"], ["333333333"]))
+        p = self._payers(d)
+        self.assertEqual((p["222222222"].flags, p["0"].flags, p["333333333"].flags), ({DUP_PAY}, {BAD_INN}, {ODD_DATE}))
+        self.assertEqual(Counter(r[0] for r in d.details), Counter({DUP_PAY: 1, BAD_INN: 1, ODD_DATE: 1}))
 
-    def test_search_sum_and_parts(self):
-        d = self._data()
-        self.assertEqual(self._inns(apply(d, Filters([0, 1], role=PAYER, query="4444"))[0]), ["444444444"])
-        self.assertEqual(self._inns(apply(d, Filters([0, 1], role=PAYER, min_sum=500, max_sum=600))[0]), ["333333333"])
-        self.assertNotIn("444444444", self._inns(apply(d, Filters([0], role=PAYER))[0]))     # только 1-я часть
+    def test_excel_report(self):
+        from openpyxl import load_workbook
+        path = os.path.join(tempfile.mkdtemp(), "a.xlsx")
+        res = write_analysis_report(path, self._data())
+        # двойной платёж помечен у обеих сторон: плательщик 222… и получатель 999…
+        self.assertEqual((res["statuses"][GONE], res["flags"][DUP_PAY]), (2, 2))
+        wb = load_workbook(path)
+        ws = wb["Анализ"]
+        self.assertEqual(wb.sheetnames, ["Анализ", "Ошибки подробно"])
+        self.assertEqual(ws.cell(5, 2).value, "ИНН")
+        self.assertIn("Сравнение первой и последней части", ws.cell(5, ws.max_column - 2).comment.text)
+        self.assertIn("В первой части", ws.cell(4, 4).comment.text)                 # подсказка в легенде («Новый»)
+        rules = sum(len(cf.rules) for cf in ws.conditional_formatting)
+        self.assertEqual(rules, 6)                          # 5 цветов строк + оранжевые ошибки
 
     def test_inn_in_name(self):
         self.assertEqual(inn_in_name("Сарраесати хазинадори ИНН 010010058"), "010010058")
@@ -171,10 +179,20 @@ class TestLists(unittest.TestCase):
         rows.append([13, "Только слева", "020000001", 50.0, None, 13, "Только справа", "030000001", 70.0])
         c = ListCollector()
         self.assertEqual(c.add_file("t.xlsx", {"Лист1": rows}), 2)
-        d = build(Registry(), c, ["t.xlsx"], {})
+        d = build(Registry(), c, ["t.xlsx"])
         self.assertEqual([p.label for p in d.parts], ["2024 · «Лист1» A–D", "2025 · «Лист1» F–I"])
-        rows_, st, _ = apply(d, Filters([0, 1]))
+        st = Counter(status(e, d.parts) for e in d.entities)
         self.assertEqual((st[GONE], st[APPEARED], st[GREW]), (1, 1, 2))
+
+    def test_part_without_sums_compares_presence(self):
+        from analysis_model import SAME
+        rows = [["Номи корхона", "РМА", "Маблағ 2024", None, "Номи корхона", "РМА"]]
+        rows += [[f"Орг {i}", f"0100000{i:02d}", 50.0 + 7 * i, None, f"Орг {i}", f"0100000{i:02d}"] for i in range(12)]
+        c = ListCollector()
+        c.add_file("t.xlsx", {"Лист1": rows})
+        d = build(Registry(), c, ["t.xlsx"])
+        self.assertEqual([p.has_sums for p in d.parts], [True, False])
+        self.assertEqual(Counter(status(e, d.parts) for e in d.entities), Counter({SAME: 12}))
 
 
 if __name__ == "__main__":

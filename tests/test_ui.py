@@ -31,26 +31,14 @@ class TestMainWindow(unittest.TestCase):
         self.assertGreater(dlg.table.rowCount(), 0)
         dlg.close()
 
-    def test_analysis_screen_filters(self):
+    def test_analysis_screen(self):
         from ui import MainWindow
-        from analysis_lists import ListCollector
-        from analysis_scan import build
-        from registry_stats import Registry
         import ui_analysis_flow
-        rows = [["Номи корхона", "РМА", "Маблағ 2024", None, "Номи корхона", "РМА", "Маблағ 2025"]]
-        rows += [[f"Орг {i}", f"0100000{i:02d}", 100.0, None, f"Орг {i}", f"0100000{i:02d}", 100.0 + 7.5 * i]
-                 for i in range(12)]
-        c = ListCollector()
-        c.add_file("t.xlsx", {"Лист1": rows})
         w = MainWindow()
-        ui_analysis_flow._scanned(w, {"data": build(Registry(), c, ["t.xlsx"], {})})
-        self.assertEqual((w.an_parts.count(), w.an_model.rowCount()), (2, 12))
-        w.an_status["вырос"].setChecked(True)                 # фильтр «вырос»: 11 из 12
-        self.assertEqual(w.an_model.rowCount(), 11)
-        self.assertIn("вырос (11)", w.an_status["вырос"].text())
-        w.an_query.setText("010000005")
-        ui_analysis_flow.apply(w)
-        self.assertEqual(w.an_model.rowCount(), 1)
+        ui_analysis_flow.start(w, ["C:/x/M1-4.xlsx", "C:/x/M5-8.xlsx"])
+        self.assertEqual(w.pages.currentIndex(), ui_analysis_flow.ANALYSIS_PAGE)
+        self.assertIn("M1-4.xlsx", w.an_files.text())
+        self.assertTrue(w.an_run_btn.isEnabled())
         w.close()
 
 if __name__ == "__main__":

@@ -16,13 +16,13 @@ class MainWindow(QMainWindow):
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("Распределение по ГИБ")
-        avail = QApplication.primaryScreen().availableGeometry()
-        self.resize(max(900, min(1180, avail.width() - 80)), max(640, min(760, avail.height() - 60)))  # больше, если экран позволяет
+        avail = QApplication.primaryScreen().availableGeometry().height()
+        self.resize(900, max(640, min(760, avail - 60)))       # повыше, если экран позволяет
         self.setAcceptDrops(True)
         self.settings = settings or QSettings("Olim", "GibDistributor")
         self.plan = self.worker = self.backup = self.result_path = None
         self.st_path = self.tg_path = self.st_pays = self.tg_sheets = self.st_mapping = self.tg_cols = None
-        self.analysis, self.back_page = None, 0
+        self.back_page = 0
 
         root = QWidget()
         root.setObjectName("root")

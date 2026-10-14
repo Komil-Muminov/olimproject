@@ -1,8 +1,8 @@
 """Обычные файлы со списками организаций (таблицы с ИНН на любых листах) → части и организации
-единой таблицы анализа. Ошибки — те же правила, что в проверке ИНН (inn_check)."""
+глубокого анализа. Ошибки — те же правила, что в проверке ИНН (inn_check)."""
 import os
 
-from analysis_model import BAD_INN, DUP_ROW, NAMES, ORG, Entity, Part
+from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
 from compare_finder import find_tables
 from inn_check import _name_key, check_inn
 from utils import cell_val, to_num_safe
@@ -14,7 +14,7 @@ class ListCollector:
     def __init__(self):
         self.parts = []
         self.orgs = {}          # ключ ИНН (без нулей впереди) → {"inn", "names", "sums", "counts", "dup"}
-        self.details = {(DUP_ROW, "list"): [], (NAMES, "list"): [], (BAD_INN, "list"): []}
+        self.details = []       # строки «Ошибки подробно»
         self.bad = set()        # ИНН (как в файле) с ошибкой
 
     def add_file(self, path: str, sheets: dict) -> int:
@@ -32,9 +32,9 @@ class ListCollector:
     def _add_side(self, fname, sheet, data, s, on_sheet):
         i = len(self.parts)
         where = f"«{sheet}» {s.span}" if on_sheet > 1 else f"«{sheet}»"
-        self.parts.append(Part(f"{s.year} · {where}" if s.year else where, fname, "list",
-                               (int(s.year) if s.year else 9999, 0, i)))
         metric = s.value_cols[0] if s.value_cols else None          # первый столбец сумм таблицы
+        self.parts.append(Part(f"{s.year} · {where}" if s.year else where, fname, "list",
+                               (int(s.year) if s.year else 9999, 0, i), has_sums=metric is not None))
         for k, rows in s.all_rows.items():
             o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "dup": False})
             o["names"] += [n for n in (str(cell_val(data, r, s.name_col) or "").strip() if s.name_col else ""
@@ -47,12 +47,11 @@ class ListCollector:
         res = check_inn(sheets)
         if not res:
             return
-        self.details[(DUP_ROW, "list")] += [((ORG, inn), [fname, t.label, inn, name, ", ".join(map(str, rows)), len(rows)])
-                                  for t, inn, name, rows in res.duplicates]
-        self.details[(NAMES, "list")] += [((ORG, inn), [fname, t.label, inn, name, row])
-                                for inn, variants in res.names for name, t, row in variants]
-        self.details[(BAD_INN, "list")] += [((ORG, raw), [fname, t.label, row, raw or "(пусто)", name, problem, fix])
-                                  for t, row, raw, name, problem, fix in res.invalid]
+        self.details += [[DUP_ROW, fname, f"{t.label}, строки {', '.join(map(str, rows))}", inn, name,
+                          None, None, None, f"записан {len(rows)} раза"] for t, inn, name, rows in res.duplicates]
+        self.details += [[BAD_INN, fname, f"{t.label}, строка {row}", raw or "(пусто)", name, None, None, None,
+                          problem + (f"; должно быть {fix}" if fix else "")]
+                         for t, row, raw, name, problem, fix in res.invalid]
         self.bad |= {raw for _, row, raw, *_ in res.invalid if raw}
 
     def entities(self, offset: int, n_parts: int) -> list:
@@ -62,11 +61,10 @@ class ListCollector:
             sums, counts = [0.0] * n_parts, [0] * n_parts
             for i, v in o["sums"].items():
                 sums[offset + i], counts[offset + i] = v, o["counts"][i]
-            e = Entity(o["inn"], o["names"][0] if o["names"] else "", ORG, sums, counts)
+            e = Entity(o["inn"], o["names"][0] if o["names"] else "", ORG, sums, counts,
+                       names=max(1, len({_name_key(n) for n in o["names"]})))
             if o["inn"] in self.bad:
                 e.flags.add(BAD_INN)
-            if len({_name_key(n) for n in o["names"]}) > 1:
-                e.flags.add(NAMES)
             if o["dup"]:
                 e.flags.add(DUP_ROW)
             out.append(e)

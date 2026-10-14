@@ -40,12 +40,4 @@ QProgressBar { border: 1px solid #E2E8F0; border-radius: 6px; text-align: center
 QProgressBar::chunk { background: #2563EB; border-radius: 6px; }
 QHeaderView::section { background: #F8FAFC; color: #475569; font-weight: 600; font-size: 9.5pt; padding: 4px 6px; border: none; border-bottom: 1px solid #E2E8F0; }
 QLabel#regInfo { font-size: 10.5pt; color: #0F172A; }
-QLabel#filterCaption { color: #475569; font-weight: 600; }
-QPushButton#chip { background: white; border: 1px solid #CBD5E1; border-radius: 14px; padding: 4px 12px; color: #334155; }
-QPushButton#chip:hover { border-color: #2563EB; }
-QPushButton#chip:checked { background: #2563EB; border-color: #2563EB; color: white; }
-QListWidget#partsList { background: white; border: 1px solid #E2E8F0; border-radius: 8px; padding: 2px; }
-QListWidget#partsList::item { padding: 2px 10px 2px 2px; }
-QTableView#anTable { background: white; alternate-background-color: #F8FAFC; border: 1px solid #E2E8F0;
-                     border-radius: 8px; selection-background-color: #DBEAFE; selection-color: #0F172A; }
 """
