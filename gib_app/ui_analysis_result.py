@@ -3,7 +3,7 @@ import os
 from html import escape
 
 from analysis_model import FLAG_HINTS, FLAGS, STATUSES, part_summary, status_hints
-from report_analysis import COLORS, ERR_COLOR
+from report_colors import COLORS, ERR_COLOR
 
 MUTED = "#64748B"
 
@@ -51,8 +51,9 @@ def result_view(res: dict, data) -> tuple:
     if len(data.parts) > 1:
         lines.append(f"<span style='color:{MUTED}; font-size:10pt'>Появились / Пропали — по сравнению "
                      f"с предыдущим файлом. Наведите на метку ниже — подсказка.</span>")
-        hints = status_hints(data.parts)
-        chips.append((f"За весь период: «{data.parts[0].label}» → «{data.parts[-1].label}»",
+        hints = status_hints(data.parts, data.compare)
+        a, b = data.compare
+        chips.append((f"Что случилось: «{data.parts[a].label}» → «{data.parts[b].label}»",
                       [(f"{s}: {_int(st[s])}", COLORS[s] if COLORS[s] != "FFFFFF" else "F1F5F9", hints[s])
                        for s in STATUSES if st[s]]))
     errors = [f for f in FLAGS if fl[f]]

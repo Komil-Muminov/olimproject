@@ -154,7 +154,7 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual((res["statuses"][GONE], res["flags"][DUP_PAY]), (2, 2))
         wb = load_workbook(path)
         ws = wb["Анализ"]
-        self.assertEqual(wb.sheetnames, ["Анализ", "Ошибки в реестрах"])
+        self.assertEqual(wb.sheetnames, ["Анализ", "Кто кому платит", "Ошибки в реестрах"])
         self.assertEqual(ws.cell(5, 2).value, "ИНН")
         self.assertIn("Новый: в «Янв–Апр 2024» этой организации не было", ws.cell(5, ws.max_column - 2).comment.text)
         self.assertIn("а в «Май–Авг 2024» она есть", ws.cell(4, 4).comment.text)   # подсказка в легенде («Новый»)
@@ -170,6 +170,37 @@ class TestRegistryStats(unittest.TestCase):
         r = by[("333333333", PAYER, "2. Май–Авг 2024")]                 # части пронумерованы по порядку
         self.assertEqual((r[4], r[5], r[6], r[7]), (500.0, 1, GREW, "странная дата"))
         self.assertNotIn(("444444444", PAYER, "1. Янв–Апр 2024"), by)    # нет в части — нет строки
+
+    def test_change_and_compare_pair(self):
+        from analysis_model import change
+        d = self._data()
+        p = self._payers(d)
+        self.assertEqual(change(p["333333333"], d.parts, d.compare), (450.0, 9.0))     # 50 → 500: +900%
+        self.assertEqual(change(p["444444444"], d.parts, d.compare), (None, None))     # нет в первой части
+        rev = build(self.reg, ListCollector(), [], pair=(1, 0))                        # «было → стало» наоборот
+        self.assertEqual(status(self._payers(rev)["444444444"], rev.parts, rev.compare), GONE)
+
+    def test_months_mode(self):
+        from analysis_periods import MONTHS_MODE, available_modes
+        self.assertIn(MONTHS_MODE, available_modes(self.reg))
+        d = build(self.reg, ListCollector(), [], mode=MONTHS_MODE)
+        self.assertEqual([p.label for p in d.parts][:3], ["Янв 2024", "Фев 2024", "Мар 2024"])
+        self.assertEqual(len(d.parts), 8)
+        self.assertEqual(sum(self._payers(d)["111111111"].sums), 4000.0)              # все месяцы вместе
+
+    def test_pairs(self):
+        d = self._data()
+        pairs = {(x.payer_inn, x.rec_inn): x for x in d.pairs}
+        self.assertEqual(pairs[("333333333", "999999999")].sums, [50.0, 500.0])
+
+    def test_same_name_different_inn(self):
+        from analysis_checks import mark_same_names
+        from analysis_model import SAME_NAME, Entity
+        a, b = Entity("111111111", "ООО «Ромашка»", PAYER, [1.0], [1]), Entity("222222222", "ООО Ромашка", PAYER, [5.0], [1])
+        c = Entity("333333333", "Другая", PAYER, [1.0], [1])
+        rows = mark_same_names([a, b, c])
+        self.assertEqual([(r[0], r[3]) for r in rows], [(1, "222222222"), (1, "111111111")])
+        self.assertEqual((SAME_NAME in a.flags, SAME_NAME in c.flags), (True, False))
 
     def test_inn_in_name(self):
         self.assertEqual(inn_in_name("Сарраесати хазинадори ИНН 010010058"), "010010058")

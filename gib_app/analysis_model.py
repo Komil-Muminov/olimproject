@@ -9,12 +9,13 @@ APPEARED, GONE, GREW, FELL, SAME, GAP = "Новый", "Пропал", "Выро�
 STATUSES = (APPEARED, GONE, GREW, FELL, SAME, GAP)
 
 
-def status_hints(parts: list) -> dict:
-    """Подсказки к цветам — с названиями первой и последней части: понятно, что с чем сравнивается."""
+def status_hints(parts: list, pair=None) -> dict:
+    """Подсказки к цветам — с названиями сравниваемых частей: понятно, что с чем сравнивается."""
     if len(parts) < 2:
         return {}
-    a, b = f"«{parts[0].label}»", f"«{parts[-1].label}»"
-    mid = ", ".join(f"«{p.label}»" for p in parts[1:-1])
+    i, j = pair or (0, len(parts) - 1)
+    a, b = f"«{parts[i].label}»", f"«{parts[j].label}»"
+    mid = ", ".join(f"«{p.label}»" for p in parts[i + 1:j])
     return {
         APPEARED: f"Новый: в {a} этой организации не было, а в {b} она есть.",
         GONE: f"Пропал: в {a} организация была, а в {b} её уже нет.",
@@ -27,7 +28,8 @@ def status_hints(parts: list) -> dict:
     }
 
 DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW = "двойной платёж", "неправильный ИНН", "странная дата", "повтор ИНН"
-FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW)
+SAME_NAME = "одно название — разные ИНН"
+FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW, SAME_NAME)
 FLAG_HINTS = {
     DUP_PAY: "Один и тот же платёж записан два раза или больше: одинаковые №, дата, ИНН плательщика, "
              "ИНН получателя и сумма.",
@@ -35,6 +37,7 @@ FLAG_HINTS = {
     ODD_DATE: "Дата платёжки больше чем на месяц раньше или позже периода файла (например, 2004 или 2029 год) — "
               "возможно, опечатка в дате.",
     DUP_ROW: "Один ИНН записан в одной таблице несколько раз.",
+    SAME_NAME: "У организации с таким же названием есть другой ИНН — возможно, ошибка в ИНН (или это филиалы).",
 }
 
 PAYER, RECIPIENT, ORG = "плательщик", "получатель", "организация"
@@ -65,11 +68,25 @@ class Entity:
 
 
 @dataclass
+class Pair:
+    """Кто кому платит: плательщик → получатель, суммы и платежи по частям."""
+    payer_inn: str
+    payer: str
+    rec_inn: str
+    rec: str
+    sums: list
+    counts: list
+
+
+@dataclass
 class AnalysisData:
     parts: list                      # [Part] — по порядку времени
     entities: list                   # [Entity]
     details: dict = field(default_factory=dict)     # группа ошибок → строки (report_errors.GROUPS)
     paths: list = field(default_factory=list)
+    pairs: list = field(default_factory=list)        # [Pair] — только для реестров
+    compare: tuple = None                            # (было, стало) — номера сравниваемых частей
+    mode: str = "files"                              # files / quarters / months
 
     @property
     def roles(self) -> list:
@@ -77,21 +94,22 @@ class AnalysisData:
         return [r for r in (PAYER, RECIPIENT, ORG) if r in found]
 
 
-def status(e: Entity, parts: list) -> str:
-    """Что случилось между первой и последней частью ("" — если часть одна). Если у одной из них нет
-    сумм, сравнивается только наличие: есть в обеих — «Без изменений»."""
+def status(e, parts: list, pair=None) -> str:
+    """Что случилось между частями «было» и «стало» (по умолчанию — первая и последняя; "" — если часть
+    одна). Если у одной из них нет сумм, сравнивается только наличие: есть в обеих — «Без изменений»."""
     if len(e.counts) < 2:
         return ""
-    first, last = e.counts[0] > 0, e.counts[-1] > 0
+    i, j = pair or (0, len(parts) - 1)
+    first, last = e.counts[i] > 0, e.counts[j] > 0
     if not first and last:
         return APPEARED
     if first and not last:
         return GONE
     if not first and not last:
         return GAP
-    if not (parts[0].has_sums and parts[-1].has_sums):
+    if not (parts[i].has_sums and parts[j].has_sums):
         return SAME
-    a, b = e.sums[0], e.sums[-1]
+    a, b = e.sums[i], e.sums[j]
     return GREW if b - a > 0.005 else FELL if a - b > 0.005 else SAME
 
 
@@ -111,3 +129,14 @@ def part_summary(data: AnalysisData) -> list:
             "gone": sum(1 for k, e in enumerate(data.entities) if prev[k] and not e.counts[i]) if i else None,
         })
     return out
+
+
+def change(e, parts: list, pair=None) -> tuple:
+    """Изменение суммы «было → стало»: (разница, процент). Нет одной из частей или сумм — (None, None)."""
+    if len(e.counts) < 2:
+        return None, None
+    i, j = pair or (0, len(parts) - 1)
+    if not (e.counts[i] and e.counts[j] and parts[i].has_sums and parts[j].has_sums):
+        return None, None
+    a, b = e.sums[i], e.sums[j]
+    return round(b - a, 2), (round((b - a) / abs(a), 4) if a else None)

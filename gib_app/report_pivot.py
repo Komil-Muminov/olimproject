@@ -19,7 +19,7 @@ def pivot_rows(data) -> list:
     labels = [f"{i}. {p.label}" for i, p in enumerate(data.parts, 1)]
     out = []
     for e in data.entities:
-        st = status(e, data.parts) or "—"
+        st = status(e, data.parts, data.compare) or "—"
         errors = ", ".join(f for f in FLAGS if f in e.flags) or NO_ERRORS
         for i, p in enumerate(data.parts):
             if e.counts[i]:

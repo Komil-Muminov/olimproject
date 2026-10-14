@@ -1,8 +1,9 @@
-"""Реестры платежей → части, организации и ошибки глубокого анализа (плательщики и получатели)."""
+"""Реестры платежей → части, организации, пары «кто кому платит» и ошибки глубокого анализа."""
 import os
 import re
 
-from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, RECIPIENT, Entity, Part
+from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, RECIPIENT, Entity, Pair, Part
+from analysis_periods import pair_totals, party_totals
 from inn_check import _name_key
 from registry_stats import INN_RE
 
@@ -28,15 +29,8 @@ def inn_problem(inn: str) -> str:
     return f"{len(inn)} цифр вместо 9{tail}"
 
 
-def registry_parts(reg) -> list:
-    parts = []
-    for f in reg.order:
-        info = reg.files[f]
-        many = sum(i.path == info.path for i in reg.files) > 1
-        y, m = info.main_months[0] if info.main_months else (9999, 0)
-        parts.append(Part(info.label + (f" · {info.sheet}" if many else ""), os.path.basename(info.path),
-                          "payments", (y, m, f)))
-    return parts
+def registry_parts(slots: list) -> list:
+    return [Part(label, source, "payments", order) for label, source, order, _ in slots]
 
 
 def _sides(p):
@@ -65,15 +59,21 @@ def registry_errors(reg) -> tuple:
     return groups, marked
 
 
-def registry_entities(reg, marked: dict) -> list:
+def registry_entities(reg, marked: dict, slots: list) -> list:
     out = []
     for book, role in ((reg.payers, PAYER), (reg.recs, RECIPIENT)):
         for inn, party in book.items():
-            e = Entity(inn, party.name, role, [round(party.sums.get(f, 0.0), 2) for f in reg.order],
-                       [party.counts.get(f, 0) for f in reg.order],
-                       names=max(1, len({_name_key(n) for n in party.names})))
+            sums, counts = party_totals(party, slots)
+            e = Entity(inn, party.name, role, sums, counts, names=max(1, len({_name_key(n) for n in party.names})))
             if not INN_RE.match(inn):
                 e.flags.add(BAD_INN)
             e.flags.update(flag for flag in (DUP_PAY, ODD_DATE) if (role, inn) in marked[flag])
             out.append(e)
     return out
+
+
+def registry_pairs(reg, slots: list) -> list:
+    """Кто кому платит — все пары плательщик → получатель."""
+    name = lambda book, inn: book[inn].name if inn in book else ""
+    return [Pair(a, name(reg.payers, a), b, name(reg.recs, b), [round(x, 2) for x in sums], counts)
+            for (a, b), (sums, counts) in pair_totals(reg, slots).items()]

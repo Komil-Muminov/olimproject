@@ -14,11 +14,14 @@ ODD_GAP_DAYS = 31          # дата документа дальше месяц
 
 @dataclass
 class Party:
-    """Плательщик или получатель: суммы и количество платежей по файлам, варианты названия."""
+    """Плательщик или получатель: суммы и количество платежей по файлам и по месяцам (дата документа),
+    варианты названия."""
     inn: str
     names: Counter = field(default_factory=Counter)
     sums: dict = field(default_factory=lambda: defaultdict(float))
     counts: Counter = field(default_factory=Counter)
+    msums: dict = field(default_factory=lambda: defaultdict(float))     # (год, месяц) → сумма
+    mcounts: Counter = field(default_factory=Counter)
 
     @property
     def name(self) -> str:
@@ -50,6 +53,9 @@ class Registry:
         self.bad_inn = []           # (файл, Payment, «плательщик»/«получатель», ИНН)
         self.odd_dates = []         # (файл, Payment) — заполняется в finish()
         self.order = []             # файлы по времени (заполняется в finish)
+        # кто кому платит: (ИНН плательщика, ИНН получателя, файл) / (…, (год, месяц)) → [сумма, платежей]
+        self.pairs_f = defaultdict(lambda: [0.0, 0])
+        self.pairs_m = defaultdict(lambda: [0.0, 0])
         self._seen = {}
         self._month_rows = []
 
@@ -59,25 +65,35 @@ class Registry:
         self._month_rows.append(defaultdict(list))
         return len(self.files) - 1
 
-    def _party(self, book, inn, name, f, amount):
+    def _party(self, book, inn, name, f, amount, m):
         p = book.get(inn)
         if p is None:
             p = book[inn] = Party(inn)
         p.names[" ".join(name.upper().split())] += 1
         p.sums[f] += amount
         p.counts[f] += 1
+        if m:
+            p.msums[m] += amount
+            p.mcounts[m] += 1
 
     def add(self, f: int, p):
         info = self.files[f]
         info.rows += 1
         info.total += p.amount
+        m = (p.date.year, p.date.month) if p.date else None
         for book, side, inn, name in ((self.payers, "плательщик", p.payer_inn, p.payer),
                                       (self.recs, "получатель", p.rec_inn, p.rec)):
             if inn is None:             # в документе нет этой стороны
                 continue
-            self._party(book, inn, name, f, p.amount)
+            self._party(book, inn, name, f, p.amount, m)
             if not INN_RE.match(inn):
                 self.bad_inn.append((f, p, side, inn))
+        if p.payer_inn is not None and p.rec_inn is not None:
+            for book, key in ((self.pairs_f, f), (self.pairs_m, m)):
+                if key is not None:
+                    acc = book[(p.payer_inn, p.rec_inn, key)]
+                    acc[0] += p.amount
+                    acc[1] += 1
         # двойной платёж: совпадает всё, включая основание (банк платит за разных людей одинаковыми суммами
         # с короткими номерами — их основания разные, это не повтор)
         key = hash((p.doc, p.date, p.payer_inn, p.rec_inn, p.amount, " ".join(p.purpose.lower().split())))
@@ -86,8 +102,7 @@ class Registry:
             self._seen[key] = (f, p.row)
         else:
             self.dups.append((f, p, first))
-        if p.date:
-            m = (p.date.year, p.date.month)
+        if m:
             info.months[m] += 1
             info.month_sums[m] += p.amount
             kept = self._month_rows[f].get(m, [])

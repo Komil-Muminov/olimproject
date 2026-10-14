@@ -1,10 +1,12 @@
-"""Глубокий анализ: читает любые файлы (реестры платежей и обычные таблицы с ИНН) в одну таблицу.
-Запускается в фоновом потоке."""
+"""Глубокий анализ: читает любые файлы (реестры платежей и обычные таблицы с ИНН), потом собирает
+таблицу с выбранной разбивкой (по файлам / кварталам / месяцам) и парой «было → стало». Чтение — в фоне."""
 import os
 
+from analysis_checks import mark_same_names
 from analysis_lists import ListCollector
 from analysis_model import AnalysisData
-from analysis_registry import registry_entities, registry_errors, registry_parts
+from analysis_periods import FILES, registry_slots
+from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
 from excel_com import WriteError
 from excel_reader import Book
 from registry_read import read_registry
@@ -15,8 +17,8 @@ ASK_SCORE = 2           # столько узнанных заголовков �
 
 
 def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
-    """→ {"data": AnalysisData} или {"needs_mapping": путь, "guess": …} (похоже на реестр, но столбцы
-    не узнаны — спросить пользователя)."""
+    """→ {"raw": (реестры, списки, пути)} или {"needs_mapping": путь, "guess": …} (похоже на реестр, но
+    столбцы не узнаны — спросить пользователя)."""
     mappings = mappings or {}
     reg, lists, n = Registry(), ListCollector(), len(paths)
     for k, path in enumerate(paths):
@@ -47,23 +49,36 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
     progress(97, "Подвожу итоги…")
     if reg.files:
         reg.finish()
-    return {"data": build(reg, lists, list(paths))}
+    return {"raw": (reg, lists, list(paths))}
 
 
-def build(reg, lists, paths) -> AnalysisData:
-    """Части реестров и списков → одна таблица; части по порядку времени."""
-    rparts = registry_parts(reg) if reg.files else []
-    parts = rparts + lists.parts
-    n, details, ents = len(parts), {}, []
+def _order(reg, lists, mode) -> tuple:
+    slots = registry_slots(reg, mode) if reg.files else []
+    parts = registry_parts(slots) + lists.parts
+    return slots, parts, sorted(range(len(parts)), key=lambda i: parts[i].order)
+
+
+def preview_parts(reg, lists, mode: str = FILES) -> list:
+    """Части в порядке времени (для выбора «было → стало») — без подсчёта организаций."""
+    _, parts, order = _order(reg, lists, mode)
+    return [parts[i] for i in order]
+
+
+def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
+    """Части реестров и списков → одна таблица; части по порядку времени; pair — (было, стало)."""
+    slots, parts, order = _order(reg, lists, mode)
+    n, details, ents, pairs = len(parts), {}, [], []
     if reg.files:
         details, marked = registry_errors(reg)
-        ents = registry_entities(reg, marked)
-        for e in ents:
-            e.sums += [0.0] * len(lists.parts)
-            e.counts += [0] * len(lists.parts)
-    ents += lists.entities(len(rparts), n)
-    order = sorted(range(n), key=lambda i: parts[i].order)
-    for e in ents:
-        e.sums = [e.sums[i] for i in order]
-        e.counts = [e.counts[i] for i in order]
-    return AnalysisData([parts[i] for i in order], ents, {**details, **lists.details}, paths)
+        ents = registry_entities(reg, marked, slots)
+        pairs = registry_pairs(reg, slots)
+        for x in ents + pairs:
+            x.sums += [0.0] * len(lists.parts)
+            x.counts += [0] * len(lists.parts)
+    ents += lists.entities(len(slots), n)
+    for x in ents + pairs:
+        x.sums = [x.sums[i] for i in order]
+        x.counts = [x.counts[i] for i in order]
+    details = {**details, **lists.details, "same_name": mark_same_names(ents)}
+    compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
+    return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode)
