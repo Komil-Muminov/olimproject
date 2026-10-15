@@ -7,7 +7,7 @@ from compare_finder import find_tables
 from registry_columns import guess_header, registry_columns, two_row_columns
 
 REGISTRY = "registry"
-PREVIEW_ROWS = 30           # столько первых строк листа показывается в окне
+PREVIEW_ROWS = 300          # столько первых строк листа показывается в окне
 FULL_READ_LIMIT = 200_000   # таблицы больше — без поиска ИНН по содержимому (долго)
 
 

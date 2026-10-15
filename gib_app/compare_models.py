@@ -19,6 +19,9 @@ class SideList:
     last_row: int = 0                            # последняя заполненная строка таблицы
     in_text: bool = False                        # ИНН внутри текста: «ООО А (ИНН 123456789)»
     fixed_money: bool = False                    # столбцы сумм выбрал пользователь — суммируются все
+    by_name: bool = False                        # ИНН нет — ключ — название (без кавычек и форм)
+    shared: set = field(default_factory=set)     # ключи из строк, где было несколько организаций
+    row_names: dict = field(default_factory=dict)  # (ключ, строка) → название (если ячейка разбита на части)
 
     @property
     def span(self) -> str:

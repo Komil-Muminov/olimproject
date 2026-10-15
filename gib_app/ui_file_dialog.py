@@ -5,13 +5,13 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QListWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QRadioButton, QSpinBox, QVBoxLayout, QWidget
 )
 
 from analysis_list_map import AS_LIST
 from analysis_propose import REGISTRY, auto_columns
-from ui_file_columns import FIELDS, column_names, problem, to_mapping
+from ui_file_columns import FIELDS, column_names, problem, sheet_view, to_mapping
 
 NONE = "— нет —"
 
@@ -46,7 +46,10 @@ class FileDialog(QDialog):
             self.sheet_list.addItem(_check_item(name, name == g["sheet"]))
         self.sheet_list.itemChanged.connect(self._check)
         lay.addWidget(self.sheet_list)
-        form = QFormLayout()
+        form = self.form = QFormLayout()
+        self.flip = QCheckBox("Организации идут по столбцам (таблица перевёрнута)")
+        self.flip.toggled.connect(self._flipped)
+        form.addRow("", self.flip)
         self.head = QSpinBox()
         self.head.valueChanged.connect(lambda _: self._labels())
         form.addRow("Строка заголовков", self.head)
@@ -69,6 +72,9 @@ class FileDialog(QDialog):
                 pf.addRow(title, self.boxes[kind, key])
             self.panels[kind] = panel
             lay.addWidget(panel)
+        self.by_name = QCheckBox("ИНН нет — искать по названию (менее надёжно)")
+        self.by_name.toggled.connect(self._check)
+        self.panels[AS_LIST].layout().addRow("", self.by_name)
         lay.addWidget(QLabel("Какие столбцы суммировать (можно несколько, например Дебет и Кредит):"))
         self.sums = _checklist(160)
         self.sums.itemChanged.connect(self._check)
@@ -87,8 +93,18 @@ class FileDialog(QDialog):
         self.sheet_list.setCurrentRow(self.names.index(g["sheet"]))
 
     # --- лист: загрузить / сохранить ---------------------------------------------------------------------
-    def _guess(self, kind: str, name: str = None) -> dict:
-        return dict(auto_columns(self.sheets[name or self.cur]["rows"], kind), kind=kind)
+    def _sh(self, name: str = None, flip: bool = None) -> dict:
+        flip = self.flip.isChecked() if flip is None else flip
+        return sheet_view(self.sheets[name or self.cur], flip)
+
+    def _guess(self, kind: str, name: str = None, flip: bool = False) -> dict:
+        return dict(auto_columns(self._sh(name, flip)["rows"], kind), kind=kind, transpose=flip)
+
+    def _flipped(self, on: bool):
+        """Перевёрнутая таблица — только список организаций."""
+        self.kind.buttons()[0].setEnabled(not on)
+        self.form.labelForField(self.head).setText("Столбец заголовков" if on else "Строка заголовков")
+        self._load(self._guess(AS_LIST, flip=on))
 
     def _st(self, name: str) -> dict:
         """Настройка листа: что выбрал пользователь, а для неоткрытого листа — догадка программы."""
@@ -101,7 +117,14 @@ class FileDialog(QDialog):
         self._load(self.state.get(self.cur) or self._guess(self.default_kind))
 
     def _load(self, st: dict):
-        sh = self.sheets[self.cur]
+        for w in [self.flip, self.head, self.by_name] + self.kind.buttons():
+            w.blockSignals(True)
+        self.flip.setChecked(bool(st.get("transpose")))
+        self.by_name.setChecked(bool(st.get("by_name")))
+        self.kind.buttons()[0].setEnabled(not self.flip.isChecked())
+        sh = self._sh()
+        for w in [self.flip, self.by_name]:
+            w.blockSignals(False)
         for w in [self.head] + self.kind.buttons():
             w.blockSignals(True)
         self.head.setRange(sh["row0"] + 1, sh["row0"] + len(sh["rows"]))
@@ -122,7 +145,7 @@ class FileDialog(QDialog):
 
     def _labels(self):
         """Подписи столбцов по выбранной строке заголовков (выбор в полях и галочки сумм сохраняются)."""
-        sh = self.sheets[self.cur]
+        sh = self._sh()
         names = column_names(sh, self.head.value() - sh["row0"] - 1)
         checked = set(self._sum_cols())
         for box in self.boxes.values():
@@ -140,8 +163,9 @@ class FileDialog(QDialog):
         self._check()
 
     def _read(self) -> dict:
-        sh, kind = self.sheets[self.cur], self.kind_now()
+        sh, kind = self._sh(), self.kind_now()
         return {"head": self.head.value() - sh["row0"] - 1, "kind": kind, "sums": self._sum_cols(),
+                "transpose": self.flip.isChecked(), "by_name": kind == AS_LIST and self.by_name.isChecked(),
                 "cols": {key: (b.currentIndex() - 1 if b.currentIndex() > 0 else None)
                          for (k, key), b in self.boxes.items() if k == kind}}
 
@@ -169,4 +193,4 @@ class FileDialog(QDialog):
     def mapping(self) -> list:
         """Для scan_files: по одной настройке на каждый отмеченный лист."""
         self.state[self.cur] = self._read()
-        return [to_mapping(n, self.sheets[n], self._st(n)) for n in self._chosen()]
+        return [to_mapping(n, self._sh(n, bool(self._st(n).get("transpose"))), self._st(n)) for n in self._chosen()]

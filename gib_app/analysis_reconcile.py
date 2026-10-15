@@ -1,9 +1,10 @@
 """Сверка списка с реестрами: каждая организация из обычных таблиц (например, «30 фоиза») — в одной строке
 отмеченные столбцы списка и её платежи по реестрам (без выводов — смотрит пользователь). Связь — по ИНН
-(без нулей впереди)."""
+(без нулей впереди), а если в списке ИНН нет — по названию."""
 from dataclasses import dataclass, field
 
-from analysis_model import ORG, PAYER, RECIPIENT
+from analysis_list_map import org_key
+from analysis_model import BY_NAME, ORG, PAYER, RECIPIENT
 from compare_finder import match_key
 
 
@@ -39,21 +40,28 @@ def reconcile(data) -> tuple:
     lists = [i for i, p in enumerate(data.parts) if p.kind == "list"]
     if not reg or not lists:
         return [], [], []
-    books = {PAYER: {}, RECIPIENT: {}}
+    books, by_name = {PAYER: {}, RECIPIENT: {}}, {PAYER: {}, RECIPIENT: {}}
     for e in data.entities:
         if e.role in books:
             books[e.role][match_key(e.inn)] = e
+            by_name[e.role].setdefault(org_key(e.name), e)
     orgs = [e for e in data.entities if e.role == ORG]
-    to, frm = _links(data, reg, {match_key(e.inn) for e in orgs})
+    found = {}                          # организация списка → (плательщик, получатель) в реестрах
+    for e in orgs:                      # без ИНН — по названию (без кавычек и форм)
+        if BY_NAME in e.flags:
+            found[id(e)] = tuple(by_name[role].get(org_key(e.name)) for role in (PAYER, RECIPIENT))
+        else:
+            found[id(e)] = tuple(books[role].get(match_key(e.inn)) for role in (PAYER, RECIPIENT))
+    to, frm = _links(data, reg, {match_key(x.inn) for pair in found.values() for x in pair if x})
     heads = [(data.parts[i], h) for i in lists for h in data.parts[i].heads]
     rows = []
     for e in orgs:
-        k = match_key(e.inn)
-        p, r = books[PAYER].get(k), books[RECIPIENT].get(k)
+        p, r = found[id(e)]
         values = [v for i in lists for v in (e.cols[i] or [None] * len(data.parts[i].heads))]
         rows.append(ReconRow(
             e.inn, e.name, ", ".join(data.parts[i].label for i in lists if e.counts[i]), values,
             [round(p.sums[i], 2) if p and p.counts[i] else 0.0 for i in reg],
             sum(p.counts[i] for i in reg) if p else 0,
-            round(sum(r.sums[i] for i in reg), 2) if r else 0.0, to.get(k, []), frm.get(k, [])))
+            round(sum(r.sums[i] for i in reg), 2) if r else 0.0,
+            to.get(match_key(p.inn), []) if p else [], frm.get(match_key(r.inn), []) if r else []))
     return [data.parts[i] for i in reg], heads, rows

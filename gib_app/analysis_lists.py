@@ -4,8 +4,8 @@ import os
 
 from openpyxl.utils import get_column_letter
 
-from analysis_list_map import FIND, mapped_table, side_guess
-from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
+from analysis_list_map import FIND, mapped_table, side_guess, transpose
+from analysis_model import BAD_INN, BY_NAME, DUP_ROW, ORG, SHARED, Entity, Part
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
 from utils import cell_val, norm_text, to_num_safe
@@ -60,9 +60,11 @@ class ListCollector:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
         fname, before = os.path.basename(path), len(self.parts)
         if mapping:                     # столбцы указал пользователь — читается только этот лист
-            s = mapped_table(sheets[mapping["sheet"]], mapping)
+            data = sheets[mapping["sheet"]]
+            data = transpose(data) if mapping.get("transpose") else data       # организации по столбцам
+            s = mapped_table(data, mapping)
             if s.all_rows:
-                self._add_side(fname, mapping["sheet"], sheets[mapping["sheet"]], s, 1)
+                self._add_side(fname, mapping["sheet"], data, s, 1)
             return len(self.parts) - before
         for sheet, data in sheets.items():
             found = find_tables(data)
@@ -83,8 +85,10 @@ class ListCollector:
                                (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric), heads=heads))
         for k, rows in s.all_rows.items():
             o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "cols": {},
-                                         "dup": False})
-            o["names"] += [n for n in (name_at(data, r, s) for r in rows) if n]
+                                         "dup": False, "notes": set()})
+            o["names"] += [n for n in (s.row_names.get((k, r)) or name_at(data, r, s) for r in rows) if n]
+            o["notes"] |= {SHARED} if k in s.shared else set()
+            o["notes"] |= {BY_NAME} if s.by_name else set()
             o["cols"][i] = [round(sum(to_num_safe(cell_val(data, r, c)) for r in rows), 2) for c in metric]
             o["sums"][i] = round(sum(o["cols"][i]), 2)
             o["counts"][i] = len(rows)
@@ -113,5 +117,6 @@ class ListCollector:
                 e.flags.add(BAD_INN)
             if o["dup"]:
                 e.flags.add(DUP_ROW)
+            e.flags |= o["notes"]
             out.append(e)
         return out

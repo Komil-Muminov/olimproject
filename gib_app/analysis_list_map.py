@@ -9,6 +9,9 @@ from registry_columns import guess_header
 from utils import cell_val, find_col, norm_text
 
 AS_LIST = "list"        # пользователь сказал: читать файл как обычный список организаций
+NAME_KEY = "≈"          # ключ организации без ИНН: «≈» + название без кавычек и форм
+SPLIT_RE = re.compile(r"[,;\n]+")      # несколько организаций в одной ячейке
+FORMS = {"ооо", "оао", "зао", "пао", "ао", "ип", "тоо", "чдмм", "чск", "ксп", "квд", "ддтт", "мдт", "ммд", "ч"}
 FIELDS = ("inn", "name", "amount")
 TITLES = {"inn": "ИНН", "name": "Название", "amount": "Сумма"}
 FIND = {"inn": ("инн", "рма", "рмя", "inn", "tin"),
@@ -60,6 +63,40 @@ def _key(v) -> str | None:
     return digits if digits.isdigit() else s
 
 
+def org_key(name) -> str:
+    """Название для сопоставления без ИНН: без кавычек, знаков и форм (ООО, ҶСК, ЧДММ…)."""
+    words = re.sub(r"[^0-9a-zа-яё]+", " ", norm_text(name)).split()
+    return "".join(w for w in words if w not in FORMS)
+
+
+def split_cell(v) -> list:
+    """Ячейка с несколькими значениями («ООО А, ООО Б» / «123…; 456…») → части; иначе — одна."""
+    if isinstance(v, str) and SPLIT_RE.search(v.strip()):
+        return [x.strip() for x in SPLIT_RE.split(v) if x.strip()]
+    return [v]
+
+
+def transpose(data: list) -> list:
+    """«Перевёрнутая» таблица (организации по столбцам) → обычная (организации по строкам)."""
+    width = max((len(r) for r in data), default=0)
+    return [[r[i] if i < len(r) else None for r in data] for i in range(width)]
+
+
+def _row_keys(data, r: int, s) -> list:
+    """→ [(ключ, ИНН как в файле, название или None)] — организации в строке r (одна или несколько в ячейке)."""
+    parts = split_cell(cell_val(data, r, s.key_col))
+    names = split_cell(cell_val(data, r, s.name_col)) if s.name_col and not s.by_name else []
+    out = []
+    for i, v in enumerate(parts):
+        if s.by_name:
+            text = str(v or "").strip()
+            if text and not norm_text(text).startswith(SUM_ROW_LABELS) and org_key(text):
+                out.append((NAME_KEY + org_key(text), "", text))
+        elif (inn := _key(v)):
+            out.append((match_key(inn) or inn, inn, names[i] if len(names) == len(parts) > 1 else None))
+    return out
+
+
 def mapped_table(data: list, mapping: dict) -> SideList:
     """Таблица по столбцам пользователя: {"sheet", "head", "cols": {"inn", "name", "amount"}, "sums": [столбцы]}
     (с 0; "row0" / "col0" — сдвиг, если номера считаны от первой заполненной ячейки листа)."""
@@ -68,12 +105,17 @@ def mapped_table(data: list, mapping: dict) -> SideList:
     money = mapping.get("sums", []) + ([mapping["cols"]["amount"]] if mapping["cols"].get("amount") is not None else [])
     header = r0 + mapping["head"] + 1
     cols = sorted(v for v in c.values() if v)
-    s = SideList(c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols, header=header,
-                 fixed_money=True)
+    by_name = bool(mapping.get("by_name"))
+    s = SideList(c["name"] if by_name else c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols,
+                 header=header, fixed_money=True, by_name=by_name)
     for r in range(header + 1, len(data) + 1):
-        k = _key(cell_val(data, r, s.key_col))
-        if k:
-            s.all_rows.setdefault(match_key(k) or k, []).append(r)
-            s.keys.setdefault(match_key(k) or k, k)
+        keys = _row_keys(data, r, s)
+        for k, inn, name in keys:
+            s.all_rows.setdefault(k, []).append(r)
+            s.keys.setdefault(k, inn)
+            if len(keys) > 1:
+                s.shared.add(k)
+            if name:
+                s.row_names[k, r] = name
             s.last_row = r
     return s
