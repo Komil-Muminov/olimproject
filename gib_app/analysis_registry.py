@@ -41,7 +41,7 @@ def _sides(p):
 def registry_errors(reg) -> tuple:
     """→ ({группа ошибок: [строки]} для листов ошибок, {флаг: {(роль, ИНН)}} — у кого какая)."""
     fname = lambda f: os.path.basename(reg.files[f].path)
-    groups, marked = {"dup": [], "bad_pay": [], "odd": [], "hidden_pay": []}, {DUP_PAY: set(), ODD_DATE: set(),
+    groups, marked = {"dup": [], "bad_pay": [], "odd": [], "hidden_pay": [], "bad_num_pay": []}, {DUP_PAY: set(), ODD_DATE: set(),
                                                                               HIDDEN: set()}
     for n, (f, p, (f0, row0)) in enumerate(reg.dups, 1):
         marked[DUP_PAY].update(_sides(p))
@@ -60,6 +60,8 @@ def registry_errors(reg) -> tuple:
     for f, p in reg.hidden:
         marked[HIDDEN].update(_sides(p))
         groups["hidden_pay"].append([fname(f), p.row, p.doc, p.date, p.amount, p.payer, p.payer_inn, p.rec, p.rec_inn])
+    groups["bad_num_pay"] = [[fname(f), p.row, p.doc, p.date, p.amount, p.bad, p.payer, p.payer_inn, p.rec, p.rec_inn]
+                             for f, p in reg.bad_amounts]
     return groups, marked
 
 

@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 from analysis_list_map import AS_LIST
 from analysis_propose import REGISTRY, auto_columns
 from ui_file_columns import FIELDS, column_names, formula_warning, problem, sheet_view, to_mapping
-from ui_file_widgets import check_item, checked_rows, checklist, dialog_buttons
+from ui_file_widgets import (check_item, checked_rows, checklist, dialog_buttons, filter_edits, refill_checks,
+                             refill_combo)
 
 NONE = "— нет —"
 
@@ -66,6 +67,7 @@ class FileDialog(QDialog):
         self.panels[AS_LIST].layout().addRow("", self.by_name)
         self.repeats = QCheckBox("Одна организация может быть в нескольких строках (операции, выписка) — не ошибка")
         self.panels[AS_LIST].layout().addRow("", self.repeats)
+        self.f_purpose, self.f_rec = filter_edits(self.panels[REGISTRY].layout(), self._check)
         lay.addWidget(QLabel("Какие столбцы суммировать (можно несколько, например Дебет и Кредит):"))
         self.sums = checklist(160)
         self.sums.itemChanged.connect(self._check)
@@ -112,6 +114,8 @@ class FileDialog(QDialog):
         self.by_name.setChecked(bool(st.get("by_name")))
         self.separate.setChecked(bool(st.get("separate")))
         self.repeats.setChecked(bool(st.get("repeats")))
+        self.f_purpose.setText(st.get("f_purpose") or "")
+        self.f_rec.setText(st.get("f_rec") or "")
         self.separate.setVisible(st["kind"] == AS_LIST)         # реестр — суммы всегда складываются
         self.kind.buttons()[0].setEnabled(not self.flip.isChecked())
         sh = self._sh()
@@ -139,19 +143,9 @@ class FileDialog(QDialog):
         """Подписи столбцов по выбранной строке заголовков (выбор в полях и галочки сумм сохраняются)."""
         sh = self._sh()
         names = column_names(sh, self.head.value() - sh["row0"] - 1)
-        checked = set(self._sum_cols())
         for box in self.boxes.values():
-            idx = box.currentIndex()
-            box.blockSignals(True)
-            box.clear()
-            box.addItems([NONE] + names)
-            box.setCurrentIndex(max(idx, 0))
-            box.blockSignals(False)
-        self.sums.blockSignals(True)
-        self.sums.clear()
-        for i, label in enumerate(names):
-            self.sums.addItem(check_item(label, i in checked))
-        self.sums.blockSignals(False)
+            refill_combo(box, [NONE] + names)
+        refill_checks(self.sums, names, set(self._sum_cols()))
         self._check()
 
     def _read(self) -> dict:
@@ -160,6 +154,8 @@ class FileDialog(QDialog):
                 "transpose": self.flip.isChecked(), "by_name": kind == AS_LIST and self.by_name.isChecked(),
                 "separate": kind == AS_LIST and self.separate.isChecked(),
                 "repeats": kind == AS_LIST and self.repeats.isChecked(),
+                "f_purpose": self.f_purpose.text().strip() if kind == REGISTRY else "",
+                "f_rec": self.f_rec.text().strip() if kind == REGISTRY else "",
                 "cols": {key: (b.currentIndex() - 1 if b.currentIndex() > 0 else None)
                          for (k, key), b in self.boxes.items() if k == kind}}
 

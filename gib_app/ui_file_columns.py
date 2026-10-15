@@ -69,7 +69,8 @@ def to_mapping(name: str, sheet: dict, st: dict) -> dict:
     m = {"sheet": name, "head": st["head"], "row0": sheet["row0"], "col0": sheet["col0"], "kind": st["kind"],
          "cols": dict(st["cols"]), "transpose": bool(st.get("transpose")), "by_name": bool(st.get("by_name")),
          "separate": bool(st.get("separate")), "repeats": bool(st.get("repeats")),
-         "hidden_sheet": bool(sheet.get("hidden"))}
+         "hidden_sheet": bool(sheet.get("hidden")), "f_purpose": st.get("f_purpose") or "",
+         "f_rec": st.get("f_rec") or ""}
     names = [n.split("   (напр.")[0] for n in column_names(sheet, st["head"])]     # «C: РМА» — для «Как считали»
     m["labels"] = {title.rstrip(" *"): names[st["cols"][key]] for key, title in FIELDS[st["kind"]]
                    if st["cols"].get(key) is not None and st["cols"][key] < len(names)}

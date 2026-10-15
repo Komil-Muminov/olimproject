@@ -32,6 +32,9 @@ def _sheet_rows(fname: str, m: dict) -> list:
     out.append([fname, m["sheet"], "", "Суммы", "; ".join(sums) if sums else "не выбраны (только «есть / нет»)"])
     if len(sums) > 1:
         out.append([fname, m["sheet"], "", "Как суммы", "каждый столбец отдельно" if m.get("separate") else "сложены"])
+    for key, title in (("f_purpose", "Отбор: основание содержит"), ("f_rec", "Отбор: получатель содержит")):
+        if m.get(key):
+            out.append([fname, m["sheet"], "", title, m[key] + "  (остальные платежи не учитывались)"])
     opts = [text for key, text in OPTIONS if m.get(key)]
     if opts:
         out.append([fname, m["sheet"], "", "Особенности", "; ".join(opts)])

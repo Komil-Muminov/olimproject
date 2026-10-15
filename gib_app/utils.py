@@ -16,6 +16,11 @@ def to_number(value) -> float | None:
         return None
 
 
+def not_a_number(v) -> bool:
+    """В ячейке суммы что-то написано, но это не число («нет», «1.234.56»). Пусто и прочерк — не в счёт."""
+    return v not in (None, "") and to_number(v) is None and str(v).strip() not in ("-", "–", "—", "")
+
+
 def to_num_safe(v) -> float:
     """Возвращает число с плавающей точкой или 0.0."""
     res = to_number(v)

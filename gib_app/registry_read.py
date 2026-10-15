@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from file_format import real_path
 from registry_columns import HEAD_ROWS, guess_header, registry_columns, two_row_columns
-from utils import to_number
+from utils import norm_text, not_a_number, to_number
 
 
 @dataclass
@@ -19,6 +19,7 @@ class Payment:
     rec_inn: str | None
     amount: float
     purpose: str = ""
+    bad: str = ""               # что стоит в столбце суммы, если это не число (сумма считается как 0)
 
 
 def inn_text(v) -> str:
@@ -63,12 +64,24 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
     if not (pinn or rinn or payer or rec):
         return None
     money = cols.get("amount")         # список — несколько столбцов, выбранных пользователем (суммируются)
-    if isinstance(money, list):
-        amount = sum(to_number(values[c]) or 0.0 for c in money if c < len(values))
-    else:
-        amount = to_number(get("amount")) or 0.0
+    cells = [values[c] for c in (money if isinstance(money, list) else [money]) if c is not None and c < len(values)]
+    amount = sum(to_number(v) or 0.0 for v in cells)
+    bad = "; ".join(str(v).strip() for v in cells if not_a_number(v))
     return Payment(row, _text(get("doc")), _date(get("date")), payer, pinn, rec, rinn, round(amount, 2),
-                   _text(get("purpose")))
+                   _text(get("purpose")), bad)
+
+
+def payment_filter(mapping: dict | None):
+    """Отбор платежей, заданный пользователем: основание и/или получатель содержат одно из слов (через запятую).
+    → проверка платежа или None (отбора нет)."""
+    words = lambda key: [w for w in (norm_text(x) for x in str((mapping or {}).get(key) or "").split(",")) if w]
+    purpose, rec = words("f_purpose"), words("f_rec")
+    if not purpose and not rec:
+        return None
+    def keep(p) -> bool:
+        return (not purpose or any(w in norm_text(p.purpose) for w in purpose)) and \
+            (not rec or any(w in norm_text(p.rec) or w in (p.rec_inn or "") for w in rec))
+    return keep
 
 
 def read_registry(path: str, mapping: dict | None = None):
@@ -93,7 +106,7 @@ def read_registry(path: str, mapping: dict | None = None):
             else:
                 cols = registry_columns(values) or (i > 0 and two_row_columns(head[-2], values))
             if cols:
-                sheets.append((name, sheet.height, _payments(rows, cols, i + 2)))
+                sheets.append((name, sheet.height, _payments(rows, cols, i + 2, payment_filter(mapping))))
                 break
             if i >= HEAD_ROWS and not mapping:      # строку заголовков указал пользователь — ищем её дальше
                 break
@@ -105,8 +118,8 @@ def read_registry(path: str, mapping: dict | None = None):
     return sheets, (None if sheets else guess)
 
 
-def _payments(rows, cols, first_row):
+def _payments(rows, cols, first_row, keep=None):
     for i, values in enumerate(rows):
         p = to_payment(first_row + i, values, cols)
-        if p:
+        if p and (keep is None or keep(p)):
             yield p

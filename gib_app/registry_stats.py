@@ -53,6 +53,7 @@ class Registry:
         self.bad_inn = []           # (файл, Payment, «плательщик»/«получатель», ИНН)
         self.odd_dates = []         # (файл, Payment) — заполняется в finish()
         self.hidden = []            # (файл, Payment) — платёж в скрытой строке
+        self.bad_amounts = []       # (файл, Payment) — в столбце суммы не число (посчитано как 0)
         self.notes = []             # скрытые листы и строки (сводка)
         self.order = []             # файлы по времени (заполняется в finish)
         # кто кому платит: (ИНН плательщика, ИНН получателя, файл) / (…, (год, месяц)) → [сумма, платежей]
@@ -83,6 +84,8 @@ class Registry:
         info = self.files[f]
         info.rows += 1
         info.total += p.amount
+        if p.bad:
+            self.bad_amounts.append((f, p))
         m = (p.date.year, p.date.month) if p.date else None
         if m:
             self.months[m][0] += p.amount
