@@ -39,12 +39,13 @@ def auto_columns(rows: list, kind: str) -> dict:
 
 def _list_guess(wb, name: str) -> dict | None:
     """Список: таблица с ИНН по содержимому (ИНН, название, суммы — как нашла бы программа)."""
-    data = [[None if v == "" else v for v in r] for r in wb.get_sheet_by_name(name).to_python()]
+    sheet = wb.get_sheet_by_name(name)
+    data = [[None if v == "" else v for v in r] for r in sheet.to_python()]     # с первой заполненной строки
     found = find_tables(data)
     if not found:
         return None
     s = found[1][0]
-    return {"sheet": name, "kind": AS_LIST, "head": s.header - 1,
+    return {"sheet": name, "kind": AS_LIST, "head": (sheet.start or (0, 0))[0] + s.header - 1,
             "cols": {"inn": s.key_col - 1, "name": s.name_col - 1 if s.name_col else None},
             "sums": [c - 1 for c in money_cols(data, s)]}
 
@@ -59,8 +60,8 @@ def propose(path: str) -> dict:
         sheet = wb.get_sheet_by_name(name)
         rows = _sheet_rows(sheet)
         if any(v != "" for r in rows for v in r):
-            row0, col0 = sheet.start or (0, 0)
-            sheets[name] = {"rows": rows, "row0": row0, "col0": col0, "height": sheet.height}
+            # iter_rows: строки — с первой строки листа (row0 = 0), столбцы — с первого заполненного (col0)
+            sheets[name] = {"rows": rows, "row0": 0, "col0": (sheet.start or (0, 0))[1], "height": sheet.height}
     guess = None
     for name, sh in sheets.items():             # реестр — по заголовкам
         g = auto_columns(sh["rows"], REGISTRY)

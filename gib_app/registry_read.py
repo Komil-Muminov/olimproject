@@ -83,7 +83,6 @@ def read_registry(path: str, mapping: dict | None = None):
         if mapping and name != mapping["sheet"]:
             continue
         sheet = wb.get_sheet_by_name(name)
-        start = (sheet.start or (0, 0))[0]       # строки до первой заполненной calamine пропускает
         rows = sheet.iter_rows()
         head = []
         for i, values in enumerate(rows):
@@ -93,13 +92,13 @@ def read_registry(path: str, mapping: dict | None = None):
             else:
                 cols = registry_columns(values) or (i > 0 and two_row_columns(head[-2], values))
             if cols:
-                sheets.append((name, sheet.height, _payments(rows, cols, start + i + 2)))
+                sheets.append((name, sheet.height, _payments(rows, cols, i + 2)))
                 break
             if i >= HEAD_ROWS:
                 break
         if not sheets and head:
-            row0, col0 = sheet.start or (0, 0)
-            g = dict(guess_header(head), sheet=name, row0=row0, col0=col0)
+            # iter_rows: строки — с первой строки листа, столбцы — с первого заполненного (col0)
+            g = dict(guess_header(head), sheet=name, row0=0, col0=(sheet.start or (0, 0))[1])
             if guess is None or g["score"] > guess["score"]:
                 guess = g
     return sheets, (None if sheets else guess)

@@ -30,12 +30,15 @@ def payments_of(paths, inn: str, mappings=None, progress=lambda p, t: None) -> t
     out, registries, mappings = [], set(), mappings or {}
     for k, path in enumerate(paths):
         progress(int(60 * k / len(paths)), f"Ищу в {os.path.basename(path)} ({k + 1} из {len(paths)})…")
-        if as_list(mappings.get(path)):             # пользователь сказал: это список организаций, не реестр
-            continue
-        try:
-            sheets, _ = read_registry(path, mappings.get(path))
-        except Exception:
-            continue                                # не реестр (обычная таблица) — пропускаем
+        m = mappings.get(path)
+        sheets = []                                 # листы-списки (выбор пользователя) пропускаются
+        for one in (m if isinstance(m, list) else [m]):
+            if as_list(one):
+                continue
+            try:
+                sheets += read_registry(path, one)[0]
+            except Exception:
+                pass                                # не реестр (обычная таблица) — пропускаем
         if sheets:
             registries.add(path)
         for _, _, rows in sheets:

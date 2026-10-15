@@ -16,16 +16,43 @@ from registry_stats import Registry
 ASK_SCORE = 2           # столько узнанных заголовков реестра — спросить, не реестр ли это
 
 
+def _add_registry(reg, path, sheets, tick):
+    for sheet, total, rows in sheets:
+        f = reg.start_file(path, sheet)
+        for i, p in enumerate(rows):
+            reg.add(f, p)
+            if i % 50000 == 0:
+                tick(i, total)
+
+
+def _read_chosen(path, sheet_maps: list, reg, lists, tick):
+    """Листы, настроенные пользователем (окно «Как читать файл»): реестры и списки, каждый лист — по-своему."""
+    data, found = None, 0
+    for m in sheet_maps:
+        if m["kind"] == AS_LIST:
+            data = data or Book(path).sheets
+            found += lists.add_file(path, data, m)
+        else:
+            sheets, _ = read_registry(path, m)
+            _add_registry(reg, path, sheets, tick)
+            found += len(sheets)
+    if not found:
+        raise WriteError(f"В «{os.path.basename(path)}» в выбранных столбцах ИНН нет значений.")
+
+
 def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
-    """→ {"raw": (реестры, списки, пути)}, {"needs_inn"/"needs_amount": путь, "guess": …} (ИНН не нашёлся /
-    непонятно, где сумма — указать столбцы)
-    или {"needs_mapping": путь, "guess": …} (похоже на реестр, но
-    столбцы не узнаны — спросить пользователя)."""
+    """mappings[путь] — список настроек листов (окно «Как читать файл») или прежние одиночные настройки.
+    → {"raw": (реестры, списки, пути)}; без настроек файл узнаётся сам и может вернуться
+    {"needs_inn" / "needs_amount" / "needs_mapping": путь, "guess": …} — спросить пользователя."""
     mappings = mappings or {}
     reg, lists, n = Registry(), ListCollector(), len(paths)
     for k, path in enumerate(paths):
         name, base = os.path.basename(path), int(95 * k / n)
         progress(base, f"Читаю {name} ({k + 1} из {n})…")
+        tick = lambda i, total: progress(base + int(95 / n * i / max(total, 1)), f"Считаю {name} ({k + 1} из {n})…")
+        if isinstance(mappings.get(path), list):
+            _read_chosen(path, mappings[path], reg, lists, tick)
+            continue
         sheets, guess = [], None
         if not as_list(mappings.get(path)):
             try:
@@ -33,12 +60,7 @@ def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
             except Exception:
                 pass
         if sheets:
-            for sheet, total, rows in sheets:
-                f = reg.start_file(path, sheet)
-                for i, p in enumerate(rows):
-                    reg.add(f, p)
-                    if i % 50000 == 0:
-                        progress(base + int(95 / n * i / max(total, 1)), f"Считаю {name} ({k + 1} из {n})…")
+            _add_registry(reg, path, sheets, tick)
             continue
         try:
             data = Book(path).sheets

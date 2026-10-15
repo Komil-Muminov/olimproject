@@ -49,6 +49,55 @@ class ProposeTest(unittest.TestCase):
         reg, _, _ = scan_files([path], {path: mapping})["raw"]
         self.assertEqual(reg.payers[INNS[0]].total, 105.0)
 
+    def test_several_sheets_each_own_columns(self):
+        """Два листа одного файла: реестр за январь и список — каждый со своими столбцами."""
+        path = os.path.join(tempfile.mkdtemp(), "два листа.xlsx")
+        wb = Workbook()
+        wb.active.title = "Январь"
+        wb.active.append(["ИНН плательщика", "ИНН получателя", "Сумма"])
+        wb.active.append([INNS[0], INNS[1], 50])
+        ws = wb.create_sheet("Список")
+        ws.append(["Название", "РМА"])
+        ws.append(["Орг", INNS[0]])
+        wb.save(path)
+        maps = [{"sheet": "Январь", "head": 0, "row0": 0, "col0": 0, "kind": REGISTRY,
+                 "cols": {"payer_inn": 0, "rec_inn": 1, "amount": [2]}},
+                {"sheet": "Список", "head": 0, "row0": 0, "col0": 0, "kind": AS_LIST, "cols": {"inn": 1, "name": 0},
+                 "sums": []}]
+        reg, lists, _ = scan_files([path], {path: maps})["raw"]
+        self.assertEqual((reg.payers[INNS[0]].total, [e.name for e in lists.entities(0, 1)]), (50.0, ["Орг"]))
+        from report_inn import payments_of
+        found, registries = payments_of([path], INNS[0], {path: maps})
+        self.assertEqual((len(found), registries), (1, {path}))
+
+    def test_table_not_from_a1(self):
+        """Таблица с C3: строка заголовков и номера строк — как в Excel."""
+        path = os.path.join(tempfile.mkdtemp(), "c3.xlsx")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Л"
+        for r, row in enumerate([["ИНН плательщика", "ИНН получателя", "Сумма"], [INNS[0], INNS[1], 5]], 3):
+            for c, v in enumerate(row, 3):
+                ws.cell(r, c, v)
+        wb.save(path)
+        p = propose(path)
+        self.assertEqual((p["guess"]["head"], p["sheets"]["Л"]["row0"], p["sheets"]["Л"]["col0"]), (2, 0, 2))
+        from registry_read import read_registry
+        self.assertEqual(next(read_registry(path)[0][0][2]).row, 4)
+
+    def test_dialog_sheets(self):
+        """Окно: лист с догадкой отмечен; без отмеченных листов «Готово» не нажимается."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        from ui_file_dialog import FileDialog
+        app = QApplication.instance() or QApplication([])  # noqa: F841
+        path = _save([["ИНН", "Название"]] + [[inn, f"Орг {i}"] for i, inn in enumerate(INNS)])
+        d = FileDialog(None, propose(path), 1, 1)
+        m = d.mapping()
+        self.assertEqual([(x["sheet"], x["kind"], x["cols"]["inn"]) for x in m], [("Л", AS_LIST, 0)])
+        d.sheet_list.item(0).setCheckState(Qt.Unchecked)
+        self.assertFalse(d.buttons.button(d.buttons.StandardButton.Ok).isEnabled())
+
 
 if __name__ == "__main__":
     unittest.main()
