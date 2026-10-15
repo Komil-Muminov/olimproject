@@ -23,6 +23,32 @@ def _action(win, title: str, sub: str, tip: str, slot):
     return b
 
 
+def inn_box(slot) -> tuple:
+    """Блок «Всё по одной организации»: поле ИНН и кнопка. → (блок, поле, кнопка)."""
+    box = QFrame()
+    box.setObjectName("actionBox")
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(18, 14, 18, 14)
+    lay.setSpacing(8)
+    title = QLabel("📄  Всё по одной организации")
+    title.setObjectName("actionTitle")
+    lay.addWidget(title)
+    row = QHBoxLayout()
+    line = QLineEdit()
+    line.setPlaceholderText("ИНН, например 040000011")
+    line.setMaxLength(20)
+    line.setClearButtonEnabled(True)
+    line.returnPressed.connect(slot)
+    row.addWidget(line, 1)
+    btn = QPushButton("В Excel")
+    btn.setToolTip("Где встречается этот ИНН во всех выбранных файлах: строки таблиц (с подписью — "
+                   "файл, лист, столбец) и платежи из реестров (где платила и где получала)")
+    btn.clicked.connect(slot)
+    row.addWidget(btn)
+    lay.addLayout(row)
+    return box, line, btn
+
+
 def build_analysis_card(win):
     card = QFrame()
     card.setObjectName("card")
@@ -41,28 +67,8 @@ def build_analysis_card(win):
     row.addWidget(win.an_run_btn)
     lay.addLayout(row)
 
-    inn_box = QFrame()
-    inn_box.setObjectName("actionBox")
-    inn_lay = QVBoxLayout(inn_box)
-    inn_lay.setContentsMargins(18, 14, 18, 14)
-    inn_lay.setSpacing(8)
-    title = QLabel("📄  Всё по одной организации")
-    title.setObjectName("actionTitle")
-    inn_lay.addWidget(title)
-    inn_row = QHBoxLayout()
-    win.an_inn = QLineEdit()
-    win.an_inn.setPlaceholderText("ИНН, например 040000011")
-    win.an_inn.setMaxLength(20)
-    win.an_inn.setClearButtonEnabled(True)
-    win.an_inn.returnPressed.connect(lambda: flow.export_payments(win))
-    inn_row.addWidget(win.an_inn, 1)
-    win.an_pay_btn = QPushButton("В Excel")
-    win.an_pay_btn.setToolTip("Где встречается этот ИНН во всех выбранных файлах: строки таблиц (с подписью — "
-                              "файл, лист, столбец) и платежи из реестров (где платила и где получала)")
-    win.an_pay_btn.clicked.connect(lambda: flow.export_payments(win))
-    inn_row.addWidget(win.an_pay_btn)
-    inn_lay.addLayout(inn_row)
-    lay.addWidget(inn_box)
+    box, win.an_inn, win.an_pay_btn = inn_box(lambda: flow.export_payments(win))
+    lay.addWidget(box)
     lay.addStretch()
 
     win.an_progress = QProgressBar()

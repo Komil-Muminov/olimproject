@@ -12,6 +12,7 @@ from openpyxl.utils import get_column_letter
 from analysis_model import FLAG_HINTS, FLAGS, change, status, status_hints
 from report_colors import COLORS, ERR_COLOR, add_row_colors
 from report_errors import write_errors_sheets
+from report_reconcile import write_reconcile_sheet
 from report_pairs import write_pairs_sheet
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
@@ -69,6 +70,8 @@ def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{get_column_letter(n)}{last}"
         add_row_colors(ws, HEAD_ROW + 1, last, n, st_col, err_col)
+    progress(68, "Пишу лист «Сверка со списком»…")
+    recon = write_reconcile_sheet(wb, data)
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)
     progress(80, "Пишу листы с ошибками…")
@@ -76,7 +79,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),
-            "flags": Counter(f for e, _ in rows for f in e.flags)}
+            "flags": Counter(f for e, _ in rows for f in e.flags), "reconcile": recon}
 
 
 def _change_cells(ws, e, parts, pair) -> list:

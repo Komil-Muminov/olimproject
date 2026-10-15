@@ -55,11 +55,11 @@ class ListCollector:
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
         fname, before = os.path.basename(path), len(self.parts)
-        if mapping:
+        if mapping:                     # лист, где пользователь указал столбцы, — по ним; остальные — как обычно
             s = mapped_table(sheets[mapping["sheet"]], mapping)
             if s.all_rows:
                 self._add_side(fname, mapping["sheet"], sheets[mapping["sheet"]], s, 1)
-            return len(self.parts) - before
+            sheets = {name: data for name, data in sheets.items() if name != mapping["sheet"]}
         for sheet, data in sheets.items():
             found = find_tables(data)
             if found:

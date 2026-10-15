@@ -21,6 +21,7 @@ def show_result(win, ok: bool, head: str, lines: list, warn: str = "", path=None
     win.result_after.setText(after)
     win.result_after.setVisible(bool(after))
     win.result_warn.setText(warn)
+    win.result_inn_box.setVisible(False)
     win.backup = backup
     win.backup_label.setText(f"🛡  Копия файла до изменений: {backup}" if backup else note)
     win.backup_btn.setVisible(bool(backup))

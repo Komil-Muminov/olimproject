@@ -70,6 +70,11 @@ def result_view(res: dict, data) -> tuple:
     st = res["statuses"]
     lines = [f"<span style='color:{MUTED}'>{escape(os.path.basename(res['path']))} · папка «Свод по глубокому "
              f"анализу»</span>", "", _parts_table(data)]
+    recon = res.get("reconcile")
+    if recon:
+        lines.append(f"<b>Сверка со списком</b>: платили <b>{_int(recon['paid'])}</b> из "
+                     f"{_int(recon['paid'] + recon['not_paid'])}, не платили <b style='color:#B91C1C'>"
+                     f"{_int(recon['not_paid'])}</b> <span style='color:{MUTED}'>— лист «Сверка со списком»</span>")
     chips = []
     if len(data.parts) > 1:
         lines.append(f"<span style='color:{MUTED}; font-size:10pt'>Появились / Пропали — по сравнению "

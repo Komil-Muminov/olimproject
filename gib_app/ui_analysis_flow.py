@@ -98,7 +98,15 @@ def _ask_list(win, path: str, guess: dict, problem: str):
 def _done(win, res, data):
     lines, chips, errors = result_view(res, data)
     show_result(win, True, "✓  Анализ готов", lines, path=res["path"], chips=chips, after=errors)
+    win.result_inn_box.setVisible(True)
     win.back_page = ANALYSIS_PAGE
+
+
+def inn_from_result(win):
+    """ИНН с экрана «Анализ готов»: тот же поиск, что на экране анализа (там виден ход работы)."""
+    win.an_inn.setText(win.result_inn.text())
+    win.pages.setCurrentIndex(ANALYSIS_PAGE)
+    export_payments(win)
 
 
 def export_payments(win):
