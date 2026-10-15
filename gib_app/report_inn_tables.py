@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from openpyxl.utils import get_column_letter
 
+from analysis_list_map import AS_LIST, split_cell
 from compare_finder import find_tables, key_in_text, key_of, match_key
 from file_format import real_path
 
@@ -78,16 +79,43 @@ def table_hits(path: str, inn: str) -> list:
     return out
 
 
-def tables_report_rows(paths: list, inn: str, skip: set, progress=lambda p, t: None) -> tuple:
-    """Все обычные таблицы из paths (кроме реестров skip). → (строки листа «Из таблиц», строки «Где нашлось»)."""
-    rows, where = [], []
+def chosen_hits(path: str, inn: str, sheet_maps: list) -> list:
+    """Листы-списки, настроенные пользователем: ИНН — только в выбранном столбце, строка — целиком, заголовки —
+    из выбранной строки заголовков. → как table_hits."""
+    from python_calamine import CalamineWorkbook
+
+    target, out = match_key(inn), []
+    wb = CalamineWorkbook.from_path(real_path(path))
+    for m in sheet_maps:
+        c, name_c = m["cols"].get("inn"), m["cols"].get("name")
+        if c is None or m.get("transpose"):
+            continue
+        sheet = wb.get_sheet_by_name(m["sheet"])
+        rows = list(sheet.iter_rows())          # строки — с первой строки листа, столбцы — с первого заполненного
+        heads = rows[m["head"]] if m["head"] < len(rows) else []
+        for r in range(m["head"] + 1, len(rows)):
+            row = rows[r]
+            if c >= len(row) or not any(_match(v, target) for v in split_cell(row[c])):
+                continue
+            cells = [((_text(heads[i]) if i < len(heads) else "") or "(без названия)",
+                      get_column_letter(m["col0"] + i + 1), _show(v)) for i, v in enumerate(row) if v not in (None, "")]
+            out.append((m["sheet"], r + 1, _text(row[name_c]) if name_c is not None and name_c < len(row) else "", cells))
+    return out
+
+
+def tables_report_rows(paths: list, inn: str, skip: set, progress=lambda p, t: None, mappings=None) -> tuple:
+    """Обычные таблицы из paths (кроме реестров skip). Листы, настроенные пользователем (mappings), — только
+    они и только выбранный столбец ИНН. → (строки листа «Из таблиц», строки «Где нашлось»)."""
+    rows, where, mappings = [], [], mappings or {}
     for k, path in enumerate(paths):
-        if path in skip:
+        chosen = mappings.get(path)
+        lists = [m for m in chosen if m["kind"] == AS_LIST] if isinstance(chosen, list) else None
+        if (lists is None and path in skip) or lists == []:
             continue
         fname = os.path.basename(path)
         progress(60 + int(25 * k / len(paths)), f"Ищу в {fname}…")
         try:
-            hits = table_hits(path, inn)
+            hits = chosen_hits(path, inn, lists) if lists else table_hits(path, inn)
         except Exception:
             continue
         for sheet, r, title, cells in hits:

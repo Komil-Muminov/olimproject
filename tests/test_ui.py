@@ -12,6 +12,15 @@ class TestMainWindow(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(sys.argv)
 
+    def test_worker_returns_list(self):
+        """Фоновая задача отдаёт не только словарь: просмотр файлов перед анализом возвращает список."""
+        from worker import Worker
+        got = []
+        w = Worker(lambda progress: [{"path": "a.xlsx"}])
+        w.done.connect(got.append)
+        w.run()                                 # в этом же потоке — сигнал доходит сразу
+        self.assertEqual(got, [[{"path": "a.xlsx"}]])
+
     def test_window_starts(self):
         from ui import MainWindow
         w = MainWindow()

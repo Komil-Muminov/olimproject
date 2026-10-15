@@ -44,6 +44,18 @@ class InnEverywhereTest(unittest.TestCase):
         where = [r[1:5] for r in wb["Где нашлось"].iter_rows(min_row=5, values_only=True)]
         self.assertEqual(where[0], ("30 фоиза.xlsx", "Воридот", 4, "таблица"))
 
+    def test_only_chosen_sheet_and_inn_column(self):
+        """Столбцы выбраны пользователем: ИНН ищется только в выбранном столбце выбранного листа."""
+        d = tempfile.mkdtemp()
+        lst = _save(os.path.join(d, "список.xlsx"), [
+            ("Л", [["РМА", "Номи", "Примечание"], [INN, "А", "x"], ["630000962", "Б", f"см. {INN}"]]),
+            ("Другой", [["ИНН"], [INN]])])
+        maps = {lst: [{"sheet": "Л", "head": 0, "row0": 0, "col0": 0, "kind": "list", "cols": {"inn": 0, "name": 1},
+                       "sums": []}]}
+        res = write_inn_payments(os.path.join(d, "out.xlsx"), [lst], INN, maps)
+        where = [r[1:5] for r in load_workbook(res["path"])["Где нашлось"].iter_rows(min_row=5, values_only=True)]
+        self.assertEqual(where, [("список.xlsx", "Л", 2, "таблица")])     # не «Другой» и не примечание Б
+
     def test_not_found(self):
         d = tempfile.mkdtemp()
         lst = _save(os.path.join(d, "a.xlsx"), [("Л", [["ИНН"], ["630000962"]])])

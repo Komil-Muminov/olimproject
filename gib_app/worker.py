@@ -11,7 +11,7 @@ _RUNNING = set()
 
 class Worker(QThread):
     progress = Signal(int, str)
-    done = Signal(dict)
+    done = Signal(object)            # результат задачи: словарь, список (просмотр файлов) и т.п.
     failed = Signal(str)
 
     def __init__(self, func, *args):

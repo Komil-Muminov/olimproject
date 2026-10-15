@@ -60,7 +60,7 @@ def write_inn_payments(path: str, paths: list, inn: str, mappings=None, progress
     Ничего не нашлось — файл не создаётся (path=None)."""
     inn = clean_inn(inn)
     found, registries = payments_of(paths, inn, mappings, progress)
-    table_rows, where = tables_report_rows(paths, inn, registries, progress)
+    table_rows, where = tables_report_rows(paths, inn, registries, progress, mappings)
     found.sort(key=lambda x: (x[1].date.toordinal() if x[1].date else 10 ** 7, x[1].row))   # без даты — в конце
     paid = [x for x in found if x[1].payer_inn == inn]
     got = [x for x in found if x[1].rec_inn == inn]

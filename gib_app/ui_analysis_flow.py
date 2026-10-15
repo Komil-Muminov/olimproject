@@ -50,10 +50,12 @@ def _idle(win):
 def run(win):
     """«Анализ»: посмотреть файлы → для каждого окно «Как читать файл» (решает пользователь) → Excel."""
     if not win.worker:
-        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props))
+        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, lambda: _run(
+            win, scan_files, win.an_paths, win.an_mappings, done=lambda res: _scanned(win, res))))
 
 
-def _ask_files(win, props: list):
+def _ask_files(win, props: list, after):
+    """Окно «Как читать файл» для каждого файла; всё выбрано — after()."""
     mappings = {}
     for k, prop in enumerate(props, 1):
         if not prop["sheets"]:
@@ -64,7 +66,7 @@ def _ask_files(win, props: list):
             return
         mappings[prop["path"]] = dlg.mapping()
     win.an_mappings = mappings
-    _run(win, scan_files, win.an_paths, mappings, done=lambda res: _scanned(win, res))
+    after()
 
 
 def _scanned(win, res):
@@ -94,8 +96,11 @@ def export_payments(win):
     if not inn.isdigit():
         QMessageBox.information(win, "Всё по ИНН", "Введите ИНН цифрами, например 040000011.")
         return
-    _run(win, write_inn_payments, inn_report_path(inn), win.an_paths, inn, win.an_mappings,
-         done=lambda res: _payments_done(win, res))
+    search = lambda: _run(win, write_inn_payments, inn_report_path(inn), win.an_paths, inn, win.an_mappings,
+                          done=lambda res: _payments_done(win, res))
+    if all(isinstance(win.an_mappings.get(p), list) for p in win.an_paths):
+        return search()                     # столбцы уже выбраны (в «Анализе» по этим файлам)
+    _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, search))
 
 
 def _payments_done(win, res):
