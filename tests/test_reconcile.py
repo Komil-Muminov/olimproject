@@ -21,6 +21,15 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual([(r.name, r.paid, r.payments, r.got, r.result) for r in rows],
                          [("Б (список)", [0.0], 0, 7.0, NOT_PAID), ("А (список)", [500.0], 2, 0.0, PAID)])
 
+    def test_who_hint(self):
+        from report_reconcile import TOP, who_hint
+        entries = [(f"Получатель {k}", f"{k:09d}", [float(k), 0.0], [1, 0]) for k in range(1, TOP + 3)]
+        text = who_hint(entries, "Кому платил:", 0)
+        lines = text.split(chr(10))
+        self.assertEqual(lines[1], f"• Получатель {TOP + 2} ({TOP + 2:09d}): {TOP + 2},00 — 1 плат.")   # крупные сверху
+        self.assertEqual(lines[-1], "…и ещё 2 на 3,00")
+        self.assertIsNone(who_hint(entries, "Кому платил:", 1))          # во второй части платежей нет
+
     def test_nothing_to_reconcile(self):
         parts = [Part("Янв", "M1.xlsx", "payments", (2024, 1, 0))]
         self.assertEqual(reconcile(AnalysisData(parts, [], {}, [], [], None, "files")), ([], []))

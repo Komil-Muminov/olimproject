@@ -1,6 +1,6 @@
 """Сверка списка с реестрами: каждая организация из обычных таблиц (например, «30 фоиза») — платила ли она
 по реестрам платежей, сколько и в каком периоде. Связь — по ИНН (без нулей впереди)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from analysis_model import ORG, PAYER, RECIPIENT
 from compare_finder import match_key
@@ -16,6 +16,8 @@ class ReconRow:
     paid: list          # заплатил — по каждой части реестров
     payments: int       # сколько платежей
     got: float          # сколько получил (если был получателем)
+    to: list = field(default_factory=list)      # кому платил: [(название, ИНН, [суммы по частям], [платежей])]
+    frm: list = field(default_factory=list)     # от кого получал: [(название, ИНН, [суммы], [платежей])]
 
     @property
     def result(self) -> str:
@@ -32,6 +34,14 @@ def reconcile(data) -> tuple:
     for e in data.entities:
         if e.role in books:
             books[e.role][match_key(e.inn)] = e
+    keys = {match_key(e.inn) for e in data.entities if e.role == ORG}
+    to, frm = {}, {}
+    for x in data.pairs:                # связки «кто кому платит» только для организаций из списка
+        entry = lambda name, inn: (name, inn, [x.sums[i] for i in reg], [x.counts[i] for i in reg])
+        if match_key(x.payer_inn) in keys:
+            to.setdefault(match_key(x.payer_inn), []).append(entry(x.rec, x.rec_inn))
+        if match_key(x.rec_inn) in keys:
+            frm.setdefault(match_key(x.rec_inn), []).append(entry(x.payer, x.payer_inn))
     rows = []
     for e in data.entities:
         if e.role != ORG:
@@ -41,6 +51,7 @@ def reconcile(data) -> tuple:
             e.inn, e.name, ", ".join(data.parts[i].label for i in lists if e.counts[i]),
             [round(p.sums[i], 2) if p and p.counts[i] else 0.0 for i in reg],
             sum(p.counts[i] for i in reg) if p else 0,
-            round(sum(r.sums[i] for i in reg), 2) if r else 0.0))
+            round(sum(r.sums[i] for i in reg), 2) if r else 0.0,
+            to.get(match_key(e.inn), []), frm.get(match_key(e.inn), [])))
     rows.sort(key=lambda x: (x.result == PAID, -sum(x.paid), x.name))
     return [data.parts[i] for i in reg], rows

@@ -8,8 +8,10 @@ from openpyxl.utils import get_column_letter
 from analysis_reconcile import PAID, reconcile
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
+from utils import format_money
 
 HEAD_ROW = 4
+TOP = 10                # в подсказке — крупнейшие связки
 COLOR = {PAID: "DCFCE7", "": "FEE2E2"}
 HINTS = {"Где в списке": "В каких таблицах (листах) списка есть эта организация.",
          "Заплатил всего": "Сумма платежей, где эта организация — плательщик (по всем реестрам).",
@@ -22,6 +24,28 @@ def _cell(ws, v, **style):
     c = WriteOnlyCell(ws, value=v)
     for k, val in style.items():
         setattr(c, k, val)
+    return c
+
+
+def who_hint(entries, title: str, i: int = None) -> str | None:
+    """Подсказка «кому платил / от кого получал»: крупные сверху; i — одна часть реестров, None — все."""
+    pick = [(n, inn, s[i] if i is not None else sum(s), c[i] if i is not None else sum(c)) for n, inn, s, c in entries]
+    pick = sorted((x for x in pick if x[3]), key=lambda x: -x[2])
+    if not pick:
+        return None
+    lines = [title] + [f"• {n or '—'} ({inn}): {format_money(s)} — {c} плат." for n, inn, s, c in pick[:TOP]]
+    if len(pick) > TOP:
+        lines.append(f"…и ещё {len(pick) - TOP} на {format_money(sum(x[2] for x in pick[TOP:]))}")
+    return "\n".join(lines)
+
+
+def _money(ws, v, hint=None):
+    """Сумма с подсказкой при наведении (кому платил / от кого получал)."""
+    if not v:
+        return None
+    c = _cell(ws, v, number_format=NUM)
+    if hint:
+        c.comment = Comment(hint, "Распределение по ГИБ", width=480, height=24 + 17 * (hint.count("\n") + 1))
     return c
 
 
@@ -50,10 +74,12 @@ def write_reconcile_sheet(wb, data) -> dict | None:
             c.comment = Comment(hints[t], "Распределение по ГИБ", width=320, height=90)
         cells.append(c)
     ws.append(cells)
-    money = lambda v: _cell(ws, v, number_format=NUM) if v else None
     for k, r in enumerate(rows, 1):
-        ws.append([k, r.inn, r.name, r.where] + [money(v) for v in r.paid]
-                  + [money(round(sum(r.paid), 2)), r.payments or None, money(r.got),
+        per_part = [_money(ws, v, who_hint(r.to, f"Кому платил за «{p.label}»:", i))
+                    for i, (v, p) in enumerate(zip(r.paid, reg))]
+        ws.append([k, r.inn, r.name, r.where] + per_part
+                  + [_money(ws, round(sum(r.paid), 2), who_hint(r.to, "Кому платил (всего):")), r.payments or None,
+                     _money(ws, r.got, who_hint(r.frm, "От кого получал:")),
                      _cell(ws, r.result, fill=fill_color(COLOR.get(r.result, COLOR[""])), font=Font(bold=True))])
     ws.auto_filter.ref = f"A{HEAD_ROW}:{get_column_letter(len(head))}{HEAD_ROW + len(rows)}"
     return {"paid": paid, "not_paid": len(rows) - paid}
