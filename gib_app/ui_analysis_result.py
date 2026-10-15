@@ -72,9 +72,8 @@ def result_view(res: dict, data) -> tuple:
              f"анализу»</span>", "", _parts_table(data)]
     recon = res.get("reconcile")
     if recon:
-        lines.append(f"<b>Сверка со списком</b>: платили <b>{_int(recon['paid'])}</b> из "
-                     f"{_int(recon['paid'] + recon['not_paid'])}, не платили <b style='color:#B91C1C'>"
-                     f"{_int(recon['not_paid'])}</b> <span style='color:{MUTED}'>— лист «Сверка со списком»</span>")
+        lines.append(f"<b>Сверка со списком</b>: {_int(recon['orgs'])} организаций списка — их столбцы и платежи "
+                     f"рядом <span style='color:{MUTED}'>(лист «Сверка со списком»)</span>")
     chips = []
     if len(data.parts) > 1:
         lines.append(f"<span style='color:{MUTED}; font-size:10pt'>Появились / Пропали — по сравнению "

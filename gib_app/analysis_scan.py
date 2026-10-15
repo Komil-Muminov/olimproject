@@ -122,6 +122,8 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
     for x in ents + pairs:
         x.sums = [x.sums[i] for i in order]
         x.counts = [x.counts[i] for i in order]
+    for e in ents:                      # значения столбцов списка — только у организаций из списков
+        e.cols = [e.cols[i] for i in order] if e.cols else [None] * n
     details = {**details, **lists.details, "same_name": mark_same_names(ents)}
     compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
     return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode)

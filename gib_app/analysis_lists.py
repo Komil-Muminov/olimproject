@@ -2,6 +2,8 @@
 глубокого анализа. Ошибки — те же правила, что в проверке ИНН (inn_check)."""
 import os
 
+from openpyxl.utils import get_column_letter
+
 from analysis_list_map import FIND, mapped_table, side_guess
 from analysis_model import BAD_INN, DUP_ROW, ORG, Entity, Part
 from compare_finder import find_tables, name_at
@@ -75,12 +77,16 @@ class ListCollector:
         i = len(self.parts)
         where = f"«{sheet}» {s.span}" if on_sheet > 1 else f"«{sheet}»"
         metric = money_cols(data, s)
+        heads = [" ".join(str(cell_val(data, s.header, c) or "").split()) or f"столбец {get_column_letter(c)}"
+                 for c in metric]
         self.parts.append(Part(f"{s.year} · {where}" if s.year else where, fname, "list",
-                               (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric)))
+                               (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric), heads=heads))
         for k, rows in s.all_rows.items():
-            o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "dup": False})
+            o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "cols": {},
+                                         "dup": False})
             o["names"] += [n for n in (name_at(data, r, s) for r in rows) if n]
-            o["sums"][i] = round(sum(to_num_safe(cell_val(data, r, c)) for r in rows for c in metric), 2)
+            o["cols"][i] = [round(sum(to_num_safe(cell_val(data, r, c)) for r in rows), 2) for c in metric]
+            o["sums"][i] = round(sum(o["cols"][i]), 2)
             o["counts"][i] = len(rows)
             o["dup"] = o["dup"] or len(rows) > 1
 
@@ -98,11 +104,11 @@ class ListCollector:
         """Организации; их суммы — в позициях offset… общей таблицы из n_parts частей."""
         out = []
         for o in self.orgs.values():
-            sums, counts = [0.0] * n_parts, [0] * n_parts
+            sums, counts, cols = [0.0] * n_parts, [0] * n_parts, [None] * n_parts
             for i, v in o["sums"].items():
-                sums[offset + i], counts[offset + i] = v, o["counts"][i]
+                sums[offset + i], counts[offset + i], cols[offset + i] = v, o["counts"][i], o["cols"][i]
             e = Entity(o["inn"], o["names"][0] if o["names"] else "", ORG, sums, counts,
-                       names=max(1, len({_name_key(n) for n in o["names"]})))
+                       names=max(1, len({_name_key(n) for n in o["names"]})), cols=cols)
             if o["inn"] in self.bad:
                 e.flags.add(BAD_INN)
             if o["dup"]:

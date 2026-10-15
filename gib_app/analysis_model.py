@@ -50,6 +50,7 @@ class Part:
     kind: str           # "payments" — реестр, "list" — таблица с ИНН
     order: tuple = (9999, 0, 0)      # для порядка «раньше → позже»: (год, месяц, № по порядку)
     has_sums: bool = True            # в таблице есть столбец сумм (иначе — только «есть / нет»)
+    heads: list = field(default_factory=list)   # списки: заголовки столбцов сумм (отмеченных пользователем)
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Entity:
     counts: list                     # сколько записей в каждой части (0 — нет в этой части)
     flags: set = field(default_factory=set)
     names: int = 1                   # сколько разных написаний названия
+    cols: list = field(default_factory=list)    # по частям: значения столбцов сумм списка по отдельности (или None)
 
     @property
     def total(self) -> float:
