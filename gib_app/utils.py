@@ -1,5 +1,7 @@
 """Общие вспомогательные функции для работы с числами, текстом и ячейками."""
-from constants import TJ_TO_RU
+from constants import SUM_ROW_LABELS, TJ_TO_RU
+
+TOTAL_WORDS = {" ".join(w.translate(TJ_TO_RU).lower().split()) for w in SUM_ROW_LABELS}
 
 
 def to_number(value) -> float | None:
@@ -14,6 +16,12 @@ def to_number(value) -> float | None:
         return sign * float(s.strip("()"))
     except ValueError:
         return None
+
+
+def is_total_label(v) -> bool:
+    """Строка итогов: первое слово — целиком «Итого», «Всего», «Ҷамъ», «Ҳамагӣ»… («Ҷамъияти …» — это ООО, не итог)."""
+    words = norm_text(v).replace(":", " ").replace(".", " ").split()
+    return bool(words) and words[0] in TOTAL_WORDS
 
 
 def not_a_number(v) -> bool:

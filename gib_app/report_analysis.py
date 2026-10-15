@@ -13,6 +13,7 @@ from analysis_model import FLAG_HINTS, FLAGS, change, status, status_hints
 from report_colors import COLORS, ERR_COLOR, add_row_colors
 from report_errors import write_errors_sheets
 from report_months import write_months_sheet
+from report_all_by_inn import write_all_by_inn_sheet
 from report_reconcile import write_reconcile_sheet
 from report_settings import write_settings_sheet
 from report_pairs import write_pairs_sheet
@@ -74,6 +75,8 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
         add_row_colors(ws, HEAD_ROW + 1, last, n, st_col, err_col)
     progress(68, "Пишу лист «Сверка со списком»…")
     recon = write_reconcile_sheet(wb, data)
+    progress(69, "Пишу лист «Все файлы по ИНН»…")
+    all_inn = write_all_by_inn_sheet(wb, data.paths, mappings)
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)
     write_months_sheet(wb, data)
@@ -83,7 +86,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),
-            "flags": Counter(f for e, _ in rows for f in e.flags), "reconcile": recon}
+            "flags": Counter(f for e, _ in rows for f in e.flags), "reconcile": recon, "all_by_inn": all_inn}
 
 
 def _change_cells(ws, e, parts, pair) -> list:

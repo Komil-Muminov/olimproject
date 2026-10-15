@@ -26,10 +26,13 @@ def _head(ws, texts):
 
 def _sheet_rows(fname: str, m: dict) -> list:
     """Одна настройка листа → строки: что выбрано и где."""
-    out = [[fname, m["sheet"], KINDS.get(m["kind"], m["kind"]), "Строка заголовков", m["row0"] + m["head"] + 1]]
+    start = m["row0"] + m["head"] + 2
+    rows = f"с {start}-й" + (f" по {m['last']}-ю" if m.get("last") else " до конца листа")
+    out = [[fname, m["sheet"], KINDS.get(m["kind"], m["kind"]), "Строки", rows]]
     out += [[fname, m["sheet"], "", title, col] for title, col in m.get("labels", {}).items()]
-    sums = m.get("sum_labels") or []
-    out.append([fname, m["sheet"], "", "Суммы", "; ".join(sums) if sums else "не выбраны (только «есть / нет»)"])
+    sums = m.get("sums") or m["cols"].get("amount") or []
+    if not sums:
+        out.append([fname, m["sheet"], "", "Сумма", "не указана (только «есть / нет»)"])
     if len(sums) > 1:
         out.append([fname, m["sheet"], "", "Как суммы", "каждый столбец отдельно" if m.get("separate") else "сложены"])
     for key, title in (("f_purpose", "Отбор: основание содержит"), ("f_rec", "Отбор: получатель содержит")):
@@ -62,6 +65,13 @@ def write_settings_sheet(wb, data, mappings: dict = None):
                 ws.append(row)
         else:
             ws.append([fname, "", "", "Столбцы", "определены программой автоматически"])
+    if data.checks:
+        ws.append([])
+        _head(ws, ["Файл", "Лист", "Итого в файле (ячейка)", "Насчитала программа", "Разница (программа − файл)"])
+        for c in data.checks:
+            shown = c["raw"] if c["in_file"] is None else c["in_file"]
+            ws.append([os.path.basename(c["file"]), c["sheet"], f"{c['cell']}: {shown}", c["program"],
+                       "в ячейке не число" if c["diff"] is None else ("сходится ✓" if abs(c["diff"]) < 0.01 else c["diff"])])
     if data.notes:
         ws.append([])
         _head(ws, ["Файл", "Лист", "Скрытое", "", "Что это значит"])

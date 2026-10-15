@@ -48,7 +48,7 @@ class AuditSheetsTest(unittest.TestCase):
         _, wb = self._report(_registry())
         text = [[v for v in r if v is not None] for r in wb["Как считали"].iter_rows(values_only=True)]
         self.assertIn(["р.xlsx", "Л", "ИНН плательщика", "B: ИНН плат"], text)
-        self.assertIn(["р.xlsx", "Л", "Суммы", "D: Сумма"], text)
+        self.assertIn(["р.xlsx", "Л", "реестр платежей", "Строки", "с 2-й до конца листа"], text)
         months = [r for r in wb["По месяцам"].iter_rows(min_row=5, max_col=3, values_only=True)]
         self.assertEqual(months, [("Янв 2024", 300, 2), ("Фев 2024", 300, 1), ("Мар 2024", 400, 1)])
 

@@ -85,19 +85,23 @@ class ProposeTest(unittest.TestCase):
         from registry_read import read_registry
         self.assertEqual(next(read_registry(path)[0][0][2]).row, 4)
 
-    def test_dialog_sheets(self):
-        """Окно: лист с догадкой отмечен; без отмеченных листов «Готово» не нажимается."""
-        from PySide6.QtCore import Qt
+    def test_dialog_typed_columns(self):
+        """Окно: пусто — «Готово» не нажимается; колонки вписываются от руки (как в Olimv3)."""
         from PySide6.QtWidgets import QApplication
         from ui_file_dialog import FileDialog
         app = QApplication.instance() or QApplication([])  # noqa: F841
-        path = _save([["ИНН", "Название"]] + [[inn, f"Орг {i}"] for i, inn in enumerate(INNS)])
+        path = _save([["ИНН", "Название", "План", "Факт"]] + [[inn, f"Орг {i}", 1, 2] for i, inn in enumerate(INNS)])
         d = FileDialog(None, propose(path), 1, 1)
-        m = d.mapping()
-        self.assertEqual([(x["sheet"], x["kind"], x["cols"]["inn"]) for x in m], [("Л", AS_LIST, 0)])
-        d.sheet_list.item(0).setCheckState(Qt.Unchecked)
-        self.assertFalse(d.buttons.button(d.buttons.StandardButton.Ok).isEnabled())
-
+        ok = d.buttons.button(d.buttons.StandardButton.Ok)
+        self.assertFalse(ok.isEnabled())                            # ничего не подставлено
+        d.edits["inn"].setText("a2-a5")
+        d.edits["sums"].setText("c, d")
+        self.assertTrue(ok.isEnabled())
+        m = d.mapping()[0]
+        self.assertEqual((m["kind"], m["head"], m["last"], m["cols"]["inn"], m["sums"]), (AS_LIST, 0, 5, 0, [2, 3]))
+        d.edits["inn"].setText("a5-b9")
+        self.assertFalse(ok.isEnabled())
+        self.assertIn("одной колонке", d.warn.text())
 
 if __name__ == "__main__":
     unittest.main()

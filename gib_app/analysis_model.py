@@ -95,6 +95,7 @@ class AnalysisData:
     mode: str = "files"                              # files / quarters / months
     months: dict = field(default_factory=dict)       # реестры: (год, месяц) → [сумма, платежей] — для графика
     notes: list = field(default_factory=list)        # скрытые листы и строки (excel_sheet_info.hidden_note)
+    checks: list = field(default_factory=list)       # сверка с «Итого» в файле (excel_sheet_info.total_check)
 
     @property
     def roles(self) -> list:

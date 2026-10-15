@@ -55,6 +55,7 @@ class Registry:
         self.hidden = []            # (файл, Payment) — платёж в скрытой строке
         self.bad_amounts = []       # (файл, Payment) — в столбце суммы не число (посчитано как 0)
         self.notes = []             # скрытые листы и строки (сводка)
+        self.checks = []            # сверка с «Итого» в файле (excel_sheet_info.total_check) — для всех файлов
         self.order = []             # файлы по времени (заполняется в finish)
         # кто кому платит: (ИНН плательщика, ИНН получателя, файл) / (…, (год, месяц)) → [сумма, платежей]
         self.pairs_f = defaultdict(lambda: [0.0, 0])

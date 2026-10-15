@@ -4,9 +4,8 @@ import re
 
 from compare_finder import key_in_text, match_key
 from compare_models import SideList
-from constants import SUM_ROW_LABELS
 from registry_columns import guess_header
-from utils import cell_val, find_col, norm_text
+from utils import cell_val, find_col, is_total_label, norm_text
 
 AS_LIST = "list"        # пользователь сказал: читать файл как обычный список организаций
 NAME_KEY = "≈"          # ключ организации без ИНН: «≈» + название без кавычек и форм
@@ -57,7 +56,7 @@ def _key(v) -> str | None:
     if isinstance(v, float) and v.is_integer():
         v = int(v)
     s = str(v).strip()
-    if not s or norm_text(s).startswith(SUM_ROW_LABELS):
+    if not s or is_total_label(s):
         return None
     digits = key_in_text(s) or re.sub(r"\s+", "", s)
     return digits if digits.isdigit() else s
@@ -90,7 +89,7 @@ def _row_keys(data, r: int, s) -> list:
     for i, v in enumerate(parts):
         if s.by_name:
             text = str(v or "").strip()
-            if text and not norm_text(text).startswith(SUM_ROW_LABELS) and org_key(text):
+            if text and not is_total_label(text) and org_key(text):
                 out.append((NAME_KEY + org_key(text), "", text))
         elif (inn := _key(v)):
             out.append((match_key(inn) or inn, inn, names[i] if len(names) == len(parts) > 1 else None))
@@ -109,7 +108,8 @@ def mapped_table(data: list, mapping: dict) -> SideList:
     s = SideList(c["name"] if by_name else c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols,
                  header=header, fixed_money=True, by_name=by_name, separate=bool(mapping.get("separate")),
                  repeats=bool(mapping.get("repeats")))
-    for r in range(header + 1, len(data) + 1):
+    last = min(len(data), mapping.get("last") or len(data))       # «C5-C300» — дальше 300-й строки не читать
+    for r in range(header + 1, last + 1):
         keys = _row_keys(data, r, s)
         for k, inn, name in keys:
             s.all_rows.setdefault(k, []).append(r)

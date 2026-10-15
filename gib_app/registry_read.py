@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from file_format import real_path
 from registry_columns import HEAD_ROWS, guess_header, registry_columns, two_row_columns
-from utils import norm_text, not_a_number, to_number
+from utils import is_total_label, norm_text, not_a_number, to_number
 
 
 @dataclass
@@ -63,6 +63,8 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
     payer, rec = _text(get("payer")), _text(get("rec"))
     if not (pinn or rinn or payer or rec):
         return None
+    if any(is_total_label(v) for v in (pinn, rinn, payer, rec, _text(get("doc"))) if v):
+        return None                     # строка «Итого / Всего / Ҷамъ» — не платёж
     money = cols.get("amount")         # список — несколько столбцов, выбранных пользователем (суммируются)
     cells = [values[c] for c in (money if isinstance(money, list) else [money]) if c is not None and c < len(values)]
     amount = sum(to_number(v) or 0.0 for v in cells)
@@ -98,6 +100,10 @@ def read_registry(path: str, mapping: dict | None = None):
             continue
         sheet = wb.get_sheet_by_name(name)
         rows = sheet.iter_rows()
+        last = (mapping or {}).get("last")      # «C5-C300» — дальше 300-й строки не читать
+        if mapping and mapping["head"] < 0:     # данные с первой строки листа, шапки нет
+            sheets.append((name, sheet.height, _payments(rows, mapping["cols"], 1, payment_filter(mapping), last)))
+            continue
         head = []
         for i, values in enumerate(rows):
             head.append(values)
@@ -106,7 +112,7 @@ def read_registry(path: str, mapping: dict | None = None):
             else:
                 cols = registry_columns(values) or (i > 0 and two_row_columns(head[-2], values))
             if cols:
-                sheets.append((name, sheet.height, _payments(rows, cols, i + 2, payment_filter(mapping))))
+                sheets.append((name, sheet.height, _payments(rows, cols, i + 2, payment_filter(mapping), last)))
                 break
             if i >= HEAD_ROWS and not mapping:      # строку заголовков указал пользователь — ищем её дальше
                 break
@@ -118,8 +124,10 @@ def read_registry(path: str, mapping: dict | None = None):
     return sheets, (None if sheets else guess)
 
 
-def _payments(rows, cols, first_row, keep=None):
+def _payments(rows, cols, first_row, keep=None, last=None):
     for i, values in enumerate(rows):
+        if last and first_row + i > last:
+            return
         p = to_payment(first_row + i, values, cols)
         if p and (keep is None or keep(p)):
             yield p

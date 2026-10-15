@@ -6,9 +6,8 @@ import re
 from dataclasses import dataclass, field
 
 from compare_finder import find_tables, key_in_text, name_at as _name_at
-from constants import SUM_ROW_LABELS as TOTAL_LABELS
 from registry_stats import INN_DIGITS
-from utils import cell_val as _cell, norm_text
+from utils import cell_val as _cell, is_total_label, norm_text
 
 
 @dataclass
@@ -81,7 +80,7 @@ def check_inn(sheets):
             for r in range(header + 1, s.last_row + 1):
                 row = data[r - 1] if r <= len(data) else []
                 block_vals = [row[c - 1] for c in s.block if c - 1 < len(row)]
-                if any(norm_text(v).startswith(TOTAL_LABELS) for v in block_vals if isinstance(v, str)):
+                if any(is_total_label(v) for v in block_vals if isinstance(v, str)):
                     continue
                 raw_v = _cell(data, r, s.key_col)
                 if s.in_text:

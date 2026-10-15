@@ -7,12 +7,11 @@ from openpyxl.utils import get_column_letter
 from analysis_list_map import FIND, mapped_table, side_guess, transpose
 from analysis_model import BAD_INN, BY_NAME, DUP_ROW, HIDDEN, ORG, SHARED, Entity, Part
 from analysis_registry import inn_problem
-from constants import SUM_ROW_LABELS
 from excel_sheet_info import hidden_note, sheet_scan
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
 from registry_stats import INN_DIGITS, inn_ok
-from utils import cell_val, norm_text, not_a_number, to_num_safe
+from utils import cell_val, is_total_label, norm_text, not_a_number, to_num_safe
 
 # деньги в двух столбцах (ушло / пришло) — считаются оба
 TWO_SIDED = ("дебет", "кредит", "debit", "credit", "приход", "расход")
@@ -60,6 +59,7 @@ class ListCollector:
         self.details = {"dup_row": [], "bad_list": [], "hidden_list": [], "bad_num_list": []}      # группы листов ошибок в таблицах
         self.bad = set()        # ИНН (как в файле) с ошибкой
         self.notes = []         # скрытые листы и строки (сводка)
+        self.last_total = 0.0   # сумма последней прочитанной таблицы (каждая строка один раз) — для сверки с «Итого»
 
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
@@ -74,6 +74,8 @@ class ListCollector:
             self.notes += [note] if note else []
             if note and not note["listed"]:
                 s.hidden_rows = set()           # скрыта почти вся таблица — только сводка
+            rows = {r for rr in s.all_rows.values() for r in rr}
+            self.last_total = sum(to_num_safe(cell_val(data, r, c)) for r in rows for c in money_cols(data, s))
             if s.all_rows:
                 self._add_side(fname, mapping["sheet"], data, s, 1)
                 self._mapped_errors(fname, mapping["sheet"], data, s)
@@ -138,7 +140,7 @@ class ListCollector:
             end += 1
         for r in range(s.header + 1, end + 1):                   # есть название, а ИНН нет (кроме строк итогов)
             text = str(cell_val(data, r, s.name_col) or "").strip()
-            if r not in with_inn and len(text) > 3 and not norm_text(text).startswith(SUM_ROW_LABELS):
+            if r not in with_inn and len(text) > 3 and not is_total_label(text):
                 details["bad_list"].append([fname, where, r, "(пусто)", text, "ИНН не указан", ""])
 
     def _add_errors(self, fname, sheets):
