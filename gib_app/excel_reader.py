@@ -6,6 +6,7 @@ import openpyxl
 from openpyxl.utils import column_index_from_string, get_column_letter
 
 from constants import XL_OPENXML
+from file_format import real_path
 
 CELL_RE = re.compile(r"^\s*([A-Za-z]{1,3})\s*(\d+)\s*$")
 GIB_HEADER_RE = re.compile(r"^\s*(\d{3,4})(?!\d)")
@@ -56,7 +57,8 @@ class Book:
 
     def __init__(self, path: str):
         self.path = path
-        read_path = _xls_to_xlsx(path) if path.lower().endswith(".xls") else path
+        read_path = real_path(path)                 # «.xls», внутри которого .xlsx, — читается как .xlsx
+        read_path = _xls_to_xlsx(read_path) if read_path.lower().endswith(".xls") else read_path
         wb = openpyxl.load_workbook(read_path, read_only=True, data_only=True)
         self.sheets: dict[str, list[list]] = {}
         for ws in wb.worksheets:

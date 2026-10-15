@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from file_format import real_path
 from registry_columns import HEAD_ROWS, guess_header, registry_columns, two_row_columns
 from utils import to_number
 
@@ -77,7 +78,7 @@ def read_registry(path: str, mapping: dict | None = None):
     {"sheet", "head", "cols"}."""
     from python_calamine import CalamineWorkbook
 
-    wb = CalamineWorkbook.from_path(path)
+    wb = CalamineWorkbook.from_path(real_path(path))
     sheets, guess = [], None
     for name in wb.sheet_names:
         if mapping and name != mapping["sheet"]:

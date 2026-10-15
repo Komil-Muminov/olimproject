@@ -107,7 +107,8 @@ def mapped_table(data: list, mapping: dict) -> SideList:
     cols = sorted(v for v in c.values() if v)
     by_name = bool(mapping.get("by_name"))
     s = SideList(c["name"] if by_name else c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols,
-                 header=header, fixed_money=True, by_name=by_name, separate=bool(mapping.get("separate")))
+                 header=header, fixed_money=True, by_name=by_name, separate=bool(mapping.get("separate")),
+                 repeats=bool(mapping.get("repeats")))
     for r in range(header + 1, len(data) + 1):
         keys = _row_keys(data, r, s)
         for k, inn, name in keys:

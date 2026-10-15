@@ -4,9 +4,11 @@
 from analysis_list_map import AS_LIST, _find
 from analysis_lists import money_cols
 from compare_finder import find_tables
+from file_format import real_path
 from registry_columns import guess_header, registry_columns, two_row_columns
 
 REGISTRY = "registry"
+REPEAT_SHARE = 0.2          # столько ИНН встречаются в нескольких строках — похоже на операции (выписку)
 PREVIEW_ROWS = 300          # столько первых строк листа показывается в окне
 FULL_READ_LIMIT = 200_000   # таблицы больше — без поиска ИНН по содержимому (долго)
 
@@ -47,14 +49,15 @@ def _list_guess(wb, name: str) -> dict | None:
     s = found[1][0]
     return {"sheet": name, "kind": AS_LIST, "head": (sheet.start or (0, 0))[0] + s.header - 1,
             "cols": {"inn": s.key_col - 1, "name": s.name_col - 1 if s.name_col else None},
-            "sums": [c - 1 for c in money_cols(data, s)]}
+            "sums": [c - 1 for c in money_cols(data, s)],
+            "repeats": sum(len(r) > 1 for r in s.all_rows.values()) > REPEAT_SHARE * len(s.all_rows)}
 
 
 def propose(path: str) -> dict:
     """→ {"path", "sheets": {лист: {"rows", "row0", "col0", "height"}}, "guess": {...}} (пустые листы пропущены)."""
     from python_calamine import CalamineWorkbook
 
-    wb = CalamineWorkbook.from_path(path)
+    wb = CalamineWorkbook.from_path(real_path(path))
     sheets = {}
     for name in wb.sheet_names:
         sheet = wb.get_sheet_by_name(name)

@@ -61,6 +61,28 @@ class AuditFixesTest(unittest.TestCase):
         self.assertEqual([p.label for p in data.parts], ["«Л»: План", "«Л»: Факт"])
         self.assertEqual({e.name: e.sums for e in data.entities}, {"А": [1000.0, 900.0], "Б": [500.0, 600.0]})
 
+    def test_xlsx_with_xls_extension(self):
+        """«Вписка.xls», внутри которой .xlsx: читается (формат — по содержимому)."""
+        import shutil
+        from analysis_propose import propose
+        src = _save([["ИНН", "Название"]] + [[inn, f"Орг {i}"] for i, inn in enumerate(INNS)])
+        path = os.path.join(tempfile.mkdtemp(), "Вписка.xls")
+        shutil.copyfile(src, path)
+        self.assertEqual(propose(path)["guess"]["cols"], {"inn": 0, "name": 1})
+        _, lists, _ = scan_files([path], {path: _list(0, {"inn": 0, "name": 1}, [])})["raw"]
+        self.assertEqual(len(lists.entities(0, 1)), 3)
+
+    def test_statement_repeats_not_errors(self):
+        """Выписка: контрагент в нескольких строках — не «повтор ИНН»; галочка ставится сама."""
+        from analysis_propose import propose
+        rows = [["Дата", "Контрагент", "ИНН", "Приход"]] + [["01.04.2024", f"Орг {k % 4}", f"{100000000 + (k % 4) * 7919:09d}", 10]
+                                                         for k in range(12)]
+        path = _save(rows)
+        self.assertTrue(propose(path)["guess"]["repeats"])
+        _, lists, _ = scan_files([path], {path: _list(0, {"inn": 2, "name": 1}, [3], repeats=True)})["raw"]
+        ents = lists.entities(0, 1)
+        self.assertEqual((lists.details["dup_row"], {e.sums[0] for e in ents}, any(e.flags for e in ents)), ([], {30.0}, False))
+
 
 if __name__ == "__main__":
     unittest.main()

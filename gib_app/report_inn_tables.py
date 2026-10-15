@@ -6,6 +6,7 @@ from datetime import date, datetime
 from openpyxl.utils import get_column_letter
 
 from compare_finder import find_tables, key_in_text, key_of, match_key
+from file_format import real_path
 
 DATE_FMT = "%d.%m.%Y"
 
@@ -61,7 +62,7 @@ def table_hits(path: str, inn: str) -> list:
     from python_calamine import CalamineWorkbook
 
     target, out = match_key(inn), []
-    wb = CalamineWorkbook.from_path(path)
+    wb = CalamineWorkbook.from_path(real_path(path))
     for name in wb.sheet_names:
         sheet = wb.get_sheet_by_name(name)
         row0, col0 = sheet.start or (0, 0)

@@ -22,7 +22,7 @@ class FileDialog(QDialog):
         super().__init__(parent)
         self.sheets, g = prop["sheets"], prop["guess"]
         self.names = list(self.sheets)
-        self.state = {g["sheet"]: {key: g[key] for key in ("head", "kind", "cols", "sums")}}
+        self.state = {g["sheet"]: {key: g.get(key) for key in ("head", "kind", "cols", "sums", "repeats")}}
         self.default_kind, self.cur = g["kind"], None
         self.setWindowTitle(f"Как читать файл ({k} из {n})")
         self.setMinimumWidth(680)
@@ -63,6 +63,8 @@ class FileDialog(QDialog):
         self.by_name = QCheckBox("ИНН нет — искать по названию (менее надёжно)")
         self.by_name.toggled.connect(self._check)
         self.panels[AS_LIST].layout().addRow("", self.by_name)
+        self.repeats = QCheckBox("Одна организация может быть в нескольких строках (операции, выписка) — не ошибка")
+        self.panels[AS_LIST].layout().addRow("", self.repeats)
         lay.addWidget(QLabel("Какие столбцы суммировать (можно несколько, например Дебет и Кредит):"))
         self.sums = checklist(160)
         self.sums.itemChanged.connect(self._check)
@@ -108,6 +110,7 @@ class FileDialog(QDialog):
         self.flip.setChecked(bool(st.get("transpose")))
         self.by_name.setChecked(bool(st.get("by_name")))
         self.separate.setChecked(bool(st.get("separate")))
+        self.repeats.setChecked(bool(st.get("repeats")))
         self.separate.setVisible(st["kind"] == AS_LIST)         # реестр — суммы всегда складываются
         self.kind.buttons()[0].setEnabled(not self.flip.isChecked())
         sh = self._sh()
@@ -155,6 +158,7 @@ class FileDialog(QDialog):
         return {"head": self.head.value() - sh["row0"] - 1, "kind": kind, "sums": self._sum_cols(),
                 "transpose": self.flip.isChecked(), "by_name": kind == AS_LIST and self.by_name.isChecked(),
                 "separate": kind == AS_LIST and self.separate.isChecked(),
+                "repeats": kind == AS_LIST and self.repeats.isChecked(),
                 "cols": {key: (b.currentIndex() - 1 if b.currentIndex() > 0 else None)
                          for (k, key), b in self.boxes.items() if k == kind}}
 

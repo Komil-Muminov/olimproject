@@ -60,7 +60,7 @@ def to_mapping(name: str, sheet: dict, st: dict) -> dict:
     sheet — лист так, как его видит окно (sheet_view): для «перевёрнутой» таблицы сдвиги уже свои."""
     m = {"sheet": name, "head": st["head"], "row0": sheet["row0"], "col0": sheet["col0"], "kind": st["kind"],
          "cols": dict(st["cols"]), "transpose": bool(st.get("transpose")), "by_name": bool(st.get("by_name")),
-         "separate": bool(st.get("separate"))}
+         "separate": bool(st.get("separate")), "repeats": bool(st.get("repeats"))}
     if st["kind"] == REGISTRY:
         m["cols"]["amount"] = list(st["sums"])
     else:

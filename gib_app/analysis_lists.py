@@ -101,14 +101,14 @@ class ListCollector:
             o["cols"][i] = [round(sum(to_num_safe(cell_val(data, r, c)) for r in rows), 2) for c in metric]
             o["sums"][i] = round(sum(o["cols"][i]), 2)
             o["counts"][i] = len(rows)
-            o["dup"] = o["dup"] or len(rows) > 1
+            o["dup"] = o["dup"] or (len(rows) > 1 and not s.repeats)
 
     def _mapped_errors(self, fname, sheet, data, s):
         """Столбцы указал пользователь: повтор ИНН, ИНН не из 9 цифр и строки без ИНН — те же правила, что везде."""
         where, details = f"«{sheet}»", self.details
         name = lambda k, r: s.row_names.get((k, r)) or name_at(data, r, s)
         for k, rows in s.all_rows.items():
-            if len(rows) > 1:
+            if len(rows) > 1 and not s.repeats:          # в выписке контрагент повторяется — это не ошибка
                 details["dup_row"].append([fname, where, ", ".join(map(str, rows)), s.keys[k], name(k, rows[0]),
                                            f"{len(rows)} раза"])
             inn = s.keys[k]
