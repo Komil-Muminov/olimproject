@@ -98,9 +98,7 @@ def export_payments(win):
         return
     search = lambda: _run(win, write_inn_payments, inn_report_path(inn), win.an_paths, inn, win.an_mappings,
                           done=lambda res: _payments_done(win, res))
-    if all(isinstance(win.an_mappings.get(p), list) for p in win.an_paths):
-        return search()                     # столбцы уже выбраны (в «Анализе» по этим файлам)
-    _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, search))
+    _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, search))   # каждый раз
 
 
 def _payments_done(win, res):
