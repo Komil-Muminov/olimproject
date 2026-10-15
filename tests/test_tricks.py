@@ -44,6 +44,8 @@ class TricksTest(unittest.TestCase):
         self.assertEqual([r[4] for r in d["spaces_list"]], [f"␣{INNS[1]}"])
         self.assertEqual([r[2:4] for r in d["white_text"]], [["C5", "99"]])
         self.assertEqual([(r[0], r[2], r[3]) for r in d["inn_names"]], [(INNS[0], 2, "ООО «Альфа» | альфа ооо")])
+        from analysis_model import DIFF_NAMES
+        self.assertEqual({e.inn for e in data.entities if DIFF_NAMES in e.flags}, {INNS[0]})   # подсветка в «Анализе»
 
 
 if __name__ == "__main__":

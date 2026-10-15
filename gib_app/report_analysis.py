@@ -6,11 +6,12 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.comments import Comment
+from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
 from analysis_model import FLAG_HINTS, FLAGS, change, status, status_hints
-from report_colors import COLORS, ERR_COLOR, add_row_colors
+from report_colors import COLORS, ERR_COLOR, add_row_colors, cf_fill
 from report_errors import write_errors_sheets
 from report_months import write_months_sheet
 from report_all_by_inn import write_all_by_inn_sheet
@@ -23,6 +24,14 @@ from report_styles import BORDER, CENTER, NUM, fill_color
 HEAD_ROW = 5
 CHANGE_HEAD = ["Изменение", "Изменение, %"]
 AUTHOR = "Распределение по ГИБ"
+
+
+def _name_cell(ws, e):
+    """Название; если у ИНН несколько названий — при наведении все варианты (первые 20)."""
+    if len(e.variants) < 2:
+        return e.name
+    more = f"\n…и ещё {len(e.variants) - 20}" if len(e.variants) > 20 else ""
+    return _cell(ws, e.name, "Как записано в файлах:\n" + "\n".join(f"• {v}" for v in e.variants[:20]) + more)
 
 
 def _cell(ws, v, hint=None, **style):
@@ -63,7 +72,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     for k, (e, st) in enumerate(rows, 1):
         sums = [(_cell(ws, e.sums[i], number_format=NUM) if p.has_sums else "есть") if e.counts[i] else None
                 for i, p in enumerate(parts)]
-        ws.append([k, e.inn, e.name] + ([e.role] if with_role else []) + sums
+        ws.append([k, e.inn, _name_cell(ws, e)] + ([e.role] if with_role else []) + sums
                   + [_cell(ws, e.total, number_format=NUM)] + (_change_cells(ws, e, parts, pair) if pair else [])
                   + [st, ", ".join(f for f in FLAGS if f in e.flags),
                      e.names if e.names > 1 else None])
@@ -73,6 +82,10 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{get_column_letter(n)}{last}"
         add_row_colors(ws, HEAD_ROW + 1, last, n, st_col, err_col)
+        names_col = get_column_letter(n)        # один ИНН — разные названия: название и «Названий» оранжевые
+        for rng in (f"C{HEAD_ROW + 1}:C{last}", f"{names_col}{HEAD_ROW + 1}:{names_col}{last}"):
+            ws.conditional_formatting.add(rng, FormulaRule(formula=[f"${names_col}{HEAD_ROW + 1}>1"],
+                                                           fill=cf_fill(ERR_COLOR), font=Font(bold=True)))
     progress(68, "Пишу лист «Сверка со списком»…")
     recon = write_reconcile_sheet(wb, data)
     progress(69, "Пишу лист «Все файлы по ИНН»…")

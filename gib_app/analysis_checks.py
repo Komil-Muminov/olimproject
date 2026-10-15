@@ -1,7 +1,7 @@
 """Проверки по всей таблице организаций: одно название — разные ИНН; один ИНН — разные названия."""
 from collections import defaultdict
 
-from analysis_model import BAD_INN, SAME_NAME
+from analysis_model import BAD_INN, DIFF_NAMES, SAME_NAME
 from inn_check import _name_key
 
 MIN_NAME = 4        # короче — слишком общее название, совпадения ничего не значат
@@ -42,6 +42,8 @@ def inn_names(entities: list) -> list:
     больше всего вариантов — сверху. Неправильные ИНН («0») не в счёт."""
     found = [e for e in entities if len(e.variants) > 1 and BAD_INN not in e.flags]
     found.sort(key=lambda e: (-len(e.variants), -e.total))
+    for e in found:
+        e.flags.add(DIFF_NAMES)                 # подсветка на листе «Анализ»
     more = lambda e: f" | …и ещё {len(e.variants) - SHOW_NAMES}" if len(e.variants) > SHOW_NAMES else ""
     return [[e.inn, e.role, len(e.variants), " | ".join(e.variants[:SHOW_NAMES]) + more(e), e.total, sum(e.counts)]
             for e in found]

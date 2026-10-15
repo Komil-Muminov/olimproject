@@ -161,7 +161,7 @@ class TestRegistryStats(unittest.TestCase):
         err = wb["Двойной платёж"]
         self.assertEqual(err.cell(1, 1).value, "ДВОЙНОЙ ПЛАТЁЖ — 1")                # каждый вид — свой лист
         rules = sum(len(cf.rules) for cf in ws.conditional_formatting)
-        self.assertEqual(rules, 6)                          # 5 цветов строк + оранжевые ошибки
+        self.assertEqual(rules, 8)          # 5 цветов строк + оранжевые ошибки + разные названия (название, «Названий»)
 
     def test_change_and_compare_pair(self):
         from analysis_model import change
