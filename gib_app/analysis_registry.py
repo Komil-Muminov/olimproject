@@ -2,7 +2,7 @@
 import os
 import re
 
-from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, RECIPIENT, Entity, Pair, Part
+from analysis_model import BAD_INN, DUP_PAY, HIDDEN, ODD_DATE, PAYER, RECIPIENT, Entity, Pair, Part
 from analysis_periods import pair_totals, party_totals
 from inn_check import _name_key
 from registry_stats import INN_DIGITS, inn_ok
@@ -41,7 +41,8 @@ def _sides(p):
 def registry_errors(reg) -> tuple:
     """→ ({группа ошибок: [строки]} для листов ошибок, {флаг: {(роль, ИНН)}} — у кого какая)."""
     fname = lambda f: os.path.basename(reg.files[f].path)
-    groups, marked = {"dup": [], "bad_pay": [], "odd": []}, {DUP_PAY: set(), ODD_DATE: set()}
+    groups, marked = {"dup": [], "bad_pay": [], "odd": [], "hidden_pay": []}, {DUP_PAY: set(), ODD_DATE: set(),
+                                                                              HIDDEN: set()}
     for n, (f, p, (f0, row0)) in enumerate(reg.dups, 1):
         marked[DUP_PAY].update(_sides(p))
         # пара строк: где платёж записан впервые и где повтор (данные те же — отличается только строка)
@@ -56,6 +57,9 @@ def registry_errors(reg) -> tuple:
         marked[ODD_DATE].update(_sides(p))
         groups["odd"].append([fname(f), p.row, p.doc, p.date, p.amount, reg.files[f].label, p.payer, p.payer_inn,
                               p.rec, p.rec_inn])
+    for f, p in reg.hidden:
+        marked[HIDDEN].update(_sides(p))
+        groups["hidden_pay"].append([fname(f), p.row, p.doc, p.date, p.amount, p.payer, p.payer_inn, p.rec, p.rec_inn])
     return groups, marked
 
 
@@ -67,7 +71,7 @@ def registry_entities(reg, marked: dict, slots: list) -> list:
             e = Entity(inn, party.name, role, sums, counts, names=max(1, len({_name_key(n) for n in party.names})))
             if not inn_ok(inn):
                 e.flags.add(BAD_INN)
-            e.flags.update(flag for flag in (DUP_PAY, ODD_DATE) if (role, inn) in marked[flag])
+            e.flags.update(flag for flag in (DUP_PAY, ODD_DATE, HIDDEN) if (role, inn) in marked[flag])
             out.append(e)
     return out
 

@@ -4,6 +4,7 @@
 from analysis_list_map import AS_LIST, _find
 from analysis_lists import money_cols
 from compare_finder import find_tables
+from excel_sheet_info import sheet_scan, workbook_sheets
 from file_format import real_path
 from registry_columns import guess_header, registry_columns, two_row_columns
 
@@ -57,14 +58,17 @@ def propose(path: str) -> dict:
     """→ {"path", "sheets": {лист: {"rows", "row0", "col0", "height"}}, "guess": {...}} (пустые листы пропущены)."""
     from python_calamine import CalamineWorkbook
 
-    wb = CalamineWorkbook.from_path(real_path(path))
+    wb, info = CalamineWorkbook.from_path(real_path(path)), workbook_sheets(path)
     sheets = {}
     for name in wb.sheet_names:
         sheet = wb.get_sheet_by_name(name)
         rows = _sheet_rows(sheet)
         if any(v != "" for r in rows for v in r):
             # iter_rows: строки — с первой строки листа (row0 = 0), столбцы — с первого заполненного (col0)
-            sheets[name] = {"rows": rows, "row0": 0, "col0": (sheet.start or (0, 0))[1], "height": sheet.height}
+            formulas = sheet_scan(path, name, formulas=True)["formulas"] if sheet.height <= FULL_READ_LIMIT else {}
+            sheets[name] = {"rows": rows, "row0": 0, "col0": (sheet.start or (0, 0))[1], "height": sheet.height,
+                            "hidden": info.get(name, {}).get("hidden", False),
+                            "formulas": {c - (sheet.start or (0, 0))[1]: n for c, n in formulas.items()}}
     guess = None
     for name, sh in sheets.items():             # реестр — по заголовкам
         g = auto_columns(sh["rows"], REGISTRY)

@@ -29,8 +29,8 @@ def status_hints(parts: list, pair=None) -> dict:
 
 DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW = "двойной платёж", "неправильный ИНН", "странная дата", "повтор ИНН"
 SAME_NAME = "одно название — разные ИНН"
-SHARED, BY_NAME = "общая строка", "по названию"         # пометки (не ошибки): см. FLAG_HINTS
-FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW, SAME_NAME, SHARED, BY_NAME)
+SHARED, BY_NAME, HIDDEN = "общая строка", "по названию", "скрытая строка"   # пометки (не ошибки): см. FLAG_HINTS
+FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW, SAME_NAME, SHARED, BY_NAME, HIDDEN)
 FLAG_HINTS = {
     DUP_PAY: "Один и тот же платёж записан два раза или больше: одинаковые №, дата, ИНН плательщика, "
              "ИНН получателя и сумма.",
@@ -41,6 +41,7 @@ FLAG_HINTS = {
     SAME_NAME: "У организации с таким же названием есть другой ИНН — возможно, ошибка в ИНН (или это филиалы).",
     SHARED: "В строке списка было несколько организаций («ООО А, ООО Б») — сумма строки записана каждой целиком.",
     BY_NAME: "В списке нет ИНН — организация сопоставлена по названию (менее надёжно: проверьте).",
+    HIDDEN: "Есть в скрытой строке файла (в Excel её не видно) — проверьте, почему строку скрыли.",
 }
 
 PAYER, RECIPIENT, ORG = "плательщик", "получатель", "организация"
@@ -92,6 +93,8 @@ class AnalysisData:
     pairs: list = field(default_factory=list)        # [Pair] — только для реестров
     compare: tuple = None                            # (было, стало) — номера сравниваемых частей
     mode: str = "files"                              # files / quarters / months
+    months: dict = field(default_factory=dict)       # реестры: (год, месяц) → [сумма, платежей] — для графика
+    notes: list = field(default_factory=list)        # скрытые листы и строки (excel_sheet_info.hidden_note)
 
     @property
     def roles(self) -> list:

@@ -10,17 +10,21 @@ from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
 from excel_com import WriteError
 from excel_reader import Book
+from excel_sheet_info import hidden_note, sheet_scan
 from registry_read import read_registry
 from registry_stats import Registry
 
 ASK_SCORE = 2           # столько узнанных заголовков реестра — спросить, не реестр ли это
 
 
-def _add_registry(reg, path, sheets, tick):
+def _add_registry(reg, path, sheets, tick, hidden=frozenset()):
+    """hidden — скрытые строки листа (если их немного): такие платежи попадут на лист «Скрытые строки»."""
     for sheet, total, rows in sheets:
         f = reg.start_file(path, sheet)
         for i, p in enumerate(rows):
             reg.add(f, p)
+            if hidden and p.row in hidden:
+                reg.hidden.append((f, p))
             if i % 50000 == 0:
                 tick(i, total)
 
@@ -33,8 +37,11 @@ def _read_chosen(path, sheet_maps: list, reg, lists, tick):
             data = data or Book(path).sheets
             found += lists.add_file(path, data, m)
         else:
+            hidden = sheet_scan(path, m["sheet"])["hidden_rows"]
+            note = hidden_note(path, m["sheet"], hidden)
+            reg.notes += [note] if note else []
             sheets, _ = read_registry(path, m)
-            _add_registry(reg, path, sheets, tick)
+            _add_registry(reg, path, sheets, tick, hidden if note and note["listed"] else frozenset())
             found += len(sheets)
     if not found:
         raise WriteError(f"В «{os.path.basename(path)}» в выбранных столбцах ИНН нет значений.")
@@ -126,4 +133,6 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
         e.cols = [e.cols[i] for i in order] if e.cols else [None] * n
     details = {**details, **lists.details, "same_name": mark_same_names(ents)}
     compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
-    return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode)
+    months = dict(sorted(reg.months.items())) if reg.files else {}
+    return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode, months,
+                        reg.notes + lists.notes)

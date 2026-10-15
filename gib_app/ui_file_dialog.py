@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from analysis_list_map import AS_LIST
 from analysis_propose import REGISTRY, auto_columns
-from ui_file_columns import FIELDS, column_names, problem, sheet_view, to_mapping
+from ui_file_columns import FIELDS, column_names, formula_warning, problem, sheet_view, to_mapping
 from ui_file_widgets import check_item, checked_rows, checklist, dialog_buttons
 
 NONE = "— нет —"
@@ -31,7 +31,8 @@ class FileDialog(QDialog):
         lay.addWidget(QLabel("Листы — галочка: читать лист. Нажмите на лист, чтобы настроить его:"))
         self.sheet_list = checklist(110)
         for name in self.names:
-            self.sheet_list.addItem(check_item(name, name == g["sheet"]))
+            hidden = "   (скрытый лист)" if self.sheets[name].get("hidden") else ""
+            self.sheet_list.addItem(check_item(name + hidden, name == g["sheet"]))
         self.sheet_list.itemChanged.connect(self._check)
         lay.addWidget(self.sheet_list)
         form = self.form = QFormLayout()
@@ -181,7 +182,8 @@ class FileDialog(QDialog):
         issues = [f"«{n}»: {problem(self._st(n))}" for n in chosen]
         issues = [x for x in issues if not x.endswith(": ")] or ([] if chosen else ["отметьте хотя бы один лист"])
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(not issues)
-        self.warn.setText("\n".join(issues))
+        notes = [w for n in chosen if (w := formula_warning(n, self.sheets[n], self._st(n)))]   # не мешает «Готово»
+        self.warn.setText("\n".join(issues + notes))
 
     def mapping(self) -> list:
         """Для scan_files: по одной настройке на каждый отмеченный лист."""

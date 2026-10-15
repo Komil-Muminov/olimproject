@@ -52,22 +52,45 @@ def _xls_to_xlsx(path: str) -> str:
     return out
 
 
+def _calamine_sheets(path: str) -> dict:
+    """Старый .xls — быстро, без Excel: значения листов с первой ячейки (A1), как у openpyxl."""
+    from python_calamine import CalamineWorkbook
+
+    wb, out = CalamineWorkbook.from_path(path), {}
+    for name in wb.sheet_names:
+        sheet = wb.get_sheet_by_name(name)
+        row0, col0 = sheet.start or (0, 0)
+        rows = [[None] * col0 + [None if v == "" else v for v in r] for r in sheet.to_python()]
+        out[name] = [[] for _ in range(row0)] + rows
+    return out
+
+
 class Book:
     """Значения всех листов книги для показа в интерфейсе."""
 
     def __init__(self, path: str):
         self.path = path
         read_path = real_path(path)                 # «.xls», внутри которого .xlsx, — читается как .xlsx
-        read_path = _xls_to_xlsx(read_path) if read_path.lower().endswith(".xls") else read_path
-        wb = openpyxl.load_workbook(read_path, read_only=True, data_only=True)
         self.sheets: dict[str, list[list]] = {}
-        for ws in wb.worksheets:
-            rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        if read_path.lower().endswith(".xls"):
+            try:
+                raw = _calamine_sheets(read_path)
+            except Exception:                       # не прочиталось напрямую — через Excel (медленно)
+                raw = self._openpyxl(_xls_to_xlsx(read_path))
+        else:
+            raw = self._openpyxl(read_path)
+        for name, rows in raw.items():
             width = max((len(r) for r in rows), default=0)
             while rows and all(v is None for v in rows[-1]):
                 rows.pop()
-            self.sheets[ws.title] = [r + [None] * (width - len(r)) for r in rows]
+            self.sheets[name] = [r + [None] * (width - len(r)) for r in rows]
+
+    @staticmethod
+    def _openpyxl(path: str) -> dict:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        out = {ws.title: [list(r) for r in ws.iter_rows(values_only=True)] for ws in wb.worksheets}
         wb.close()
+        return out
 
     @staticmethod
     def value(data, row: int, col: int):

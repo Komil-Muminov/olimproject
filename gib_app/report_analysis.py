@@ -12,7 +12,9 @@ from openpyxl.utils import get_column_letter
 from analysis_model import FLAG_HINTS, FLAGS, change, status, status_hints
 from report_colors import COLORS, ERR_COLOR, add_row_colors
 from report_errors import write_errors_sheets
+from report_months import write_months_sheet
 from report_reconcile import write_reconcile_sheet
+from report_settings import write_settings_sheet
 from report_pairs import write_pairs_sheet
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
@@ -31,7 +33,7 @@ def _cell(ws, v, hint=None, **style):
     return c
 
 
-def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
+def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None) -> dict:
     parts, with_role = data.parts, len(data.roles) > 1
     pair = data.compare
     rows = sorted(((e, status(e, parts, pair)) for e in data.entities), key=lambda r: -r[0].total)
@@ -74,8 +76,10 @@ def write_analysis_report(path, data, progress=lambda p, t: None) -> dict:
     recon = write_reconcile_sheet(wb, data)
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)
+    write_months_sheet(wb, data)
     progress(80, "Пишу листы с ошибками…")
     write_errors_sheets(wb, data.details)
+    write_settings_sheet(wb, data, mappings)
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),

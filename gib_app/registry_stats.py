@@ -52,10 +52,13 @@ class Registry:
         self.dups = []              # (файл, Payment, (файл, строка) первого такого же)
         self.bad_inn = []           # (файл, Payment, «плательщик»/«получатель», ИНН)
         self.odd_dates = []         # (файл, Payment) — заполняется в finish()
+        self.hidden = []            # (файл, Payment) — платёж в скрытой строке
+        self.notes = []             # скрытые листы и строки (сводка)
         self.order = []             # файлы по времени (заполняется в finish)
         # кто кому платит: (ИНН плательщика, ИНН получателя, файл) / (…, (год, месяц)) → [сумма, платежей]
         self.pairs_f = defaultdict(lambda: [0.0, 0])
         self.pairs_m = defaultdict(lambda: [0.0, 0])
+        self.months = defaultdict(lambda: [0.0, 0])     # (год, месяц) → [сумма, платежей] — для графика
         self._seen = {}
         self._month_rows = []
 
@@ -81,6 +84,9 @@ class Registry:
         info.rows += 1
         info.total += p.amount
         m = (p.date.year, p.date.month) if p.date else None
+        if m:
+            self.months[m][0] += p.amount
+            self.months[m][1] += 1
         for book, side, inn, name in ((self.payers, "плательщик", p.payer_inn, p.payer),
                                       (self.recs, "получатель", p.rec_inn, p.rec)):
             if inn is None:             # в документе нет этой стороны

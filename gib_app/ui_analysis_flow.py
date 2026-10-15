@@ -69,7 +69,8 @@ def _ask_files(win, props: list):
 
 def _scanned(win, res):
     raw, pair = res["raw"], None            # сравнение: первая часть → последняя
-    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), pair, done=lambda r: _done(win, r, r["data"]))
+    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), pair, win.an_mappings,
+         done=lambda r: _done(win, r, r["data"]))
 
 
 def _done(win, res, data):

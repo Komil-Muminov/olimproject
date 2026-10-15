@@ -5,9 +5,10 @@ import os
 from openpyxl.utils import get_column_letter
 
 from analysis_list_map import FIND, mapped_table, side_guess, transpose
-from analysis_model import BAD_INN, BY_NAME, DUP_ROW, ORG, SHARED, Entity, Part
+from analysis_model import BAD_INN, BY_NAME, DUP_ROW, HIDDEN, ORG, SHARED, Entity, Part
 from analysis_registry import inn_problem
 from constants import SUM_ROW_LABELS
+from excel_sheet_info import hidden_note, sheet_scan
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
 from registry_stats import INN_DIGITS, inn_ok
@@ -56,8 +57,9 @@ class ListCollector:
     def __init__(self):
         self.parts = []
         self.orgs = {}          # ключ ИНН (без нулей впереди) → {"inn", "names", "sums", "counts", "dup"}
-        self.details = {"dup_row": [], "bad_list": []}      # группы листов ошибок в таблицах
+        self.details = {"dup_row": [], "bad_list": [], "hidden_list": []}      # группы листов ошибок в таблицах
         self.bad = set()        # ИНН (как в файле) с ошибкой
+        self.notes = []         # скрытые листы и строки (сводка)
 
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
@@ -66,6 +68,12 @@ class ListCollector:
             data = sheets[mapping["sheet"]]
             data = transpose(data) if mapping.get("transpose") else data       # организации по столбцам
             s = mapped_table(data, mapping)
+            if not mapping.get("transpose"):    # у перевёрнутой строки листа — это столбцы таблицы
+                s.hidden_rows = sheet_scan(path, mapping["sheet"])["hidden_rows"]
+            note = hidden_note(path, mapping["sheet"], s.hidden_rows)
+            self.notes += [note] if note else []
+            if note and not note["listed"]:
+                s.hidden_rows = set()           # скрыта почти вся таблица — только сводка
             if s.all_rows:
                 self._add_side(fname, mapping["sheet"], data, s, 1)
                 self._mapped_errors(fname, mapping["sheet"], data, s)
@@ -98,6 +106,7 @@ class ListCollector:
             o["names"] += [n for n in (s.row_names.get((k, r)) or name_at(data, r, s) for r in rows) if n]
             o["notes"] |= {SHARED} if k in s.shared else set()
             o["notes"] |= {BY_NAME} if s.by_name else set()
+            o["notes"] |= {HIDDEN} if s.hidden_rows.intersection(rows) else set()
             o["cols"][i] = [round(sum(to_num_safe(cell_val(data, r, c)) for r in rows), 2) for c in metric]
             o["sums"][i] = round(sum(o["cols"][i]), 2)
             o["counts"][i] = len(rows)
@@ -116,6 +125,8 @@ class ListCollector:
                 fix = inn.zfill(INN_DIGITS) if inn.isdigit() and len(inn) == INN_DIGITS - 1 else ""
                 details["bad_list"].append([fname, where, rows[0], inn, name(k, rows[0]), inn_problem(inn), fix])
                 self.bad.add(inn)
+        for k, rows in s.all_rows.items():
+            details["hidden_list"] += [[fname, where, r, s.keys[k], name(k, r)] for r in rows if r in s.hidden_rows]
         if s.by_name or not s.name_col:
             return
         with_inn, end = {r for rows in s.all_rows.values() for r in rows}, s.last_row

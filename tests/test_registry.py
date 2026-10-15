@@ -154,7 +154,7 @@ class TestRegistryStats(unittest.TestCase):
         self.assertEqual((res["statuses"][GONE], res["flags"][DUP_PAY]), (2, 2))
         wb = load_workbook(path)
         ws = wb["Анализ"]
-        self.assertEqual(wb.sheetnames[:3], ["Анализ", "Кто кому платит", "Двойной платёж"])
+        self.assertEqual(wb.sheetnames[:4], ["Анализ", "Кто кому платит", "По месяцам", "Двойной платёж"])
         self.assertEqual(ws.cell(5, 2).value, "ИНН")
         self.assertIn("Новый: в «Янв–Апр 2024» этой организации не было", ws.cell(5, ws.max_column - 2).comment.text)
         self.assertIn("а в «Май–Авг 2024» она есть", ws.cell(4, 4).comment.text)   # подсказка в легенде («Новый»)

@@ -55,12 +55,25 @@ def problem(st: dict) -> str:
     return "" if cols.get("inn") is not None else "укажите столбец с ИНН"
 
 
+def formula_warning(name: str, sheet: dict, st: dict) -> str:
+    """Отмеченные столбцы сумм с формулами без сохранённого результата — суммы выйдут пустыми."""
+    bad = [f"{get_column_letter(sheet['col0'] + c + 1)} ({n})" for c, n in sheet.get("formulas", {}).items()
+           if c in st["sums"] and not st.get("transpose")]
+    return (f"«{name}»: в столбцах {', '.join(bad)} формулы без сохранённого результата — суммы будут пустыми. "
+            "Откройте файл в Excel и сохраните его.") if bad else ""
+
+
 def to_mapping(name: str, sheet: dict, st: dict) -> dict:
     """Настройка листа → для scan_files: реестр — столбцы + "amount" (список); список — "kind": "list", "sums".
     sheet — лист так, как его видит окно (sheet_view): для «перевёрнутой» таблицы сдвиги уже свои."""
     m = {"sheet": name, "head": st["head"], "row0": sheet["row0"], "col0": sheet["col0"], "kind": st["kind"],
          "cols": dict(st["cols"]), "transpose": bool(st.get("transpose")), "by_name": bool(st.get("by_name")),
-         "separate": bool(st.get("separate")), "repeats": bool(st.get("repeats"))}
+         "separate": bool(st.get("separate")), "repeats": bool(st.get("repeats")),
+         "hidden_sheet": bool(sheet.get("hidden"))}
+    names = [n.split("   (напр.")[0] for n in column_names(sheet, st["head"])]     # «C: РМА» — для «Как считали»
+    m["labels"] = {title.rstrip(" *"): names[st["cols"][key]] for key, title in FIELDS[st["kind"]]
+                   if st["cols"].get(key) is not None and st["cols"][key] < len(names)}
+    m["sum_labels"] = [names[c] for c in st["sums"] if c < len(names)]
     if st["kind"] == REGISTRY:
         m["cols"]["amount"] = list(st["sums"])
     else:
