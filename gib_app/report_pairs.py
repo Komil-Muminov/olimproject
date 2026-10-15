@@ -42,7 +42,7 @@ def write_pairs_sheet(wb, data):
     what = f" Цвет строки — что случилось со связкой: «{parts[pair[0]].label}» → «{parts[pair[1]].label}»." if pair else ""
     title_rows(ws, f"КТО КОМУ ПЛАТИТ — {len(data.pairs):,}".replace(",", " "), "2563EB",
                "Каждая строка — плательщик → получатель: сколько он ему заплатил в каждой части." + what, len(head))
-    hints = dict(HINTS, **{"Что случилось": "\n".join(status_hints(parts, pair).values())})
+    hints = dict(HINTS, **{"Что случилось": "\n".join(status_hints(parts, pair).values()) if pair else "Сравнения нет."})
     hints.update({p.label: f"Сумма платежей этой связки за «{p.label}»." for p in parts})
     row = []
     for t in head:
@@ -61,7 +61,7 @@ def write_pairs_sheet(wb, data):
         ws.append([k, x.payer, x.payer_inn, x.rec, x.rec_inn]
                   + [_cell(ws, x.sums[i], number_format=NUM) if x.counts[i] else None for i in range(len(parts))]
                   + [_cell(ws, round(sum(x.sums), 2), number_format=NUM), sum(x.counts)] + extra
-                  + [status(x, parts, pair)])
+                  + [status(x, parts, pair) if pair else ""])
     last = HEAD_ROW + len(rows)
     ws.auto_filter.ref = f"A{HEAD_ROW}:{get_column_letter(len(head))}{last}"
     add_row_colors(ws, HEAD_ROW + 1, last, len(head), len(head))

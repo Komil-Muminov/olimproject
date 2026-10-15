@@ -75,7 +75,7 @@ def result_view(res: dict, data) -> tuple:
         lines.append(f"<b>Сверка со списком</b>: {_int(recon['orgs'])} организаций списка — их столбцы и платежи "
                      f"рядом <span style='color:{MUTED}'>(лист «Сверка со списком»)</span>")
     chips = []
-    if len(data.parts) > 1:
+    if data.compare:
         lines.append(f"<span style='color:{MUTED}; font-size:10pt'>Появились / Пропали — по сравнению "
                      f"с предыдущим файлом. Наведите на метку ниже — подсказка.</span>")
         hints = status_hints(data.parts, data.compare)

@@ -133,6 +133,8 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
         e.cols = [e.cols[i] for i in order] if e.cols else [None] * n
     details = {**details, **lists.details, "same_name": mark_same_names(ents)}
     compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
+    if reg.files and lists.parts:       # реестр + список — разные вещи: сравнения нет (для них — «Сверка»)
+        compare = None
     months = dict(sorted(reg.months.items())) if reg.files else {}
     return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode, months,
                         reg.notes + lists.notes)

@@ -36,7 +36,7 @@ def _cell(ws, v, hint=None, **style):
 def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None) -> dict:
     parts, with_role = data.parts, len(data.roles) > 1
     pair = data.compare
-    rows = sorted(((e, status(e, parts, pair)) for e in data.entities), key=lambda r: -r[0].total)
+    rows = sorted(((e, status(e, parts, pair) if pair else "") for e in data.entities), key=lambda r: -r[0].total)
     progress(15, "Пишу лист «Анализ»…")
     wb = Workbook(write_only=True)
     ws = wb.create_sheet("Анализ")
@@ -54,7 +54,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     what = f" · «Что случилось» — «{parts[pair[0]].label}» → «{parts[pair[1]].label}»" if pair else ""
     title_rows(ws, "ГЛУБОКИЙ АНАЛИЗ", "0F172A", f"Создано {datetime.now():%d.%m.%Y %H:%M} · части: "
                + " → ".join(f"«{p.label}»" for p in parts) + what, n)
-    hints_st = status_hints(parts, pair)
+    hints_st = status_hints(parts, pair) if pair else {}
     _legend(ws, hints_st)
     hints = _head_hints(parts, with_role, hints_st, pair)
     ws.append([_cell(ws, t, hints.get(t), font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER,
@@ -100,7 +100,7 @@ def _legend(ws, hints_st: dict):
         cells += [_cell(ws, st, hints_st[st], fill=fill_color(c), border=BORDER, alignment=CENTER)
                   for st, c in COLORS.items()]
     else:
-        cells += [_cell(ws, "одна часть — сравнивать не с чем", font=Font(italic=True, color="64748B"))]
+        cells += [_cell(ws, "сравнения нет (одна часть или реестр + список)", font=Font(italic=True, color="64748B"))]
     cells += [_cell(ws, "Ошибки", "\n".join(f"• {f}: {FLAG_HINTS[f]}" for f in FLAGS) +
                     "\nПодробно — на листах ошибок (у каждого вида — свой лист).", fill=fill_color(ERR_COLOR), border=BORDER,
                     alignment=CENTER, font=Font(bold=True))]
@@ -112,7 +112,7 @@ def _head_hints(parts, with_role, hints_st: dict, pair) -> dict:
              "Название": "Самое частое написание названия у этого ИНН.",
              "Кто": "плательщик — кто платил; получатель — кому платили; организация — из обычной таблицы с ИНН.",
              "Всего": "Сумма по всем частям.",
-             "Что случилось": "\n".join(hints_st.values()) or "Одна часть — сравнивать не с чем.",
+             "Что случилось": "\n".join(hints_st.values()) or "Сравнения нет: одна часть или реестр вместе со списком (для них — лист «Сверка со списком»).",
              "Ошибки": "\n".join(f"• {f}: {h}" for f, h in FLAG_HINTS.items()),
              "Названий": "Сколько разных написаний названия у этого ИНН (пусто — одно)."}
     if pair:
