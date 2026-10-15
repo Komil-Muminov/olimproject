@@ -4,7 +4,7 @@ import re
 
 from analysis_model import BAD_INN, DUP_PAY, HIDDEN, ODD_DATE, PAYER, RECIPIENT, Entity, Pair, Part
 from analysis_periods import pair_totals, party_totals
-from inn_check import _name_key
+from analysis_checks import distinct_names
 from registry_stats import INN_DIGITS, inn_ok
 
 INN_IN_TEXT = re.compile(r"(?<!\d)\d{9}(?!\d)")
@@ -62,6 +62,9 @@ def registry_errors(reg) -> tuple:
         groups["hidden_pay"].append([fname(f), p.row, p.doc, p.date, p.amount, p.payer, p.payer_inn, p.rec, p.rec_inn])
     groups["bad_num_pay"] = [[fname(f), p.row, p.doc, p.date, p.amount, p.bad, p.payer, p.payer_inn, p.rec, p.rec_inn]
                              for f, p in reg.bad_amounts]
+    groups["text_num_pay"] = [[fname(f), p.row, p.doc, p.date, p.amount, p.text_num, p.payer, p.payer_inn]
+                              for f, p in reg.text_nums]
+    groups["spaces_pay"] = [[fname(f), p.row, p.doc, p.date, p.amount, p.spaces, p.payer] for f, p in reg.inn_spaces]
     return groups, marked
 
 
@@ -70,7 +73,8 @@ def registry_entities(reg, marked: dict, slots: list) -> list:
     for book, role in ((reg.payers, PAYER), (reg.recs, RECIPIENT)):
         for inn, party in book.items():
             sums, counts = party_totals(party, slots)
-            e = Entity(inn, party.name, role, sums, counts, names=max(1, len({_name_key(n) for n in party.names})))
+            variants = distinct_names(party.names)
+            e = Entity(inn, party.name, role, sums, counts, names=max(1, len(variants)), variants=variants)
             if not inn_ok(inn):
                 e.flags.add(BAD_INN)
             e.flags.update(flag for flag in (DUP_PAY, ODD_DATE, HIDDEN) if (role, inn) in marked[flag])

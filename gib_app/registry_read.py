@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from file_format import real_path
 from registry_columns import HEAD_ROWS, guess_header, registry_columns, two_row_columns
-from utils import is_total_label, norm_text, not_a_number, to_number
+from utils import has_invisible, is_total_label, norm_text, not_a_number, number_as_text, show_invisible, to_number
 
 
 @dataclass
@@ -20,6 +20,8 @@ class Payment:
     amount: float
     purpose: str = ""
     bad: str = ""               # что стоит в столбце суммы, если это не число (сумма считается как 0)
+    text_num: str = ""          # суммы, записанные текстом (Excel их не суммирует — итог в файле может не сойтись)
+    spaces: str = ""            # ИНН с лишними пробелами или невидимыми знаками (как записан)
 
 
 def inn_text(v) -> str:
@@ -69,8 +71,11 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
     cells = [values[c] for c in (money if isinstance(money, list) else [money]) if c is not None and c < len(values)]
     amount = sum(to_number(v) or 0.0 for v in cells)
     bad = "; ".join(str(v).strip() for v in cells if not_a_number(v))
+    text_num = "; ".join(str(v).strip() for v in cells if number_as_text(v))
+    spaces = "; ".join(f"{title}: {show_invisible(get(k))}" for k, title in
+                       (("payer_inn", "ИНН плательщика"), ("rec_inn", "ИНН получателя")) if has_invisible(get(k)))
     return Payment(row, _text(get("doc")), _date(get("date")), payer, pinn, rec, rinn, round(amount, 2),
-                   _text(get("purpose")), bad)
+                   _text(get("purpose")), bad, text_num, spaces)
 
 
 def payment_filter(mapping: dict | None):

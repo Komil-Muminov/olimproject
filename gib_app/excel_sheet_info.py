@@ -98,3 +98,50 @@ def total_check(path: str, m: dict, program: float) -> dict | None:
     return {"file": path, "sheet": m["sheet"], "cell": f"{get_column_letter(col + 1)}{row}", "raw": raw,
             "in_file": in_file, "program": round(program, 2),
             "diff": None if in_file is None else round(program - in_file, 2)}
+
+
+WHITE_RE = re.compile(r'<color\b[^>]*\b(?:rgb="(?:[0-9A-F]{2})?FFFFFF"|theme="0")[^>]*/>', re.I)   # «AARRGGBB»
+CELL_TAG_RE = re.compile(r"<c\b([^>]*?)(?<!/)>(.*?)</c>", re.S)        # пустые <c …/> пропускаются
+
+
+def _items(xml: str, block: str, item: str) -> list:
+    """Элементы <item> внутри <block> (fonts → font, fills → fill, cellXfs → xf)."""
+    m = re.search(rf"<{block}\b.*?</{block}>", xml, re.S)
+    return re.findall(rf"<{item}\b[^>]*/>|<{item}\b.*?</{item}>", m.group(0), re.S) if m else []
+
+
+def _white_styles(z) -> set:
+    """Номера стилей ячеек, где шрифт белый, а заливки нет (или она белая) — такой текст в Excel не видно."""
+    styles = z.read("xl/styles.xml").decode("utf-8", "ignore")
+    white_font = {i for i, f in enumerate(_items(styles, "fonts", "font")) if WHITE_RE.search(f)}
+    clear_fill = {i for i, f in enumerate(_items(styles, "fills", "fill"))
+                  if 'patternType="solid"' not in f or re.search(r'<fgColor\b[^>]*rgb="(?:[0-9A-F]{2})?FFFFFF"', f, re.I)}
+    return {i for i, xf in enumerate(_items(styles, "cellXfs", "xf"))
+            if int(_attr(xf, "fontId") or 0) in white_font and int(_attr(xf, "fillId") or 0) in clear_fill}
+
+
+def white_cells(path: str, sheet: str) -> list:
+    """[(ячейка, текст)] — непустые ячейки белым шрифтом (большие листы не проверяются — долго)."""
+    info = workbook_sheets(path).get(sheet)
+    if not info:
+        return []
+    with zipfile.ZipFile(real_path(path)) as z:
+        names = z.namelist()
+        if "xl/styles.xml" not in names or z.getinfo(info["xml"]).file_size > FORMULA_SCAN_LIMIT:
+            return []
+        white = _white_styles(z)
+        if not white:
+            return []
+        cells = [(attrs, body) for attrs, body in CELL_TAG_RE.findall(z.read(info["xml"]).decode("utf-8", "ignore"))
+                 if _attr(attrs, "s") and int(_attr(attrs, "s")) in white]
+        shared = re.findall(r"<si>(.*?)</si>", z.read("xl/sharedStrings.xml").decode("utf-8", "ignore"), re.S) \
+            if cells and "xl/sharedStrings.xml" in names else []
+    out = []
+    for attrs, body in cells:
+        v = re.search(r"<v>([^<]*)</v>", body)
+        text = v.group(1) if v else "".join(re.findall(r"<t[^>]*>([^<]*)</t>", body))
+        if _attr(attrs, "t") == "s" and text.isdigit() and int(text) < len(shared):
+            text = "".join(re.findall(r"<t[^>]*>([^<]*)</t>", shared[int(text)]))
+        if text.strip():
+            out.append((_attr(attrs, "r"), text))
+    return out

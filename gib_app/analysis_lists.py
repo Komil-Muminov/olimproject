@@ -9,9 +9,11 @@ from analysis_model import BAD_INN, BY_NAME, DUP_ROW, HIDDEN, ORG, SHARED, Entit
 from analysis_registry import inn_problem
 from excel_sheet_info import hidden_note, sheet_scan
 from compare_finder import find_tables, name_at
-from inn_check import _name_key, check_inn
+from analysis_checks import distinct_names
+from inn_check import check_inn
 from registry_stats import INN_DIGITS, inn_ok
-from utils import cell_val, is_total_label, norm_text, not_a_number, to_num_safe
+from utils import (cell_val, has_invisible, is_total_label, norm_text, not_a_number, number_as_text, show_invisible,
+                   to_num_safe)
 
 # деньги в двух столбцах (ушло / пришло) — считаются оба
 TWO_SIDED = ("дебет", "кредит", "debit", "credit", "приход", "расход")
@@ -56,7 +58,8 @@ class ListCollector:
     def __init__(self):
         self.parts = []
         self.orgs = {}          # ключ ИНН (без нулей впереди) → {"inn", "names", "sums", "counts", "dup"}
-        self.details = {"dup_row": [], "bad_list": [], "hidden_list": [], "bad_num_list": []}      # группы листов ошибок в таблицах
+        self.details = {"dup_row": [], "bad_list": [], "hidden_list": [], "bad_num_list": [], "text_num_list": [],
+                        "spaces_list": []}      # группы листов ошибок в таблицах
         self.bad = set()        # ИНН (как в файле) с ошибкой
         self.notes = []         # скрытые листы и строки (сводка)
         self.last_total = 0.0   # сумма последней прочитанной таблицы (каждая строка один раз) — для сверки с «Итого»
@@ -130,9 +133,13 @@ class ListCollector:
         for k, rows in s.all_rows.items():
             details["hidden_list"] += [[fname, where, r, s.keys[k], name(k, r)] for r in rows if r in s.hidden_rows]
         money = money_cols(data, s)
-        for r in sorted({r for rows in s.all_rows.values() for r in rows}):     # в столбце суммы не число
-            details["bad_num_list"] += [[fname, where, r, get_column_letter(c), str(cell_val(data, r, c)).strip(),
-                                         name_at(data, r, s)] for c in money if not_a_number(cell_val(data, r, c))]
+        for r in sorted({r for rows in s.all_rows.values() for r in rows}):     # уловки в суммах и в ИНН
+            cell = lambda c: [fname, where, r, get_column_letter(c), str(cell_val(data, r, c)).strip(), name_at(data, r, s)]
+            details["bad_num_list"] += [cell(c) for c in money if not_a_number(cell_val(data, r, c))]
+            details["text_num_list"] += [cell(c) for c in money if number_as_text(cell_val(data, r, c))]
+            if has_invisible(raw := cell_val(data, r, s.key_col)):
+                details["spaces_list"].append([fname, where, r, get_column_letter(s.key_col), show_invisible(raw),
+                                               name_at(data, r, s)])
         if s.by_name or not s.name_col:
             return
         with_inn, end = {r for rows in s.all_rows.values() for r in rows}, s.last_row
@@ -161,7 +168,7 @@ class ListCollector:
             for i, v in o["sums"].items():
                 sums[offset + i], counts[offset + i], cols[offset + i] = v, o["counts"][i], o["cols"][i]
             e = Entity(o["inn"], o["names"][0] if o["names"] else "", ORG, sums, counts,
-                       names=max(1, len({_name_key(n) for n in o["names"]})), cols=cols)
+                       names=max(1, len(distinct_names(o["names"]))), cols=cols, variants=distinct_names(o["names"]))
             if o["inn"] in self.bad:
                 e.flags.add(BAD_INN)
             if o["dup"]:

@@ -54,6 +54,9 @@ class Registry:
         self.odd_dates = []         # (файл, Payment) — заполняется в finish()
         self.hidden = []            # (файл, Payment) — платёж в скрытой строке
         self.bad_amounts = []       # (файл, Payment) — в столбце суммы не число (посчитано как 0)
+        self.text_nums = []         # (файл, Payment) — сумма записана текстом
+        self.inn_spaces = []        # (файл, Payment) — в ИНН лишние пробелы / невидимые знаки
+        self.white_cells = []       # [файл, лист, ячейка, текст] — белый шрифт (для всех файлов)
         self.notes = []             # скрытые листы и строки (сводка)
         self.checks = []            # сверка с «Итого» в файле (excel_sheet_info.total_check) — для всех файлов
         self.order = []             # файлы по времени (заполняется в finish)
@@ -85,8 +88,9 @@ class Registry:
         info = self.files[f]
         info.rows += 1
         info.total += p.amount
-        if p.bad:
-            self.bad_amounts.append((f, p))
+        for flag, book in ((p.bad, self.bad_amounts), (p.text_num, self.text_nums), (p.spaces, self.inn_spaces)):
+            if flag:
+                book.append((f, p))
         m = (p.date.year, p.date.month) if p.date else None
         if m:
             self.months[m][0] += p.amount

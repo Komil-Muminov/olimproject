@@ -67,6 +67,7 @@ class Entity:
     flags: set = field(default_factory=set)
     names: int = 1                   # сколько разных написаний названия
     cols: list = field(default_factory=list)    # по частям: значения столбцов сумм списка по отдельности (или None)
+    variants: list = field(default_factory=list)  # разные написания названия (самое частое первым)
 
     @property
     def total(self) -> float:

@@ -2,7 +2,7 @@
 таблицу с выбранной разбивкой (по файлам / кварталам / месяцам) и парой «было → стало». Чтение — в фоне."""
 import os
 
-from analysis_checks import mark_same_names
+from analysis_checks import inn_names, mark_same_names
 from analysis_list_map import AS_LIST, as_list, list_guess  # noqa: F401  (AS_LIST — для окна)
 from analysis_lists import ListCollector, money_unclear, payments_like
 from analysis_model import AnalysisData
@@ -10,7 +10,7 @@ from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
 from excel_com import WriteError
 from excel_reader import Book
-from excel_sheet_info import hidden_note, sheet_scan, total_check
+from excel_sheet_info import hidden_note, sheet_scan, total_check, white_cells
 from registry_read import read_registry
 from registry_stats import Registry
 
@@ -47,6 +47,7 @@ def _read_chosen(path, sheet_maps: list, reg, lists, tick):
             found += len(sheets)
             check = total_check(path, m, sum(f.total for f in reg.files[before:]))
         reg.checks += [check] if check else []
+        reg.white_cells += [[os.path.basename(path), m["sheet"], ref, text] for ref, text in white_cells(path, m["sheet"])]
     if not found:
         raise WriteError(f"В «{os.path.basename(path)}» в выбранных столбцах ИНН нет значений.")
 
@@ -135,7 +136,8 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
         x.counts = [x.counts[i] for i in order]
     for e in ents:                      # значения столбцов списка — только у организаций из списков
         e.cols = [e.cols[i] for i in order] if e.cols else [None] * n
-    details = {**details, **lists.details, "same_name": mark_same_names(ents)}
+    details = {**details, **lists.details, "same_name": mark_same_names(ents), "inn_names": inn_names(ents),
+               "white_text": reg.white_cells}
     compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
     if reg.files and lists.parts:       # реестр + список — разные вещи: сравнения нет (для них — «Сверка»)
         compare = None
