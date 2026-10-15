@@ -94,7 +94,7 @@ def read_registry(path: str, mapping: dict | None = None):
             if cols:
                 sheets.append((name, sheet.height, _payments(rows, cols, i + 2)))
                 break
-            if i >= HEAD_ROWS:
+            if i >= HEAD_ROWS and not mapping:      # строку заголовков указал пользователь — ищем её дальше
                 break
         if not sheets and head:
             # iter_rows: строки — с первой строки листа, столбцы — с первого заполненного (col0)

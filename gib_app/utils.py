@@ -9,8 +9,9 @@ def to_number(value) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     s = str(value).replace(" ", "").replace(" ", "").replace(",", ".")
+    sign = -1.0 if s.startswith("(") and s.endswith(")") else 1.0     # бухгалтерский минус: (1 000,00)
     try:
-        return float(s)
+        return sign * float(s.strip("()"))
     except ValueError:
         return None
 

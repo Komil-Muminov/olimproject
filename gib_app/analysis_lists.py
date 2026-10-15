@@ -6,8 +6,11 @@ from openpyxl.utils import get_column_letter
 
 from analysis_list_map import FIND, mapped_table, side_guess, transpose
 from analysis_model import BAD_INN, BY_NAME, DUP_ROW, ORG, SHARED, Entity, Part
+from analysis_registry import inn_problem
+from constants import SUM_ROW_LABELS
 from compare_finder import find_tables, name_at
 from inn_check import _name_key, check_inn
+from registry_stats import INN_DIGITS, inn_ok
 from utils import cell_val, norm_text, to_num_safe
 
 # деньги в двух столбцах (ушло / пришло) — считаются оба
@@ -65,6 +68,7 @@ class ListCollector:
             s = mapped_table(data, mapping)
             if s.all_rows:
                 self._add_side(fname, mapping["sheet"], data, s, 1)
+                self._mapped_errors(fname, mapping["sheet"], data, s)
             return len(self.parts) - before
         for sheet, data in sheets.items():
             found = find_tables(data)
@@ -76,13 +80,18 @@ class ListCollector:
         return len(self.parts) - before
 
     def _add_side(self, fname, sheet, data, s, on_sheet):
-        i = len(self.parts)
+        """Таблица → часть; столбцы «показывать отдельно» (План, Факт) → по части на каждый столбец."""
         where = f"«{sheet}» {s.span}" if on_sheet > 1 else f"«{sheet}»"
         metric = money_cols(data, s)
-        heads = [" ".join(str(cell_val(data, s.header, c) or "").split()) or f"столбец {get_column_letter(c)}"
-                 for c in metric]
-        self.parts.append(Part(f"{s.year} · {where}" if s.year else where, fname, "list",
-                               (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric), heads=heads))
+        head = lambda c: " ".join(str(cell_val(data, s.header, c) or "").split()) or f"столбец {get_column_letter(c)}"
+        for group in ([[c] for c in metric] if s.separate and metric else [metric]):
+            label = f"{where}: {head(group[0])}" if s.separate and group else where
+            self._add_part(fname, data, s, f"{s.year} · {label}" if s.year else label, group, [head(c) for c in group])
+
+    def _add_part(self, fname, data, s, label, metric, heads):
+        i = len(self.parts)
+        self.parts.append(Part(label, fname, "list", (int(s.year) if s.year else 9999, 0, i), has_sums=bool(metric),
+                               heads=heads))
         for k, rows in s.all_rows.items():
             o = self.orgs.setdefault(k, {"inn": s.keys[k], "names": [], "sums": {}, "counts": {}, "cols": {},
                                          "dup": False, "notes": set()})
@@ -93,6 +102,29 @@ class ListCollector:
             o["sums"][i] = round(sum(o["cols"][i]), 2)
             o["counts"][i] = len(rows)
             o["dup"] = o["dup"] or len(rows) > 1
+
+    def _mapped_errors(self, fname, sheet, data, s):
+        """Столбцы указал пользователь: повтор ИНН, ИНН не из 9 цифр и строки без ИНН — те же правила, что везде."""
+        where, details = f"«{sheet}»", self.details
+        name = lambda k, r: s.row_names.get((k, r)) or name_at(data, r, s)
+        for k, rows in s.all_rows.items():
+            if len(rows) > 1:
+                details["dup_row"].append([fname, where, ", ".join(map(str, rows)), s.keys[k], name(k, rows[0]),
+                                           f"{len(rows)} раза"])
+            inn = s.keys[k]
+            if not s.by_name and not inn_ok(inn):
+                fix = inn.zfill(INN_DIGITS) if inn.isdigit() and len(inn) == INN_DIGITS - 1 else ""
+                details["bad_list"].append([fname, where, rows[0], inn, name(k, rows[0]), inn_problem(inn), fix])
+                self.bad.add(inn)
+        if s.by_name or not s.name_col:
+            return
+        with_inn, end = {r for rows in s.all_rows.values() for r in rows}, s.last_row
+        while str(cell_val(data, end + 1, s.name_col) or "").strip():       # таблица — до первой пустой строки
+            end += 1
+        for r in range(s.header + 1, end + 1):                   # есть название, а ИНН нет (кроме строк итогов)
+            text = str(cell_val(data, r, s.name_col) or "").strip()
+            if r not in with_inn and len(text) > 3 and not norm_text(text).startswith(SUM_ROW_LABELS):
+                details["bad_list"].append([fname, where, r, "(пусто)", text, "ИНН не указан", ""])
 
     def _add_errors(self, fname, sheets):
         res = check_inn(sheets)

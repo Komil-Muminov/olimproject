@@ -5,28 +5,16 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QRadioButton, QSpinBox, QVBoxLayout, QWidget
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QRadioButton,
+    QSpinBox, QVBoxLayout, QWidget
 )
 
 from analysis_list_map import AS_LIST
 from analysis_propose import REGISTRY, auto_columns
 from ui_file_columns import FIELDS, column_names, problem, sheet_view, to_mapping
+from ui_file_widgets import check_item, checked_rows, checklist, dialog_buttons
 
 NONE = "— нет —"
-
-
-def _checklist(height: int) -> QListWidget:
-    w = QListWidget()
-    w.setMaximumHeight(height)
-    return w
-
-
-def _check_item(label: str, on: bool) -> QListWidgetItem:
-    item = QListWidgetItem(label)
-    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-    item.setCheckState(Qt.Checked if on else Qt.Unchecked)
-    return item
 
 
 class FileDialog(QDialog):
@@ -41,9 +29,9 @@ class FileDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel(f"📄  <b>{os.path.basename(prop['path'])}</b>"))
         lay.addWidget(QLabel("Листы — галочка: читать лист. Нажмите на лист, чтобы настроить его:"))
-        self.sheet_list = _checklist(110)
+        self.sheet_list = checklist(110)
         for name in self.names:
-            self.sheet_list.addItem(_check_item(name, name == g["sheet"]))
+            self.sheet_list.addItem(check_item(name, name == g["sheet"]))
         self.sheet_list.itemChanged.connect(self._check)
         lay.addWidget(self.sheet_list)
         form = self.form = QFormLayout()
@@ -76,17 +64,15 @@ class FileDialog(QDialog):
         self.by_name.toggled.connect(self._check)
         self.panels[AS_LIST].layout().addRow("", self.by_name)
         lay.addWidget(QLabel("Какие столбцы суммировать (можно несколько, например Дебет и Кредит):"))
-        self.sums = _checklist(160)
+        self.sums = checklist(160)
         self.sums.itemChanged.connect(self._check)
         lay.addWidget(self.sums)
+        self.separate = QCheckBox("Не складывать — каждый отмеченный столбец отдельно (например, План и Факт)")
+        lay.addWidget(self.separate)
         self.warn = QLabel()
         self.warn.setObjectName("warn")
         lay.addWidget(self.warn)
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttons.button(QDialogButtonBox.Ok).setText("Готово")
-        self.buttons.button(QDialogButtonBox.Cancel).setText("Отменить анализ")
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
+        self.buttons = dialog_buttons(self)
         lay.addWidget(self.buttons)
         self.sheet_list.currentRowChanged.connect(self._switch)
         self.kind.buttonToggled.connect(lambda _b, on: on and self._load(self._guess(self.kind_now())))
@@ -121,6 +107,8 @@ class FileDialog(QDialog):
             w.blockSignals(True)
         self.flip.setChecked(bool(st.get("transpose")))
         self.by_name.setChecked(bool(st.get("by_name")))
+        self.separate.setChecked(bool(st.get("separate")))
+        self.separate.setVisible(st["kind"] == AS_LIST)         # реестр — суммы всегда складываются
         self.kind.buttons()[0].setEnabled(not self.flip.isChecked())
         sh = self._sh()
         for w in [self.flip, self.by_name]:
@@ -158,7 +146,7 @@ class FileDialog(QDialog):
         self.sums.blockSignals(True)
         self.sums.clear()
         for i, label in enumerate(names):
-            self.sums.addItem(_check_item(label, i in checked))
+            self.sums.addItem(check_item(label, i in checked))
         self.sums.blockSignals(False)
         self._check()
 
@@ -166,6 +154,7 @@ class FileDialog(QDialog):
         sh, kind = self._sh(), self.kind_now()
         return {"head": self.head.value() - sh["row0"] - 1, "kind": kind, "sums": self._sum_cols(),
                 "transpose": self.flip.isChecked(), "by_name": kind == AS_LIST and self.by_name.isChecked(),
+                "separate": kind == AS_LIST and self.separate.isChecked(),
                 "cols": {key: (b.currentIndex() - 1 if b.currentIndex() > 0 else None)
                          for (k, key), b in self.boxes.items() if k == kind}}
 
@@ -175,10 +164,10 @@ class FileDialog(QDialog):
         return b.property("kind") if b else AS_LIST
 
     def _sum_cols(self) -> list:
-        return [i for i in range(self.sums.count()) if self.sums.item(i).checkState() == Qt.Checked]
+        return checked_rows(self.sums)
 
     def _chosen(self) -> list:
-        return [n for i, n in enumerate(self.names) if self.sheet_list.item(i).checkState() == Qt.Checked]
+        return [self.names[i] for i in checked_rows(self.sheet_list)]
 
     def _check(self):
         if not self.cur:
