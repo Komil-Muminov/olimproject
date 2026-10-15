@@ -19,6 +19,8 @@ def _named(data, s, words) -> list:
 
 def money_cols(data, s) -> list:
     """Столбцы сумм таблицы: Дебет и Кредит (Приход/Расход) — оба; иначе столбец «Сумма», иначе первый с числами."""
+    if s.fixed_money:
+        return s.value_cols
     both = _named(data, s, TWO_SIDED)
     return both if len(both) > 1 else (_named(data, s, FIND["amount"])[:1] or s.value_cols[:1])
 
@@ -55,11 +57,11 @@ class ListCollector:
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""
         fname, before = os.path.basename(path), len(self.parts)
-        if mapping:                     # лист, где пользователь указал столбцы, — по ним; остальные — как обычно
+        if mapping:                     # столбцы указал пользователь — читается только этот лист
             s = mapped_table(sheets[mapping["sheet"]], mapping)
             if s.all_rows:
                 self._add_side(fname, mapping["sheet"], sheets[mapping["sheet"]], s, 1)
-            sheets = {name: data for name, data in sheets.items() if name != mapping["sheet"]}
+            return len(self.parts) - before
         for sheet, data in sheets.items():
             found = find_tables(data)
             if found:

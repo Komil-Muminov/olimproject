@@ -61,11 +61,15 @@ def _key(v) -> str | None:
 
 
 def mapped_table(data: list, mapping: dict) -> SideList:
-    """Таблица по столбцам пользователя: {"sheet", "head" (0-based), "cols": {"inn", "name", "amount"}}."""
-    c = {k: (v + 1 if v is not None else None) for k, v in mapping["cols"].items()}
-    header = mapping["head"] + 1
+    """Таблица по столбцам пользователя: {"sheet", "head", "cols": {"inn", "name", "amount"}, "sums": [столбцы]}
+    (с 0; "row0" / "col0" — сдвиг, если номера считаны от первой заполненной ячейки листа)."""
+    r0, c0 = mapping.get("row0", 0), mapping.get("col0", 0)
+    c = {k: (v + c0 + 1 if v is not None else None) for k, v in mapping["cols"].items() if k != "amount"}
+    money = mapping.get("sums", []) + ([mapping["cols"]["amount"]] if mapping["cols"].get("amount") is not None else [])
+    header = r0 + mapping["head"] + 1
     cols = sorted(v for v in c.values() if v)
-    s = SideList(c["inn"], c.get("name"), cols, [c["amount"]] if c.get("amount") else [], block=cols, header=header)
+    s = SideList(c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols, header=header,
+                 fixed_money=True)
     for r in range(header + 1, len(data) + 1):
         k = _key(cell_val(data, r, s.key_col))
         if k:

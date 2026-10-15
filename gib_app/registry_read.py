@@ -61,8 +61,13 @@ def to_payment(row: int, values, cols: dict) -> Payment | None:
     payer, rec = _text(get("payer")), _text(get("rec"))
     if not (pinn or rinn or payer or rec):
         return None
-    return Payment(row, _text(get("doc")), _date(get("date")), payer, pinn, rec, rinn,
-                   round(to_number(get("amount")) or 0.0, 2), _text(get("purpose")))
+    money = cols.get("amount")         # список — несколько столбцов, выбранных пользователем (суммируются)
+    if isinstance(money, list):
+        amount = sum(to_number(values[c]) or 0.0 for c in money if c < len(values))
+    else:
+        amount = to_number(get("amount")) or 0.0
+    return Payment(row, _text(get("doc")), _date(get("date")), payer, pinn, rec, rinn, round(amount, 2),
+                   _text(get("purpose")))
 
 
 def read_registry(path: str, mapping: dict | None = None):

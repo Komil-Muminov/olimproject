@@ -1,15 +1,15 @@
-"""Глубокий анализ: файлы → «Анализировать» → чтение в фоне → Excel → итог простыми словами."""
+"""Глубокий анализ: файлы → для каждого «Как читать файл» → чтение в фоне → Excel → итог простыми словами."""
 import os
 
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from analysis_jobs import make_report
-from analysis_list_map import FIELDS as LIST_FIELDS, TITLES as LIST_TITLES, list_ok
-from analysis_scan import AS_LIST, auto_mode, scan_files
+from analysis_propose import propose_files
+from analysis_scan import auto_mode, scan_files
 from report_inn import clean_inn, write_inn_payments
 from report_paths import analysis_report_path, inn_report_path
-from ui_column_dialog import ColumnDialog
 from ui_analysis_result import result_view
+from ui_file_dialog import FileDialog
 from ui_result import show_result
 from utils import format_money
 from worker import Worker
@@ -48,51 +48,28 @@ def _idle(win):
 
 
 def run(win):
-    """«Анализ»: прочитать файлы в фоне, потом записать Excel."""
+    """«Анализ»: посмотреть файлы → для каждого окно «Как читать файл» (решает пользователь) → Excel."""
     if not win.worker:
-        _run(win, scan_files, win.an_paths, win.an_mappings, done=lambda res: _scanned(win, res))
+        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props))
+
+
+def _ask_files(win, props: list):
+    mappings = {}
+    for k, prop in enumerate(props, 1):
+        if not prop["sheets"]:
+            QMessageBox.warning(win, "Анализ", f"Файл «{os.path.basename(prop['path'])}» пустой.")
+            return
+        dlg = FileDialog(win, prop, k, len(props))
+        if dlg.exec() != QDialog.Accepted:
+            return
+        mappings[prop["path"]] = dlg.mapping()
+    win.an_mappings = mappings
+    _run(win, scan_files, win.an_paths, mappings, done=lambda res: _scanned(win, res))
 
 
 def _scanned(win, res):
-    if "needs_mapping" in res:
-        return _ask_columns(win, res["needs_mapping"], res["guess"])
-    if "needs_inn" in res:
-        return _ask_list(win, res["needs_inn"], res["guess"], "программа не нашла столбец с ИНН")
-    if "needs_amount" in res:
-        return _ask_list(win, res["needs_amount"], res["guess"], "несколько столбцов с числами — какой из них сумма?")
     raw, pair = res["raw"], None            # сравнение: первая часть → последняя
-    mode = auto_mode(raw)
-    _run(win, make_report, analysis_report_path(), raw, mode, pair, done=lambda r: _done(win, r, r["data"]))
-
-
-def _ask_columns(win, path: str, guess: dict):
-    q = QMessageBox(QMessageBox.Question, "Как читать файл?", f"«{os.path.basename(path)}» похож на реестр "
-                    "платежей, но программа узнала не все столбцы.", parent=win)
-    manual = q.addButton("Указать столбцы", QMessageBox.AcceptRole)
-    as_list = q.addButton("Читать как список организаций", QMessageBox.ActionRole)
-    q.addButton("Отмена", QMessageBox.RejectRole)
-    q.exec()
-    if q.clickedButton() is manual:
-        dlg = ColumnDialog(win, path, guess)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        win.an_mappings[path] = dlg.mapping()
-    elif q.clickedButton() is as_list:
-        win.an_mappings[path] = AS_LIST
-    else:
-        return
-    run(win)
-
-
-def _ask_list(win, path: str, guess: dict, problem: str):
-    """Список организаций: пользователь указывает столбец с ИНН (обязательно), название и сумму."""
-    dlg = ColumnDialog(win, path, guess, LIST_FIELDS, LIST_TITLES, list_ok, need="Обязательно: <b>ИНН</b>. "
-                       "Сумма — какой столбец считать деньгами («— нет —», если денег нет).",
-                       warn="Укажите столбец с ИНН.", required=("inn",), problem=problem)
-    if dlg.exec() != QDialog.Accepted:
-        return
-    win.an_mappings[path] = dict(dlg.mapping(), kind=AS_LIST)
-    run(win)
+    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), pair, done=lambda r: _done(win, r, r["data"]))
 
 
 def _done(win, res, data):

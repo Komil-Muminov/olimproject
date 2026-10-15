@@ -18,6 +18,7 @@ class SideList:
     header: int = 0                              # строка шапки
     last_row: int = 0                            # последняя заполненная строка таблицы
     in_text: bool = False                        # ИНН внутри текста: «ООО А (ИНН 123456789)»
+    fixed_money: bool = False                    # столбцы сумм выбрал пользователь — суммируются все
 
     @property
     def span(self) -> str:
