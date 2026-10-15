@@ -37,6 +37,11 @@ class InnRuleTest(unittest.TestCase):
         self.assertEqual(inn_problem("12A45"), "4 цифр вместо 9 (есть буквы или знаки)")
         self.assertEqual(inn_problem("0"), "вместо ИНН стоит 0 (не указан)")
 
+    def test_old_tajik_font(self):
+        """«Маблаѓи» (старый шрифт) узнаётся как «маблағи» — сумма."""
+        from utils import norm_text
+        self.assertEqual(norm_text("Маблаѓи њисоботї"), norm_text("Маблағи ҳисоботӣ"))
+
 
 if __name__ == "__main__":
     unittest.main()
