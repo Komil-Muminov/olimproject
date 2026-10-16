@@ -40,6 +40,17 @@ class TestMainWindow(unittest.TestCase):
         self.assertGreater(dlg.table.rowCount(), 0)
         dlg.close()
 
+    def test_help_dialog(self):
+        """Кнопка «Как пользоваться» в шапке; окно — про оба режима и листы результата."""
+        from ui import MainWindow
+        from ui_help import HelpDialog
+        w = MainWindow()
+        self.assertIn("Как пользоваться", w.help_btn.text())
+        text = HelpDialog(w).text.toPlainText()
+        for part in ("Заполнить ГИБ", "Как читать файл", "C5-C300", "Одна орг. во всех файлах", "Ошибки"):
+            self.assertIn(part, text)
+        w.close()
+
     def test_analysis_screen(self):
         from ui import MainWindow
         import ui_analysis_flow

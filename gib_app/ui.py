@@ -131,6 +131,10 @@ class MainWindow(QMainWindow):
         self.update_fill_info()
         QMessageBox.critical(self, "Ошибка", err)
 
+    def open_help(self):
+        from ui_help import HelpDialog
+        HelpDialog(self).exec()
+
     def open_catalog(self):
         from catalog_dialog import CatalogDialog
         CatalogDialog(self).exec()
