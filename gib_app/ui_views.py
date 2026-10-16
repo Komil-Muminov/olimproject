@@ -10,7 +10,7 @@ from ui_result import chips_box
 
 
 def build_header(win):
-    """Название программы, подпись и кнопка «Справочник ГИБ»."""
+    """Название программы, подпись и кнопки «Как пользоваться» и «Справочник ГИБ»."""
     header = QHBoxLayout()
     info = QVBoxLayout()
     title = QLabel("Распределение по ГИБ")
@@ -22,6 +22,11 @@ def build_header(win):
     info.addWidget(sub)
     header.addLayout(info)
     header.addStretch()
+    win.help_btn = QPushButton("❓  Как пользоваться")
+    win.help_btn.setObjectName("secondary")
+    win.help_btn.setToolTip("Что нажимать и где что смотреть в результате")
+    win.help_btn.clicked.connect(win.open_help)
+    header.addWidget(win.help_btn)
     win.catalog_btn = QPushButton("📖  Справочник ГИБ")
     win.catalog_btn.setObjectName("secondary")
     win.catalog_btn.setToolTip("Просмотр и редактирование статей расходов бюджетной классификации")

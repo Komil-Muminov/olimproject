@@ -1,10 +1,11 @@
-"""Лист «Все файлы по ИНН»: строки всех файлов как есть (все колонки), рядом — по ИНН. Только ИНН, которые есть
-в двух и более файлах. Каждая колонка подписана: «файл: колонка». Колонку ИНН и строки указал пользователь."""
+"""Лист «Одна орг. во всех файлах»: строки всех таблиц как есть (все колонки), рядом — по ИНН. Таблица — лист файла,
+настроенный пользователем (несколько листов одного файла — разные таблицы). Все организации; «Есть в файлах» —
+в каких таблицах она встречается. Каждая колонка подписана: «файл: колонка» (у файла несколько листов — «файл · лист: колонка»)."""
 import os
-from collections import Counter
 from datetime import date, datetime
 
-from openpyxl.styles import Font
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from analysis_list_map import NAME_KEY, org_key, split_cell
@@ -27,7 +28,9 @@ def _show(v):
 
 
 MAX_ROWS = 500_000          # больше — не помещается в память и в разумный Excel: показываются первые
-BASE = ["ИНН", "Файл", "Лист", "Строка"]
+BASE = ["№", "ИНН", "Есть в файлах", "Файлов", "Файл", "Лист", "Строка"]
+STRIPE = "F1F5F9"          # серая полоса — каждая вторая организация
+SHEET = "Одна орг. во всех файлах"
 
 
 def _sources(paths: list, mappings: dict) -> list:
@@ -60,22 +63,28 @@ def _keys(values, m: dict) -> list:
 
 
 def _collect(sources: list) -> tuple:
-    """Два прохода: какие ИНН есть в 2+ файлах, затем их строки. → (строки, шапки источников, обрезано ли)."""
-    per_file = {}
-    for path, m in sources:
-        per_file.setdefault(path, set()).update(k for _, values in _rows(path, m) for k in _keys(values, m))
-    common = {k for k, n in Counter(k for keys in per_file.values() for k in keys).items() if n >= 2}
+    """Два прохода: в каких таблицах какой ИНН, затем все строки.
+    → (строки, шапки источников, обрезано ли, {ИНН: номера таблиц})."""
+    per_table = [{k for _, values in _rows(path, m) for k in _keys(values, m)} for path, m in sources]
+    where = {}
+    for src, keys in enumerate(per_table):
+        for k in keys:
+            where.setdefault(k, []).append(src)
     rows, heads = [], []
     for src, (path, m) in enumerate(sources):
         heads.append(_head_row(path, m))
         for r, values in _rows(path, m):
             for k in _keys(values, m):
-                if k not in common:
-                    continue
                 if len(rows) >= MAX_ROWS:
-                    return rows, heads + [[]] * (len(sources) - len(heads)), True
+                    return rows, heads + [[]] * (len(sources) - len(heads)), True, where
                 rows.append((k, src, r, [_show(v) if v != "" else None for v in values]))
-    return rows, heads, False
+    return rows, heads, False, where
+
+
+def _table_name(path: str, m: dict, sources: list) -> str:
+    """Подпись таблицы: имя файла; у файла несколько листов — ещё и лист."""
+    name = os.path.basename(path)
+    return f"{name} · {m['sheet']}" if sum(p == path for p, _ in sources) > 1 else name
 
 
 def _head_row(path: str, m: dict) -> list:
@@ -91,33 +100,47 @@ def _head_row(path: str, m: dict) -> list:
     return []
 
 
+def _stripes(ws, n_cols: int, n_rows: int):
+    """Организации через одну — серым (по чётности «№»): видно, где кончается одна и начинается другая."""
+    if n_rows:
+        ws.conditional_formatting.add(f"A5:{get_column_letter(n_cols)}{4 + n_rows}",
+                                      FormulaRule(formula=["ISEVEN($A5)"], fill=PatternFill("solid", start_color=STRIPE, end_color=STRIPE)))
+
+
 def write_all_by_inn_sheet(wb, paths: list, mappings: dict) -> dict | None:
-    """Только если файлов два и больше и столбцы указаны пользователем. → {"orgs", "rows", "cut"} или None."""
+    """Только если таблиц (файлов или листов) две и больше и столбцы указаны пользователем.
+    → {"orgs", "multi", "rows", "cut"} или None; multi — сколько организаций есть в 2+ таблицах."""
     sources = _sources(paths, mappings or {})
-    if len({p for p, _ in sources}) < 2:
+    if len(sources) < 2:
         return None
-    rows, heads, cut = _collect(sources)
+    rows, heads, cut, where = _collect(sources)
     widths = [len(heads[s]) for s in range(len(sources))]
     for _, src, _, values in rows:
         widths[src] = max(widths[src], len(values))
-    ws = wb.create_sheet("Все файлы по ИНН")
+    names = [_table_name(p, m, sources) for p, m in sources]
+    ws = wb.create_sheet(SHEET)
     ws.sheet_properties.tabColor = "7C3AED"
-    ws.freeze_panes = "B5"
-    labels = BASE + [f"{os.path.basename(p)}: {get_column_letter(m['col0'] + i + 1)}"
+    ws.freeze_panes = "C5"
+    labels = BASE + [f"{names[s]}: {get_column_letter(m['col0'] + i + 1)}"
                      + (f" {heads[s][i]}" if i < len(heads[s]) and heads[s][i] else "")
                      for s, (p, m) in enumerate(sources) for i in range(widths[s])]
+    orgs = sorted({k for k, *_ in rows})
+    number = {k: i for i, k in enumerate(orgs, 1)}
     note = f" Показаны первые {MAX_ROWS:,} строк — сузьте строки в поле ИНН.".replace(",", " ") if cut else ""
-    title_rows(ws, f"ВСЕ ФАЙЛЫ ПО ИНН — {len({k for k, *_ in rows}):,}".replace(",", " "), "7C3AED",
-               "Организации, которые есть в двух и более файлах: все их строки как есть, рядом. Колонки подписаны "
-               "«файл: колонка»." + note, len(labels))
+    title_rows(ws, f"ОДНА ОРГАНИЗАЦИЯ ВО ВСЕХ ФАЙЛАХ — {len(orgs):,} организаций".replace(",", " "),
+               "7C3AED", "Здесь собраны все строки по каждой организации из всех файлов. Чтобы посмотреть одну "
+               "организацию, поставьте фильтр в колонке «ИНН». «Есть в файлах» — где организация встречается; "
+               "«Файлов» = 1 — она есть только в одном файле. Над каждой колонкой написано, из какого она файла."
+               + note, len(labels))
     ws.append([_cell(ws, t, font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER, alignment=CENTER) for t in labels])
+    _stripes(ws, len(labels), len(rows))
     offsets = [len(BASE) + sum(widths[:s]) for s in range(len(sources))]
     for k, src, r, values in sorted(rows, key=lambda x: (x[0], x[1], x[2])):
         path, m = sources[src]
         line = [None] * len(labels)
-        line[:4] = [k[1:] if k.startswith(NAME_KEY) else (k.zfill(9) if k.isdigit() and len(k) < 9 else k),
-                    os.path.basename(path), m["sheet"], r]
+        line[:len(BASE)] = [number[k], k[1:] if k.startswith(NAME_KEY) else (k.zfill(9) if k.isdigit() and len(k) < 9 else k),
+                            ", ".join(names[i] for i in where[k]), len(where[k]), os.path.basename(path), m["sheet"], r]
         line[offsets[src]:offsets[src] + len(values)] = values
         ws.append(line)
     ws.auto_filter.ref = f"A4:{get_column_letter(len(labels))}{4 + len(rows)}"
-    return {"orgs": len({k for k, *_ in rows}), "rows": len(rows), "cut": cut}
+    return {"orgs": len(orgs), "multi": sum(len(where[k]) > 1 for k in orgs), "rows": len(rows), "cut": cut}
