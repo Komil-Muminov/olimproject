@@ -79,7 +79,7 @@ def result_view(res: dict, data) -> tuple:
                      f"программа {format_money(c['program'])} — {verdict}")
     every = res.get("all_by_inn")
     if every:
-        lines.append(f"<b>Все файлы по ИНН</b>: {_int(every['orgs'])} организаций есть в двух и более файлах, "
+        lines.append(f"<b>Все файлы по ИНН</b>: {_int(every['orgs'])} организаций есть в двух и более таблицах, "
                      f"{_int(every['rows'])} строк рядом" + (" (показаны не все)" if every["cut"] else "")
                      + f" <span style='color:{MUTED}'>— лист «Все файлы по ИНН»</span>")
     recon = res.get("reconcile")

@@ -1,5 +1,6 @@
-"""Лист «Все файлы по ИНН»: строки всех файлов как есть (все колонки), рядом — по ИНН. Только ИНН, которые есть
-в двух и более файлах. Каждая колонка подписана: «файл: колонка». Колонку ИНН и строки указал пользователь."""
+"""Лист «Все файлы по ИНН»: строки всех таблиц как есть (все колонки), рядом — по ИНН. Таблица — лист файла,
+настроенный пользователем (несколько листов одного файла — разные таблицы). Только ИНН, которые есть в двух и более
+таблицах. Каждая колонка подписана: «файл: колонка» (у файла несколько листов — «файл · лист: колонка»)."""
 import os
 from collections import Counter
 from datetime import date, datetime
@@ -60,11 +61,9 @@ def _keys(values, m: dict) -> list:
 
 
 def _collect(sources: list) -> tuple:
-    """Два прохода: какие ИНН есть в 2+ файлах, затем их строки. → (строки, шапки источников, обрезано ли)."""
-    per_file = {}
-    for path, m in sources:
-        per_file.setdefault(path, set()).update(k for _, values in _rows(path, m) for k in _keys(values, m))
-    common = {k for k, n in Counter(k for keys in per_file.values() for k in keys).items() if n >= 2}
+    """Два прохода: какие ИНН есть в 2+ таблицах, затем их строки. → (строки, шапки источников, обрезано ли)."""
+    per_table = [{k for _, values in _rows(path, m) for k in _keys(values, m)} for path, m in sources]
+    common = {k for k, n in Counter(k for keys in per_table for k in keys).items() if n >= 2}
     rows, heads = [], []
     for src, (path, m) in enumerate(sources):
         heads.append(_head_row(path, m))
@@ -76,6 +75,12 @@ def _collect(sources: list) -> tuple:
                     return rows, heads + [[]] * (len(sources) - len(heads)), True
                 rows.append((k, src, r, [_show(v) if v != "" else None for v in values]))
     return rows, heads, False
+
+
+def _table_name(path: str, m: dict, sources: list) -> str:
+    """Подпись таблицы: имя файла; у файла несколько листов — ещё и лист."""
+    name = os.path.basename(path)
+    return f"{name} · {m['sheet']}" if sum(p == path for p, _ in sources) > 1 else name
 
 
 def _head_row(path: str, m: dict) -> list:
@@ -92,9 +97,10 @@ def _head_row(path: str, m: dict) -> list:
 
 
 def write_all_by_inn_sheet(wb, paths: list, mappings: dict) -> dict | None:
-    """Только если файлов два и больше и столбцы указаны пользователем. → {"orgs", "rows", "cut"} или None."""
+    """Только если таблиц (файлов или листов) две и больше и столбцы указаны пользователем.
+    → {"orgs", "rows", "cut"} или None."""
     sources = _sources(paths, mappings or {})
-    if len({p for p, _ in sources}) < 2:
+    if len(sources) < 2:
         return None
     rows, heads, cut = _collect(sources)
     widths = [len(heads[s]) for s in range(len(sources))]
@@ -103,13 +109,13 @@ def write_all_by_inn_sheet(wb, paths: list, mappings: dict) -> dict | None:
     ws = wb.create_sheet("Все файлы по ИНН")
     ws.sheet_properties.tabColor = "7C3AED"
     ws.freeze_panes = "B5"
-    labels = BASE + [f"{os.path.basename(p)}: {get_column_letter(m['col0'] + i + 1)}"
+    labels = BASE + [f"{_table_name(p, m, sources)}: {get_column_letter(m['col0'] + i + 1)}"
                      + (f" {heads[s][i]}" if i < len(heads[s]) and heads[s][i] else "")
                      for s, (p, m) in enumerate(sources) for i in range(widths[s])]
     note = f" Показаны первые {MAX_ROWS:,} строк — сузьте строки в поле ИНН.".replace(",", " ") if cut else ""
     title_rows(ws, f"ВСЕ ФАЙЛЫ ПО ИНН — {len({k for k, *_ in rows}):,}".replace(",", " "), "7C3AED",
-               "Организации, которые есть в двух и более файлах: все их строки как есть, рядом. Колонки подписаны "
-               "«файл: колонка»." + note, len(labels))
+               "Организации, которые есть в двух и более таблицах (файлах или листах): все их строки как есть, рядом. "
+               "Колонки подписаны «файл: колонка» или «файл · лист: колонка»." + note, len(labels))
     ws.append([_cell(ws, t, font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER, alignment=CENTER) for t in labels])
     offsets = [len(BASE) + sum(widths[:s]) for s in range(len(sources))]
     for k, src, r, values in sorted(rows, key=lambda x: (x[0], x[1], x[2])):
