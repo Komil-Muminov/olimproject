@@ -1,4 +1,4 @@
-"""Лист «Все файлы по ИНН»: строки всех таблиц как есть (все колонки), рядом — по ИНН. Таблица — лист файла,
+"""Лист «Одна орг. во всех файлах»: строки всех таблиц как есть (все колонки), рядом — по ИНН. Таблица — лист файла,
 настроенный пользователем (несколько листов одного файла — разные таблицы). Только ИНН, которые есть в двух и более
 таблицах. Каждая колонка подписана: «файл: колонка» (у файла несколько листов — «файл · лист: колонка»)."""
 import os
@@ -29,6 +29,7 @@ def _show(v):
 
 MAX_ROWS = 500_000          # больше — не помещается в память и в разумный Excel: показываются первые
 BASE = ["ИНН", "Файл", "Лист", "Строка"]
+SHEET = "Одна орг. во всех файлах"
 
 
 def _sources(paths: list, mappings: dict) -> list:
@@ -106,16 +107,17 @@ def write_all_by_inn_sheet(wb, paths: list, mappings: dict) -> dict | None:
     widths = [len(heads[s]) for s in range(len(sources))]
     for _, src, _, values in rows:
         widths[src] = max(widths[src], len(values))
-    ws = wb.create_sheet("Все файлы по ИНН")
+    ws = wb.create_sheet(SHEET)
     ws.sheet_properties.tabColor = "7C3AED"
     ws.freeze_panes = "B5"
     labels = BASE + [f"{_table_name(p, m, sources)}: {get_column_letter(m['col0'] + i + 1)}"
                      + (f" {heads[s][i]}" if i < len(heads[s]) and heads[s][i] else "")
                      for s, (p, m) in enumerate(sources) for i in range(widths[s])]
     note = f" Показаны первые {MAX_ROWS:,} строк — сузьте строки в поле ИНН.".replace(",", " ") if cut else ""
-    title_rows(ws, f"ВСЕ ФАЙЛЫ ПО ИНН — {len({k for k, *_ in rows}):,}".replace(",", " "), "7C3AED",
-               "Организации, которые есть в двух и более таблицах (файлах или листах): все их строки как есть, рядом. "
-               "Колонки подписаны «файл: колонка» или «файл · лист: колонка»." + note, len(labels))
+    title_rows(ws, f"ОДНА ОРГАНИЗАЦИЯ ВО ВСЕХ ФАЙЛАХ — {len({k for k, *_ in rows}):,} организаций".replace(",", " "),
+               "7C3AED", "Здесь собраны все строки по каждой организации из всех файлов. Чтобы посмотреть одну "
+               "организацию, поставьте фильтр в колонке «ИНН». Над каждой колонкой написано, из какого она файла."
+               + note, len(labels))
     ws.append([_cell(ws, t, font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER, alignment=CENTER) for t in labels])
     offsets = [len(BASE) + sum(widths[:s]) for s in range(len(sources))]
     for k, src, r, values in sorted(rows, key=lambda x: (x[0], x[1], x[2])):

@@ -1,4 +1,4 @@
-"""Колонки от руки (как в Olimv3): разбор записи, настройка чтения, сверка с «Итого», лист «Все файлы по ИНН»."""
+"""Колонки от руки (как в Olimv3): разбор записи, настройка чтения, сверка с «Итого», лист «Одна орг. во всех файлах»."""
 import os
 import sys
 import tempfile
@@ -81,14 +81,14 @@ class TypedColumnsTest(unittest.TestCase):
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
         res = make_report(out, raw, auto_mode(raw), None, maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 1, "rows": 3, "cut": False})   # только ИНН из обоих файлов
-        rows = list(load_workbook(out)["Все файлы по ИНН"].iter_rows(min_row=4, values_only=True))
+        rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
         self.assertEqual(rows[0][4:], ("список.xlsx: A ИНН", "список.xlsx: B План", "реестр.xlsx: A ИНН",
                                        "реестр.xlsx: B Сумма", "реестр.xlsx: C Основание"))
         self.assertEqual([r[:4] for r in rows[1:]], [(INNS[0], "список.xlsx", "Л", 2), (INNS[0], "реестр.xlsx", "Л", 2),
                                                      (INNS[0], "реестр.xlsx", "Л", 3)])
 
     def test_all_by_inn_sheets_of_one_file(self):
-        """Три таблицы на трёх листах одного файла — тоже «Все файлы по ИНН»; колонки подписаны «файл · лист»."""
+        """Три таблицы на трёх листах одного файла — тоже «Одна орг. во всех файлах»; колонки подписаны «файл · лист»."""
         path = os.path.join(tempfile.mkdtemp(), "год.xlsx")
         wb = Workbook()
         data = {"Янв": [["ИНН", "Сумма"], [INNS[0], 5], [INNS[1], 1]], "Фев": [["Сумма", "ИНН"], [7, INNS[0]]],
@@ -106,7 +106,7 @@ class TypedColumnsTest(unittest.TestCase):
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
         res = make_report(out, raw, auto_mode(raw), None, maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 1, "rows": 3, "cut": False})   # только ИНН из 2+ листов
-        rows = list(load_workbook(out)["Все файлы по ИНН"].iter_rows(min_row=4, values_only=True))
+        rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
         self.assertEqual(rows[0][4:6], ("год.xlsx · Янв: A ИНН", "год.xlsx · Янв: B Сумма"))
         self.assertEqual([r[:4] for r in rows[1:]], [(INNS[0], "год.xlsx", "Янв", 2), (INNS[0], "год.xlsx", "Фев", 2),
                                                      (INNS[0], "год.xlsx", "Мар", 3)])
