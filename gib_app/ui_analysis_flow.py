@@ -9,6 +9,7 @@ from analysis_scan import auto_mode, scan_files
 from report_paths import analysis_report_path
 from ui_analysis_result import result_view
 from ui_file_dialog import FileDialog
+from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
 from worker import Worker
 
@@ -44,28 +45,55 @@ def _idle(win):
 def run(win):
     """«Анализ»: посмотреть файлы → для каждого окно «Как читать файл» (решает пользователь) → Excel."""
     if not win.worker:
-        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, lambda: _run(
-            win, scan_files, win.an_paths, win.an_mappings, done=lambda res: _scanned(win, res))))
+        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, lambda used: _run(
+            win, scan_files, used, win.an_mappings, done=lambda res: _scanned(win, res))))
+
+
+def _skip(win, name: str, rest: int) -> bool:
+    """«Отмена» в окне файла: пропустить только его (True) или остановить весь анализ (False)."""
+    if not rest:
+        return False
+    box = QMessageBox(QMessageBox.Question, "Анализ", f"Файл «{name}» не настроен.", parent=win)
+    box.setInformativeText("Пропустить его и продолжить с остальными? Уже настроенные файлы сохранятся.")
+    skip = box.addButton("Пропустить файл", QMessageBox.AcceptRole)
+    box.addButton("Остановить анализ", QMessageBox.RejectRole)
+    box.exec()
+    return box.clickedButton() is skip
 
 
 def _ask_files(win, props: list, after):
-    """Окно «Как читать файл» для каждого файла; всё выбрано — after()."""
-    mappings = {}
+    """Окно «Как читать файл» для каждого файла; пустые и пропущенные — мимо; есть что читать — after(пути)."""
+    mappings, skipped, n = {}, [], len(props)
     for k, prop in enumerate(props, 1):
+        name = os.path.basename(prop["path"])
         if not prop["sheets"]:
-            QMessageBox.warning(win, "Анализ", f"Файл «{os.path.basename(prop['path'])}» пустой.")
+            skipped.append(f"{name} — пустой")
+            continue
+        dlg = FileDialog(win, prop, k, n)
+        if dlg.exec() == QDialog.Accepted:
+            mappings[prop["path"]] = dlg.mapping()
+        elif _skip(win, name, len(mappings) + n - k):
+            skipped.append(f"{name} — пропущен")
+        else:
             return
-        dlg = FileDialog(win, prop, k, len(props))
-        if dlg.exec() != QDialog.Accepted:
-            return
-        mappings[prop["path"]] = dlg.mapping()
+    if not mappings:
+        QMessageBox.warning(win, "Анализ", "Нечего анализировать:\n" + "\n".join(skipped))
+        return
+    if skipped:
+        QMessageBox.information(win, "Анализ", "Без этих файлов:\n" + "\n".join(skipped))
     win.an_mappings = mappings
-    after()
+    after([p["path"] for p in props if p["path"] in mappings])
 
 
 def _scanned(win, res):
-    raw, pair = res["raw"], None            # сравнение: первая часть → последняя
-    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), pair, win.an_mappings,
+    raw = res["raw"]
+    mode, pair = auto_mode(raw), None       # по умолчанию: первая часть → последняя
+    if needs_pair(raw, mode):
+        dlg = PairDialog(win, raw, mode)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        pair = dlg.pair()
+    _run(win, make_report, analysis_report_path(), raw, mode, pair, win.an_mappings,
          done=lambda r: _done(win, r, r["data"]))
 
 
