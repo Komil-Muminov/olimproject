@@ -66,9 +66,6 @@ class ProposeTest(unittest.TestCase):
                  "sums": []}]
         reg, lists, _ = scan_files([path], {path: maps})["raw"]
         self.assertEqual((reg.payers[INNS[0]].total, [e.name for e in lists.entities(0, 1)]), (50.0, ["Орг"]))
-        from report_inn import payments_of
-        found, registries = payments_of([path], INNS[0], {path: maps})
-        self.assertEqual((len(found), registries), (1, {path}))
 
     def test_table_not_from_a1(self):
         """Таблица с C3: строка заголовков и номера строк — как в Excel."""

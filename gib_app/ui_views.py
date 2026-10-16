@@ -5,8 +5,6 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QVBoxLayout
 )
 
-import ui_analysis
-import ui_analysis_flow
 from ui_helpers import BACKUP_NOTE
 from ui_result import chips_box
 
@@ -112,10 +110,6 @@ def build_result_card(win):
     win.result_after.setWordWrap(True)
     win.result_after.setTextFormat(Qt.RichText)
     rl.addWidget(win.result_after)
-    # поле ИНН — показывается только после глубокого анализа
-    win.result_inn_box, win.result_inn, _ = ui_analysis.inn_box(lambda: ui_analysis_flow.inn_from_result(win))
-    win.result_inn_box.setVisible(False)
-    rl.addWidget(win.result_inn_box)
 
     win.result_warn = QLabel()
     win.result_warn.setObjectName("warn")

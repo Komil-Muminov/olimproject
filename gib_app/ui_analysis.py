@@ -1,7 +1,7 @@
-"""Экран глубокого анализа: выбранные файлы и два действия — «Анализ» и платежи по ИНН."""
+"""Экран глубокого анализа: выбранные файлы и кнопка «Анализ»."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout
+    QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout
 )
 
 import ui_analysis_flow as flow
@@ -23,32 +23,6 @@ def _action(win, title: str, sub: str, tip: str, slot):
     return b
 
 
-def inn_box(slot) -> tuple:
-    """Блок «Всё по одной организации»: поле ИНН и кнопка. → (блок, поле, кнопка)."""
-    box = QFrame()
-    box.setObjectName("actionBox")
-    lay = QVBoxLayout(box)
-    lay.setContentsMargins(18, 14, 18, 14)
-    lay.setSpacing(8)
-    title = QLabel("📄  Всё по одной организации")
-    title.setObjectName("actionTitle")
-    lay.addWidget(title)
-    row = QHBoxLayout()
-    line = QLineEdit()
-    line.setPlaceholderText("ИНН, например 040000011")
-    line.setMaxLength(20)
-    line.setClearButtonEnabled(True)
-    line.returnPressed.connect(slot)
-    row.addWidget(line, 1)
-    btn = QPushButton("В Excel")
-    btn.setToolTip("Где встречается этот ИНН во всех выбранных файлах: строки таблиц (с подписью — "
-                   "файл, лист, столбец) и платежи из реестров (где платила и где получала)")
-    btn.clicked.connect(slot)
-    row.addWidget(btn)
-    lay.addLayout(row)
-    return box, line, btn
-
-
 def build_analysis_card(win):
     card = QFrame()
     card.setObjectName("card")
@@ -67,8 +41,6 @@ def build_analysis_card(win):
     row.addWidget(win.an_run_btn)
     lay.addLayout(row)
 
-    box, win.an_inn, win.an_pay_btn = inn_box(lambda: flow.export_payments(win))
-    lay.addWidget(box)
     lay.addStretch()
 
     win.an_progress = QProgressBar()

@@ -2,6 +2,7 @@
 в двух и более файлах. Каждая колонка подписана: «файл: колонка». Колонку ИНН и строки указал пользователь."""
 import os
 from collections import Counter
+from datetime import date, datetime
 
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
@@ -10,8 +11,20 @@ from analysis_list_map import NAME_KEY, org_key, split_cell
 from compare_finder import key_in_text, key_of, match_key
 from file_format import real_path
 from report_fast import _cell, title_rows
-from report_inn_tables import _show, _text
 from report_styles import BORDER, CENTER, fill_color
+
+def _text(v) -> str:
+    return " ".join(str(v).split()) if v not in (None, "") else ""
+
+
+def _show(v):
+    """Значение для отчёта: дата — текстом, целое число — без «.0»."""
+    if isinstance(v, (datetime, date)):
+        return v.strftime("%d.%m.%Y")
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    return v
+
 
 MAX_ROWS = 500_000          # больше — не помещается в память и в разумный Excel: показываются первые
 BASE = ["ИНН", "Файл", "Лист", "Строка"]
