@@ -80,12 +80,18 @@ class TypedColumnsTest(unittest.TestCase):
         raw = scan_files([a, b], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
         res = make_report(out, raw, auto_mode(raw), None, maps)
-        self.assertEqual(res["all_by_inn"], {"orgs": 1, "rows": 3, "cut": False})   # только ИНН из обоих файлов
-        rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
-        self.assertEqual(rows[0][4:], ("список.xlsx: A ИНН", "список.xlsx: B План", "реестр.xlsx: A ИНН",
+        self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})   # и те, что в одном файле
+        ws = load_workbook(out)["Одна орг. во всех файлах"]
+        rows = list(ws.iter_rows(min_row=4, values_only=True))
+        self.assertEqual(rows[0][7:], ("список.xlsx: A ИНН", "список.xlsx: B План", "реестр.xlsx: A ИНН",
                                        "реестр.xlsx: B Сумма", "реестр.xlsx: C Основание"))
-        self.assertEqual([r[:4] for r in rows[1:]], [(INNS[0], "список.xlsx", "Л", 2), (INNS[0], "реестр.xlsx", "Л", 2),
-                                                     (INNS[0], "реестр.xlsx", "Л", 3)])
+        both = "список.xlsx, реестр.xlsx"
+        self.assertEqual([r[:7] for r in rows[1:]], [
+            (1, INNS[0], both, 2, "список.xlsx", "Л", 2), (1, INNS[0], both, 2, "реестр.xlsx", "Л", 2),
+            (1, INNS[0], both, 2, "реестр.xlsx", "Л", 3), (2, INNS[1], "реестр.xlsx", 1, "реестр.xlsx", "Л", 4),
+            (3, INNS[2], "список.xlsx", 1, "список.xlsx", "Л", 3)])
+        rule = ws.conditional_formatting._cf_rules           # организации через одну — серым
+        self.assertEqual([r.formula for rules in rule.values() for r in rules], [["ISEVEN($A5)"]])
 
     def test_all_by_inn_sheets_of_one_file(self):
         """Три таблицы на трёх листах одного файла — тоже «Одна орг. во всех файлах»; колонки подписаны «файл · лист»."""
@@ -105,11 +111,12 @@ class TypedColumnsTest(unittest.TestCase):
         raw = scan_files([path], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
         res = make_report(out, raw, auto_mode(raw), None, maps)
-        self.assertEqual(res["all_by_inn"], {"orgs": 1, "rows": 3, "cut": False})   # только ИНН из 2+ листов
+        self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})
         rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
-        self.assertEqual(rows[0][4:6], ("год.xlsx · Янв: A ИНН", "год.xlsx · Янв: B Сумма"))
-        self.assertEqual([r[:4] for r in rows[1:]], [(INNS[0], "год.xlsx", "Янв", 2), (INNS[0], "год.xlsx", "Фев", 2),
-                                                     (INNS[0], "год.xlsx", "Мар", 3)])
+        self.assertEqual(rows[0][7:9], ("год.xlsx · Янв: A ИНН", "год.xlsx · Янв: B Сумма"))
+        self.assertEqual(rows[1][2], "год.xlsx · Янв, год.xlsx · Фев, год.xlsx · Мар")
+        self.assertEqual([r[4:7] for r in rows[1:4]], [("год.xlsx", "Янв", 2), ("год.xlsx", "Фев", 2), ("год.xlsx", "Мар", 3)])
+        self.assertEqual([r[:2] + r[3:4] for r in rows[4:]], [(2, INNS[1], 1), (3, INNS[2], 1)])   # только в одном листе
 
     def test_all_by_inn_needs_two_tables(self):
         path = _save("один.xlsx", [["ИНН", "Сумма"], [INNS[0], 5]])

@@ -79,7 +79,7 @@ def result_view(res: dict, data) -> tuple:
                      f"программа {format_money(c['program'])} — {verdict}")
     every = res.get("all_by_inn")
     if every:
-        lines.append(f"<b>Одна орг. во всех файлах</b>: {_int(every['orgs'])} организаций встречаются в нескольких файлах "
+        lines.append(f"<b>Одна орг. во всех файлах</b>: {_int(every['orgs'])} организаций, из них {_int(every['multi'])} есть в нескольких файлах "
                      f"({_int(every['rows'])} строк" + (", показаны не все)" if every["cut"] else ")")
                      + f" <span style='color:{MUTED}'>— смотрите лист «Одна орг. во всех файлах»</span>")
     recon = res.get("reconcile")
