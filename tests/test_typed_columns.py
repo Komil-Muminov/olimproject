@@ -118,12 +118,18 @@ class TypedColumnsTest(unittest.TestCase):
         self.assertEqual([r[4:7] for r in rows[1:4]], [("год.xlsx", "Янв", 2), ("год.xlsx", "Фев", 2), ("год.xlsx", "Мар", 3)])
         self.assertEqual([r[:2] + r[3:4] for r in rows[4:]], [(2, INNS[1], 1), (3, INNS[2], 1)])   # только в одном листе
 
-    def test_all_by_inn_needs_two_tables(self):
+    def test_all_by_inn_one_table(self):
+        """Одна таблица — лист тоже есть (свод как есть); только листы «без ИНН» — листа нет."""
         path = _save("один.xlsx", [["ИНН", "Сумма"], [INNS[0], 5]])
         maps = {path: _map(path, inn="a", sums="b")}
         raw = scan_files([path], maps)["raw"]
         res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), maps)
+        self.assertEqual(res["all_by_inn"], {"orgs": 1, "multi": 0, "rows": 1, "cut": False})
+        maps = {path: [{"sheet": "Л", "kind": "raw"}]}
+        raw = scan_files([path], maps)["raw"]
+        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), maps)
         self.assertIsNone(res["all_by_inn"])
+        self.assertEqual(res["raw"][0][:2], ("один.xlsx", "Л"))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
-"""Перед глубоким анализом: что программа думает о каждом файле — листы (первые строки для окна выбора)
-и догадка: какой лист, строка заголовков, реестр или список, где ИНН и какие столбцы суммировать.
-Решает пользователь — догадка только подставляется в окно «Как читать файл»."""
+"""Перед глубоким анализом: что программа думает о каждом файле — листы (первые строки) и на каждом листе
+колонка ИНН и название, найденные по содержимому. Решает пользователь — догадка подставляется в окно
+«Листы и ИНН», не нашлось — пользователь вписывает сам или берёт лист как есть."""
+from openpyxl.utils import get_column_letter
+
 from analysis_list_map import AS_LIST, _find
 from analysis_lists import money_cols
 from compare_finder import find_tables
@@ -54,6 +56,16 @@ def _list_guess(wb, name: str) -> dict | None:
             "repeats": sum(len(r) > 1 for r in s.all_rows.values()) > REPEAT_SHARE * len(s.all_rows)}
 
 
+def sheet_inn(wb, name: str, col0: int) -> dict:
+    """Колонка ИНН и название на листе — буквами («C», «B»), как их вписал бы пользователь. Не нашлось — None."""
+    g = _list_guess(wb, name)
+    if not g:
+        return {"inn": None, "name": None, "repeats": False}
+    name_col = g["cols"]["name"]
+    return {"inn": get_column_letter(col0 + g["cols"]["inn"] + 1),
+            "name": get_column_letter(col0 + name_col + 1) if name_col is not None else None, "repeats": g["repeats"]}
+
+
 def propose(path: str) -> dict:
     """→ {"path", "sheets": {лист: {"rows", "row0", "col0", "height"}}, "guess": {...}} (пустые листы пропущены)."""
     from python_calamine import CalamineWorkbook
@@ -69,6 +81,8 @@ def propose(path: str) -> dict:
             sheets[name] = {"rows": rows, "row0": 0, "col0": (sheet.start or (0, 0))[1], "height": sheet.height,
                             "hidden": info.get(name, {}).get("hidden", False),
                             "formulas": {c - (sheet.start or (0, 0))[1]: n for c, n in formulas.items()}}
+    for name, sh in sheets.items():             # колонка ИНН на каждом листе — для окна «Листы и ИНН»
+        sh.update(sheet_inn(wb, name, sh["col0"]) if sh["height"] <= FULL_READ_LIMIT else {"inn": None, "name": None})
     guess = None
     for name, sh in sheets.items():             # реестр — по заголовкам
         g = auto_columns(sh["rows"], REGISTRY)

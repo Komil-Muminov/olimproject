@@ -10,7 +10,7 @@ from analysis_periods import MODE_TITLES
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, fill_color
 
-KINDS = {"registry": "реестр платежей", "list": "список организаций"}
+KINDS = {"registry": "реестр платежей", "list": "список организаций", "raw": "без ИНН — как есть"}
 OPTIONS = (("transpose", "таблица перевёрнута (организации по столбцам)"), ("by_name", "ИНН нет — по названию"),
            ("repeats", "организация в нескольких строках — не ошибка"), ("hidden_sheet", "скрытый лист"))
 
@@ -26,13 +26,13 @@ def _head(ws, texts):
 
 def _sheet_rows(fname: str, m: dict) -> list:
     """Одна настройка листа → строки: что выбрано и где."""
+    if m["kind"] == "raw":
+        return [[fname, m["sheet"], KINDS["raw"], "", "лист скопирован в свод без изменений"]]
     start = m["row0"] + m["head"] + 2
     rows = f"с {start}-й" + (f" по {m['last']}-ю" if m.get("last") else " до конца листа")
     out = [[fname, m["sheet"], KINDS.get(m["kind"], m["kind"]), "Строки", rows]]
     out += [[fname, m["sheet"], "", title, col] for title, col in m.get("labels", {}).items()]
     sums = m.get("sums") or m["cols"].get("amount") or []
-    if not sums:
-        out.append([fname, m["sheet"], "", "Сумма", "не указана (только «есть / нет»)"])
     if len(sums) > 1:
         out.append([fname, m["sheet"], "", "Как суммы", "каждый столбец отдельно" if m.get("separate") else "сложены"])
     for key, title in (("f_purpose", "Отбор: основание содержит"), ("f_rec", "Отбор: получатель содержит")):

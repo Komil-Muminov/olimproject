@@ -3,7 +3,7 @@
 import os
 
 from analysis_checks import inn_names, mark_same_names
-from analysis_list_map import AS_LIST, as_list, list_guess  # noqa: F401  (AS_LIST — для окна)
+from analysis_list_map import AS_LIST, RAW, as_list, list_guess  # noqa: F401  (AS_LIST — для окна)
 from analysis_lists import ListCollector, money_unclear, payments_like
 from analysis_model import AnalysisData
 from analysis_periods import FILES, available_modes, registry_slots
@@ -30,8 +30,12 @@ def _add_registry(reg, path, sheets, tick, hidden=frozenset()):
 
 
 def _read_chosen(path, sheet_maps: list, reg, lists, tick):
-    """Листы, настроенные пользователем (окно «Как читать файл»): реестры и списки, каждый лист — по-своему."""
+    """Листы, настроенные пользователем (окно «Листы и ИНН»): реестры и списки, каждый лист — по-своему.
+    Листы «без ИНН» не читаются — они попадут в свод как есть (report_raw_sheets)."""
     data, found = None, 0
+    sheet_maps = [m for m in sheet_maps if m["kind"] != RAW]
+    if not sheet_maps:
+        return
     for m in sheet_maps:
         if m["kind"] == AS_LIST:
             data = data or Book(path).sheets
@@ -53,7 +57,7 @@ def _read_chosen(path, sheet_maps: list, reg, lists, tick):
 
 
 def scan_files(paths, mappings=None, progress=lambda p, t: None) -> dict:
-    """mappings[путь] — список настроек листов (окно «Как читать файл») или прежние одиночные настройки.
+    """mappings[путь] — список настроек листов (окно «Листы и ИНН») или прежние одиночные настройки.
     → {"raw": (реестры, списки, пути)}; без настроек файл узнаётся сам и может вернуться
     {"needs_inn" / "needs_amount" / "needs_mapping": путь, "guess": …} — спросить пользователя."""
     mappings = mappings or {}

@@ -82,23 +82,37 @@ class ProposeTest(unittest.TestCase):
         from registry_read import read_registry
         self.assertEqual(next(read_registry(path)[0][0][2]).row, 4)
 
-    def test_dialog_typed_columns(self):
-        """Окно: пусто — «Готово» не нажимается; колонки вписываются от руки (как в Olimv3)."""
+    def test_sheets_dialog(self):
+        """Окно «Листы и ИНН»: ИНН нашёлся сам — ✓; не нашёлся — «Анализировать» не нажимается, пока не вписать
+        колонку или не отметить «Без ИНН» (лист — в свод как есть)."""
         from PySide6.QtWidgets import QApplication
-        from ui_file_dialog import FileDialog
+        from analysis_list_map import RAW
+        from ui_sheets_dialog import FOUND, NOT_FOUND, SheetsDialog
         app = QApplication.instance() or QApplication([])  # noqa: F841
-        path = _save([["ИНН", "Название", "План", "Факт"]] + [[inn, f"Орг {i}", 1, 2] for i, inn in enumerate(INNS)])
-        d = FileDialog(None, propose(path), 1, 1)
+        path = os.path.join(tempfile.mkdtemp(), "f.xlsx")
+        wb = Workbook()
+        wb.active.title = "Банк"
+        for r in [["Название", "ИНН"]] + [[f"Орг {i}", inn] for i, inn in enumerate(INNS)]:
+            wb.active.append(r)
+        wb.create_sheet("Прочее").append(["просто", "текст"])
+        wb.save(path)
+        d = SheetsDialog(None, [propose(path)])
         ok = d.buttons.button(d.buttons.StandardButton.Ok)
-        self.assertFalse(ok.isEnabled())                            # ничего не подставлено
-        d.edits["inn"].setText("a2-a5")
-        d.edits["sums"].setText("c, d")
-        self.assertTrue(ok.isEnabled())
-        m = d.mapping()[0]
-        self.assertEqual((m["kind"], m["head"], m["last"], m["cols"]["inn"], m["sums"]), (AS_LIST, 0, 5, 0, [2, 3]))
-        d.edits["inn"].setText("a5-b9")
+        bank, other = d.widgets
+        self.assertEqual((bank["inn"].text(), bank["name"].text(), bank["status"].text()), ("B", "A", FOUND))
+        self.assertEqual(other["status"].text(), NOT_FOUND)
         self.assertFalse(ok.isEnabled())
-        self.assertIn("одной колонке", d.warn.text())
+        other["inn"].setText("a")                                   # в колонке A нет ИНН — понятная ошибка
+        self.assertIn("нет ИНН", other["status"].text())
+        other["raw"].setChecked(True)
+        self.assertTrue(ok.isEnabled())
+        m = d.mappings()[path]
+        self.assertEqual([(x["sheet"], x["kind"]) for x in m], [("Банк", AS_LIST), ("Прочее", RAW)])
+        self.assertEqual((m[0]["cols"]["inn"], m[0]["cols"]["name"], m[0]["sums"]), (1, 0, []))
+        bank["use"].setChecked(False)                                # лист не берём
+        other["use"].setChecked(False)
+        self.assertFalse(ok.isEnabled())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,7 +8,7 @@ from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from analysis_list_map import NAME_KEY, org_key, split_cell
+from analysis_list_map import NAME_KEY, RAW, org_key, split_cell
 from compare_finder import key_in_text, key_of, match_key
 from file_format import real_path
 from report_fast import _cell, title_rows
@@ -34,7 +34,9 @@ SHEET = "Одна орг. во всех файлах"
 
 
 def _sources(paths: list, mappings: dict) -> list:
-    return [(p, m) for p in paths for m in (mappings.get(p) if isinstance(mappings.get(p), list) else [])]
+    """Листы с ИНН (листы «без ИНН» — отдельно, как есть)."""
+    return [(p, m) for p in paths for m in (mappings.get(p) if isinstance(mappings.get(p), list) else [])
+            if m["kind"] != RAW]
 
 
 def _rows(path: str, m: dict):
@@ -108,10 +110,10 @@ def _stripes(ws, n_cols: int, n_rows: int):
 
 
 def write_all_by_inn_sheet(wb, paths: list, mappings: dict) -> dict | None:
-    """Только если таблиц (файлов или листов) две и больше и столбцы указаны пользователем.
+    """Если есть хоть один лист с ИНН, указанный пользователем.
     → {"orgs", "multi", "rows", "cut"} или None; multi — сколько организаций есть в 2+ таблицах."""
     sources = _sources(paths, mappings or {})
-    if len(sources) < 2:
+    if not sources:
         return None
     rows, heads, cut, where = _collect(sources)
     widths = [len(heads[s]) for s in range(len(sources))]

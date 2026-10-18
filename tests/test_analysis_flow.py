@@ -1,5 +1,5 @@
-"""Глубокий анализ, несколько файлов: «Отмена» на одном файле и пустой файл не останавливают всё;
-сравнения «было → стало» нет — на листе «Анализ» видно, в каких файлах есть организация."""
+"""Глубокий анализ: одно окно «Листы и ИНН» на все файлы; пустые файлы пропускаются; 3 файла по несколько листов —
+в своде все листы, сумм нет, лист «без ИНН» скопирован как есть."""
 import os
 import sys
 import tempfile
@@ -11,41 +11,42 @@ from openpyxl import Workbook, load_workbook  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog  # noqa: E402
 
 import ui_analysis_flow as flow  # noqa: E402
-from analysis_list_map import AS_LIST  # noqa: E402
 from analysis_jobs import make_report  # noqa: E402
+from analysis_propose import propose_files  # noqa: E402
 from analysis_scan import auto_mode, scan_files  # noqa: E402
+from sheet_choice import choices, to_mappings  # noqa: E402
 
-INNS = [f"{100000000 + i * 7919:09d}" for i in range(3)]
-MAP = [{"sheet": "Л", "head": 0, "row0": 0, "col0": 0, "kind": AS_LIST, "cols": {"inn": 0, "name": 1}, "sums": [2]}]
+INNS = [f"{100000000 + i * 7919:09d}" for i in range(12)]
 
 
-def _save(name, amount):
+def _book(name: str, sheets: dict) -> str:
     path = os.path.join(tempfile.mkdtemp(), name)
     wb = Workbook()
-    wb.active.title = "Л"
-    for r in (["ИНН", "Название", "Сумма"], [INNS[0], "А", amount], [INNS[1], "Б", 10]):
-        wb.active.append(r)
+    for k, (title, rows) in enumerate(sheets.items()):
+        ws = wb.active if k == 0 else wb.create_sheet()
+        ws.title = title
+        for r in rows:
+            ws.append(r)
     wb.save(path)
     return path
 
 
-def _raw(n):
-    paths = [_save(f"{i + 1}.xlsx", 100 * (i + 1)) for i in range(n)]
-    return scan_files(paths, {p: MAP for p in paths})["raw"]
+def _orgs(sum_: int, inns=INNS) -> list:
+    return [["Название", "ИНН", "Сумма"]] + [[f"Орг {i}", inn, sum_] for i, inn in enumerate(inns)]
 
 
 class _Dialog:
-    """Окно «Как читать файл» без экрана: «ОК» — для путей из ok, иначе «Отмена»."""
-    ok = set()
+    """Окно «Листы и ИНН» без экрана: принимает то, что нашла программа (или «Отмена»)."""
+    accept = True
 
-    def __init__(self, win, prop, k, n):
-        self.path = prop["path"]
+    def __init__(self, win, props):
+        self.props = props
 
     def exec(self):
-        return QDialog.Accepted if self.path in _Dialog.ok else QDialog.Rejected
+        return QDialog.Accepted if _Dialog.accept else QDialog.Rejected
 
-    def mapping(self):
-        return MAP
+    def mappings(self):
+        return to_mappings(self.props, choices(self.props))[0]
 
 
 class AnalysisFlowTest(unittest.TestCase):
@@ -54,57 +55,61 @@ class AnalysisFlowTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication(sys.argv)
 
     def setUp(self):
-        self.saved = (flow.FileDialog, flow._skip, flow.QMessageBox.warning, flow.QMessageBox.information)
-        flow.FileDialog = _Dialog
+        self.saved = (flow.SheetsDialog, flow.QMessageBox.warning, flow.QMessageBox.information)
+        flow.SheetsDialog = _Dialog
         flow.QMessageBox.warning = flow.QMessageBox.information = lambda *a: self.notes.append(a[2])
         self.notes, self.used = [], None
+        _Dialog.accept = True
 
     def tearDown(self):
-        flow.FileDialog, flow._skip, flow.QMessageBox.warning, flow.QMessageBox.information = self.saved
+        flow.SheetsDialog, flow.QMessageBox.warning, flow.QMessageBox.information = self.saved
 
-    def _ask(self, props, skip):
-        flow._skip = lambda win, name, rest: skip
+    def _ask(self, props):
         win = type("Win", (), {})()
-        flow._ask_files(win, props, lambda used: setattr(self, "used", used))
+        flow._ask_sheets(win, props, lambda used: setattr(self, "used", used))
         return win
 
-    def test_cancel_one_file_keeps_others(self):
-        props = [{"path": p, "sheets": [1]} for p in ("a.xlsx", "b.xlsx", "c.xlsx")]
-        _Dialog.ok = {"a.xlsx", "c.xlsx"}
-        win = self._ask(props, skip=True)
-        self.assertEqual(self.used, ["a.xlsx", "c.xlsx"])
-        self.assertEqual(set(win.an_mappings), {"a.xlsx", "c.xlsx"})
-        self.assertIn("b.xlsx — пропущен", self.notes[0])
-
-    def test_cancel_and_stop(self):
-        _Dialog.ok = {"a.xlsx"}
-        self._ask([{"path": p, "sheets": [1]} for p in ("a.xlsx", "b.xlsx")], skip=False)
-        self.assertIsNone(self.used)
-
     def test_empty_file_skipped(self):
-        _Dialog.ok = {"a.xlsx", "c.xlsx"}
-        props = [{"path": "a.xlsx", "sheets": [1]}, {"path": "b.xlsx", "sheets": []}, {"path": "c.xlsx", "sheets": [1]}]
-        self._ask(props, skip=False)
-        self.assertEqual(self.used, ["a.xlsx", "c.xlsx"])
-        self.assertIn("b.xlsx — пустой", self.notes[0])
+        a, b = _book("a.xlsx", {"Л": _orgs(1)}), _book("b.xlsx", {"Л": []})
+        win = self._ask(propose_files([a, b]))
+        self.assertEqual(self.used, [a])
+        self.assertEqual(list(win.an_mappings), [a])
+        self.assertIn("b.xlsx", self.notes[0])
 
     def test_all_files_empty(self):
-        self._ask([{"path": "a.xlsx", "sheets": []}], skip=False)
+        self._ask(propose_files([_book("a.xlsx", {"Л": []})]))
         self.assertIsNone(self.used)
-        self.assertIn("Нечего анализировать", self.notes[0])
+        self.assertIn("пустые", self.notes[0])
 
-    def test_three_files_no_comparison(self):
-        """Три файла: на «Анализ» нет «Что случилось» и «Изменение», есть «Есть в файлах» и «Файлов»."""
-        raw = _raw(3)
+    def test_cancel(self):
+        _Dialog.accept = False
+        self._ask(propose_files([_book("a.xlsx", {"Л": _orgs(1)})]))
+        self.assertIsNone(self.used)
+
+    def test_three_files_many_sheets(self):
+        """3 файла по 2 листа + лист без ИНН: каждый лист — своя колонка, сумм нет, «Файлов» по файлам."""
+        paths = [_book(f"{m}.xlsx", {"Банк": _orgs(5), "Касса": _orgs(7, INNS[:10])}) for m in ("Янв", "Фев")]
+        paths.append(_book("Мар.xlsx", {"Банк": _orgs(9), "Прочее": [["заметка", "текст"], ["ещё", 1]]}))
+        props = propose_files(paths)
+        rows = choices(props)
+        self.assertEqual([r["found"] for r in rows], [True, True, True, True, True, False])
+        rows[-1]["raw"] = True                                  # «Прочее» — без ИНН, как есть
+        maps, problems = to_mappings(props, rows)
+        self.assertEqual(problems, [])
+        raw = scan_files(paths, maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        make_report(out, raw, auto_mode(raw))
-        ws = load_workbook(out)["Анализ"]
-        head = [c.value for c in ws[5]]
-        for gone in ("Что случилось", "Изменение", "Изменение, %"):
+        res = make_report(out, raw, auto_mode(raw), maps)
+        wb = load_workbook(out)
+        head = [c.value for c in wb["Анализ"][5]]
+        self.assertEqual(len([h for h in head if "Банк" in str(h) or "Касса" in str(h)]), 5)   # 5 листов с ИНН
+        for gone in ("Всего", "Что случилось", "Изменение"):
             self.assertNotIn(gone, head)
-        rows = {r[1]: r for r in ws.iter_rows(min_row=6, values_only=True)}
-        files = head.index("Файлов")
-        self.assertEqual((rows[INNS[0]][files], rows[INNS[0]][files - 1]), (3, "1.xlsx, 2.xlsx, 3.xlsx"))
+        org = {r[1]: r for r in wb["Анализ"].iter_rows(min_row=6, values_only=True)}
+        self.assertEqual(org[INNS[0]][head.index("Файлов")], 3)
+        self.assertEqual(org[INNS[11]][head.index("Есть в файлах")], "Янв.xlsx, Фев.xlsx, Мар.xlsx")
+        self.assertIn("Одна орг. во всех файлах", wb.sheetnames)
+        self.assertEqual([r[:3] for r in res["raw"]], [("Мар.xlsx", "Прочее", "Мар · Прочее")])
+        self.assertEqual([list(r) for r in wb["Мар · Прочее"].iter_rows(values_only=True)], [["заметка", "текст"], ["ещё", 1]])
 
 
 if __name__ == "__main__":

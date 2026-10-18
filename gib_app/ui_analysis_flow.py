@@ -1,4 +1,4 @@
-"""Глубокий анализ: файлы → для каждого «Как читать файл» → чтение в фоне → Excel → итог простыми словами."""
+"""Глубокий анализ: файлы → одно окно «Листы и ИНН» → чтение в фоне → Excel → итог простыми словами."""
 import os
 
 from PySide6.QtWidgets import QDialog, QMessageBox
@@ -8,8 +8,8 @@ from analysis_propose import propose_files
 from analysis_scan import auto_mode, scan_files
 from report_paths import analysis_report_path
 from ui_analysis_result import result_view
-from ui_file_dialog import FileDialog
 from ui_result import show_result
+from ui_sheets_dialog import SheetsDialog
 from worker import Worker
 
 ANALYSIS_PAGE = 3
@@ -42,46 +42,26 @@ def _idle(win):
 
 
 def run(win):
-    """«Анализ»: посмотреть файлы → для каждого окно «Как читать файл» (решает пользователь) → Excel."""
+    """«Анализ»: посмотреть файлы → окно «Листы и ИНН» (решает пользователь) → Excel."""
     if not win.worker:
-        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, lambda used: _run(
+        _run(win, propose_files, win.an_paths, done=lambda props: _ask_sheets(win, props, lambda used: _run(
             win, scan_files, used, win.an_mappings, done=lambda res: _scanned(win, res))))
 
 
-def _skip(win, name: str, rest: int) -> bool:
-    """«Отмена» в окне файла: пропустить только его (True) или остановить весь анализ (False)."""
-    if not rest:
-        return False
-    box = QMessageBox(QMessageBox.Question, "Анализ", f"Файл «{name}» не настроен.", parent=win)
-    box.setInformativeText("Пропустить его и продолжить с остальными? Уже настроенные файлы сохранятся.")
-    skip = box.addButton("Пропустить файл", QMessageBox.AcceptRole)
-    box.addButton("Остановить анализ", QMessageBox.RejectRole)
-    box.exec()
-    return box.clickedButton() is skip
-
-
-def _ask_files(win, props: list, after):
-    """Окно «Как читать файл» для каждого файла; пустые и пропущенные — мимо; есть что читать — after(пути)."""
-    mappings, skipped, n = {}, [], len(props)
-    for k, prop in enumerate(props, 1):
-        name = os.path.basename(prop["path"])
-        if not prop["sheets"]:
-            skipped.append(f"{name} — пустой")
-            continue
-        dlg = FileDialog(win, prop, k, n)
-        if dlg.exec() == QDialog.Accepted:
-            mappings[prop["path"]] = dlg.mapping()
-        elif _skip(win, name, len(mappings) + n - k):
-            skipped.append(f"{name} — пропущен")
-        else:
-            return
-    if not mappings:
-        QMessageBox.warning(win, "Анализ", "Нечего анализировать:\n" + "\n".join(skipped))
+def _ask_sheets(win, props: list, after):
+    """Одно окно на все листы всех файлов; пустые файлы — мимо (сказать); выбрано — after(пути)."""
+    empty = [os.path.basename(p["path"]) for p in props if not p["sheets"]]
+    props = [p for p in props if p["sheets"]]
+    if not props:
+        QMessageBox.warning(win, "Анализ", "Все файлы пустые:\n" + "\n".join(empty))
         return
-    if skipped:
-        QMessageBox.information(win, "Анализ", "Без этих файлов:\n" + "\n".join(skipped))
-    win.an_mappings = mappings
-    after([p["path"] for p in props if p["path"] in mappings])
+    if empty:
+        QMessageBox.information(win, "Анализ", "Пустые файлы пропущены:\n" + "\n".join(empty))
+    dlg = SheetsDialog(win, props)
+    if dlg.exec() != QDialog.Accepted:
+        return
+    win.an_mappings = dlg.mappings()
+    after([p["path"] for p in props if p["path"] in win.an_mappings])
 
 
 def _scanned(win, res):

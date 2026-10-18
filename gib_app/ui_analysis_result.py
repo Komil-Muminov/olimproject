@@ -66,6 +66,9 @@ def result_view(res: dict, data) -> tuple:
         lines.append(f"<b>Одна орг. во всех файлах</b>: {_int(every['orgs'])} организаций, из них {_int(every['multi'])} есть в нескольких файлах "
                      f"({_int(every['rows'])} строк" + (", показаны не все)" if every["cut"] else ")")
                      + f" <span style='color:{MUTED}'>— смотрите лист «Одна орг. во всех файлах»</span>")
+    for fname, sheet, title, n in res.get("raw") or []:
+        lines.append(f"<b>{escape(fname)} · {escape(sheet)}</b>: без ИНН — скопирован как есть, {_int(n)} строк "
+                     f"<span style='color:{MUTED}'>(лист «{escape(title)}»)</span>")
     recon = res.get("reconcile")
     if recon:
         lines.append(f"<b>Сверка со списком</b>: {_int(recon['orgs'])} организаций списка — их столбцы и платежи "

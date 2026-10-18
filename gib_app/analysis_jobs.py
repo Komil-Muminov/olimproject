@@ -5,7 +5,7 @@ from report_analysis import write_analysis_report
 
 
 def make_report(path, raw, mode, mappings=None, progress=lambda p, t: None) -> dict:
-    """mappings — что выбрал пользователь в окнах «Как читать файл» (для листа «Как считали»)."""
+    """mappings — что выбрал пользователь в окне «Листы и ИНН» (для листа «Как считали»)."""
     progress(5, "Собираю таблицу…")
     data = build(*raw, mode=mode)
     res = write_analysis_report(path, data, progress, mappings)

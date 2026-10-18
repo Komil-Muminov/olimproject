@@ -15,6 +15,7 @@ from report_colors import ERR_COLOR, add_error_color, cf_fill
 from report_errors import write_errors_sheets
 from report_months import write_months_sheet
 from report_all_by_inn import write_all_by_inn_sheet
+from report_raw_sheets import write_raw_sheets
 from report_reconcile import write_reconcile_sheet
 from report_settings import write_settings_sheet
 from report_pairs import write_pairs_sheet
@@ -44,16 +45,17 @@ def _cell(ws, v, hint=None, **style):
 
 def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None) -> dict:
     parts, with_role = data.parts, len(data.roles) > 1
+    with_total = any(p.has_sums for p in parts)          # сумм нигде нет — нет и «Всего»
     rows = sorted(data.entities, key=lambda e: -e.total)
     progress(15, "Пишу лист «Анализ»…")
     wb = Workbook(write_only=True)
     ws = wb.create_sheet("Анализ")
     ws.sheet_view.showGridLines = False
     head = ["№", "ИНН", "Название"] + (["Кто"] if with_role else []) + [p.label for p in parts] + \
-        ["Всего", "Есть в файлах", "Файлов", "Ошибки", "Названий"]
+        ["Всего"] * with_total + ["Есть в файлах", "Файлов", "Ошибки", "Названий"]
     n = len(head)
     err_col = n - 1
-    widths = [7, 13, 46] + [12] * with_role + [17] * len(parts) + [18, 30, 9, 30, 12]
+    widths = [7, 13, 46] + [12] * with_role + [17] * len(parts) + [18] * with_total + [30, 9, 30, 12]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = f"D{HEAD_ROW + 1}"
@@ -68,7 +70,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
         sums = [(_cell(ws, e.sums[i], number_format=NUM) if p.has_sums else "есть") if e.counts[i] else None
                 for i, p in enumerate(parts)]
         ws.append([k, e.inn, _name_cell(ws, e)] + ([e.role] if with_role else []) + sums
-                  + [_cell(ws, e.total, number_format=NUM), ", ".join(files), len(files),
+                  + [_cell(ws, e.total, number_format=NUM)] * with_total + [", ".join(files), len(files),
                      ", ".join(f for f in FLAGS if f in e.flags),
                      e.names if e.names > 1 else None])
         if k % 20000 == 0:
@@ -85,6 +87,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     recon = write_reconcile_sheet(wb, data)
     progress(69, "Пишу лист «Одна орг. во всех файлах»…")
     all_inn = write_all_by_inn_sheet(wb, data.paths, mappings)
+    raw = write_raw_sheets(wb, data.paths, mappings or {})
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)
     write_months_sheet(wb, data)
@@ -94,7 +97,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "flags": Counter(f for e in rows for f in e.flags), "reconcile": recon,
-            "all_by_inn": all_inn}
+            "all_by_inn": all_inn, "raw": raw}
 
 
 def _legend(ws):
