@@ -9,7 +9,6 @@ from analysis_scan import auto_mode, scan_files
 from report_paths import analysis_report_path
 from ui_analysis_result import result_view
 from ui_file_dialog import FileDialog
-from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
 from worker import Worker
 
@@ -87,13 +86,7 @@ def _ask_files(win, props: list, after):
 
 def _scanned(win, res):
     raw = res["raw"]
-    mode, pair = auto_mode(raw), None       # по умолчанию: первая часть → последняя
-    if needs_pair(raw, mode):
-        dlg = PairDialog(win, raw, mode)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        pair = dlg.pair()
-    _run(win, make_report, analysis_report_path(), raw, mode, pair, win.an_mappings,
+    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), win.an_mappings,
          done=lambda r: _done(win, r, r["data"]))
 
 

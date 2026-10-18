@@ -73,7 +73,6 @@ class ListCasesTest(unittest.TestCase):
         alpha = next(r for r in rows if "Альфа" in r.name)
         self.assertEqual((alpha.values, alpha.paid, alpha.to[0][0].lower()), ([50.0], [30.0], "бюджет"))
         self.assertTrue(all(BY_NAME in e.flags for e in data.entities if e.role == "организация"))
-        self.assertIsNone(data.compare)         # реестр + список — разные вещи: «Что случилось» не считается
 
 
 if __name__ == "__main__":

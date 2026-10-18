@@ -17,7 +17,7 @@ def build_header(win):
     title.setObjectName("appTitle")
     info.addWidget(title)
     sub = QLabel("ГИБ — распределение сумм по назначениям. Глубокий анализ — Excel по организациям (ИНН): "
-                 "что случилось и ошибки.")
+                 "где есть организация и ошибки.")
     sub.setObjectName("muted")
     info.addWidget(sub)
     header.addLayout(info)

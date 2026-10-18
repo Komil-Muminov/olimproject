@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from collections import Counter  # noqa: E402
 from analysis_lists import ListCollector  # noqa: E402
-from analysis_model import APPEARED, BAD_INN, DUP_PAY, GONE, GREW, ODD_DATE, PAYER, status  # noqa: E402
+from analysis_model import BAD_INN, DUP_PAY, ODD_DATE, PAYER, present_files  # noqa: E402
 from report_analysis import write_analysis_report  # noqa: E402
 from analysis_registry import inn_in_name  # noqa: E402
 from analysis_scan import build  # noqa: E402
@@ -131,11 +131,13 @@ class TestRegistryStats(unittest.TestCase):
     def _payers(self, d):
         return {e.inn: e for e in d.entities if e.role == PAYER}
 
-    def test_what_happened(self):
+    def test_present_files(self):
+        """В каких файлах есть организация: «0» и 222… — только в 1-м, 444… — только во 2-м, 333… — в обоих."""
         d = self._data()
         p = self._payers(d)
-        self.assertEqual([status(p[i], d.parts) for i in ("222222222", "444444444", "333333333", "0")],
-                         [GONE, APPEARED, GREW, GONE])          # «0» платил только в 1-м файле
+        first, second = d.parts[0].source, d.parts[1].source
+        self.assertEqual([present_files(p[i], d.parts) for i in ("222222222", "444444444", "333333333", "0")],
+                         [[first], [second], [first, second], [first]])
 
     def test_error_flags_and_details(self):
         d = self._data()
@@ -151,26 +153,25 @@ class TestRegistryStats(unittest.TestCase):
         path = os.path.join(tempfile.mkdtemp(), "a.xlsx")
         res = write_analysis_report(path, self._data())
         # двойной платёж помечен у обеих сторон: плательщик 222… и получатель 999…
-        self.assertEqual((res["statuses"][GONE], res["flags"][DUP_PAY]), (2, 2))
+        self.assertEqual(res["flags"][DUP_PAY], 2)
+        self.assertNotIn("statuses", res)
         wb = load_workbook(path)
         ws = wb["Анализ"]
         self.assertEqual(wb.sheetnames[:4], ["Анализ", "Кто кому платит", "По месяцам", "Двойной платёж"])
         self.assertEqual(ws.cell(5, 2).value, "ИНН")
-        self.assertIn("Новый: в «Янв–Апр 2024» этой организации не было", ws.cell(5, ws.max_column - 2).comment.text)
-        self.assertIn("а в «Май–Авг 2024» она есть", ws.cell(4, 4).comment.text)   # подсказка в легенде («Новый»)
+        head = [c.value for c in ws[5]]
+        self.assertEqual(head[-5:], ["Всего", "Есть в файлах", "Файлов", "Ошибки", "Названий"])
+        self.assertNotIn("Что случилось", head)
+        self.assertIn("В скольких файлах", ws.cell(5, head.index("Файлов") + 1).comment.text)
+        self.assertEqual(ws.cell(4, 4).value, "Ошибки")                            # легенда — только цвет ошибок
+        row = {c.value: ws.cell(r, c.column).value for r in range(6, ws.max_row + 1) for c in ws[5]
+               if ws.cell(r, 2).value == "333333333"}
+        self.assertEqual(row["Файлов"], 2)
         err = wb["Двойной платёж"]
         self.assertEqual(err.cell(1, 1).value, "ДВОЙНОЙ ПЛАТЁЖ — 1")                # каждый вид — свой лист
         rules = sum(len(cf.rules) for cf in ws.conditional_formatting)
-        self.assertEqual(rules, 8)          # 5 цветов строк + оранжевые ошибки + разные названия (название, «Названий»)
-
-    def test_change_and_compare_pair(self):
-        from analysis_model import change
-        d = self._data()
-        p = self._payers(d)
-        self.assertEqual(change(p["333333333"], d.parts, d.compare), (450.0, 9.0))     # 50 → 500: +900%
-        self.assertEqual(change(p["444444444"], d.parts, d.compare), (None, None))     # нет в первой части
-        rev = build(self.reg, ListCollector(), [], pair=(1, 0))                        # «было → стало» наоборот
-        self.assertEqual(status(self._payers(rev)["444444444"], rev.parts, rev.compare), GONE)
+        self.assertEqual(rules, 3)          # оранжевые ошибки + разные названия (название, «Названий»)
+        self.assertNotIn("Что случилось", [c.value for c in wb["Кто кому платит"][4]])
 
     def test_months_mode(self):
         from analysis_periods import MONTHS_MODE, available_modes
@@ -217,18 +218,18 @@ class TestLists(unittest.TestCase):
         self.assertEqual(c.add_file("t.xlsx", {"Лист1": rows}), 2)
         d = build(Registry(), c, ["t.xlsx"])
         self.assertEqual([p.label for p in d.parts], ["2024 · «Лист1» A–D", "2025 · «Лист1» F–I"])
-        st = Counter(status(e, d.parts) for e in d.entities)
-        self.assertEqual((st[GONE], st[APPEARED], st[GREW]), (1, 1, 2))
+        where = Counter(tuple(c > 0 for c in e.counts) for e in d.entities)
+        self.assertEqual(where, Counter({(True, True): 12, (True, False): 1, (False, True): 1}))
 
-    def test_part_without_sums_compares_presence(self):
-        from analysis_model import SAME
+    def test_part_without_sums(self):
         rows = [["Номи корхона", "РМА", "Маблағ 2024", None, "Номи корхона", "РМА"]]
         rows += [[f"Орг {i}", f"0100000{i:02d}", 50.0 + 7 * i, None, f"Орг {i}", f"0100000{i:02d}"] for i in range(12)]
         c = ListCollector()
         c.add_file("t.xlsx", {"Лист1": rows})
         d = build(Registry(), c, ["t.xlsx"])
         self.assertEqual([p.has_sums for p in d.parts], [True, False])
-        self.assertEqual(Counter(status(e, d.parts) for e in d.entities), Counter({SAME: 12}))
+        self.assertTrue(all(e.counts[0] and e.counts[1] for e in d.entities))
+        self.assertEqual(len(d.entities), 12)
 
 
 if __name__ == "__main__":

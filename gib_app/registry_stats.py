@@ -139,7 +139,7 @@ class Registry:
                 if m not in main and kept and main:
                     self.odd_dates += [(f, p) for p in kept if not lo <= p.date <= hi]
         self._month_rows = []
-        # порядок файлов — по времени, чтобы «пропал / появился» считались правильно
+        # порядок файлов — по времени: части в отчёте идут «раньше → позже»
         self.order = sorted(range(len(self.files)), key=lambda f: self.files[f].main_months[:1] or [(9999, 0)])
 
 

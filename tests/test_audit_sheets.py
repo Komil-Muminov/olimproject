@@ -41,7 +41,7 @@ class AuditSheetsTest(unittest.TestCase):
     def _report(self, path):
         raw = scan_files([path], {path: [REG]})["raw"]
         out = os.path.join(tempfile.mkdtemp(), "a.xlsx")
-        make_report(out, raw, auto_mode(raw), None, {path: [REG]})
+        make_report(out, raw, auto_mode(raw), {path: [REG]})
         return build(*raw), load_workbook(out)
 
     def test_settings_and_months(self):

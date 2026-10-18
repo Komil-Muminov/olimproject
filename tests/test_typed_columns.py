@@ -79,7 +79,7 @@ class TypedColumnsTest(unittest.TestCase):
         maps = {a: _map(a, inn="a", sums="b"), b: _map(b, inn="a", sums="b")}
         raw = scan_files([a, b], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = make_report(out, raw, auto_mode(raw), None, maps)
+        res = make_report(out, raw, auto_mode(raw), maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})   # и те, что в одном файле
         ws = load_workbook(out)["Одна орг. во всех файлах"]
         rows = list(ws.iter_rows(min_row=4, values_only=True))
@@ -110,7 +110,7 @@ class TypedColumnsTest(unittest.TestCase):
         maps = {path: [to_mapping(s, p["sheets"][s], t, {}) for s, t in typed.items()]}
         raw = scan_files([path], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = make_report(out, raw, auto_mode(raw), None, maps)
+        res = make_report(out, raw, auto_mode(raw), maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})
         rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
         self.assertEqual(rows[0][7:9], ("год.xlsx · Янв: A ИНН", "год.xlsx · Янв: B Сумма"))
@@ -122,7 +122,7 @@ class TypedColumnsTest(unittest.TestCase):
         path = _save("один.xlsx", [["ИНН", "Сумма"], [INNS[0], 5]])
         maps = {path: _map(path, inn="a", sums="b")}
         raw = scan_files([path], maps)["raw"]
-        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), None, maps)
+        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), maps)
         self.assertIsNone(res["all_by_inn"])
 
 

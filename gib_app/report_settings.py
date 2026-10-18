@@ -51,10 +51,8 @@ def write_settings_sheet(wb, data, mappings: dict = None):
     for col, w in zip("ABCDE", (34, 26, 20, 22, 70)):
         ws.column_dimensions[col].width = w
     title_rows(ws, "КАК СЧИТАЛИ", "64748B", "Параметры анализа: что взято из каких файлов. Исходные файлы не менялись.", 5)
-    a, b = data.compare or (None, None)
     for k, v in (("Дата анализа", datetime.now().strftime("%d.%m.%Y %H:%M")), ("Файлов", len(data.paths)),
-                 ("Части", MODE_TITLES.get(data.mode, data.mode)),
-                 ("Сравнение", f"«{data.parts[a].label}» → «{data.parts[b].label}»" if data.compare else "нет")):
+                 ("Части", MODE_TITLES.get(data.mode, data.mode))):
         ws.append([WriteOnlyCell(ws, value=k), v])
     ws.append([])
     _head(ws, ["Файл", "Лист", "Что это", "Что выбрано", "Столбец / значение"])

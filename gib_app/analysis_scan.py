@@ -1,5 +1,5 @@
 """Глубокий анализ: читает любые файлы (реестры платежей и обычные таблицы с ИНН), потом собирает
-таблицу с выбранной разбивкой (по файлам / кварталам / месяцам) и парой «было → стало». Чтение — в фоне."""
+таблицу с выбранной разбивкой (по файлам / кварталам / месяцам). Чтение — в фоне."""
 import os
 
 from analysis_checks import inn_names, mark_same_names
@@ -107,7 +107,7 @@ def _order(reg, lists, mode) -> tuple:
 
 
 def preview_parts(reg, lists, mode: str = FILES) -> list:
-    """Части в порядке времени (для выбора «было → стало») — без подсчёта организаций."""
+    """Части в порядке времени — без подсчёта организаций."""
     _, parts, order = _order(reg, lists, mode)
     return [parts[i] for i in order]
 
@@ -119,8 +119,8 @@ def auto_mode(raw) -> str:
     return next((m for m in modes if len(preview_parts(reg, lists, m)) > 1), FILES)
 
 
-def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
-    """Части реестров и списков → одна таблица; части по порядку времени; pair — (было, стало)."""
+def build(reg, lists, paths, mode: str = FILES) -> AnalysisData:
+    """Части реестров и списков → одна таблица; части по порядку времени."""
     slots, parts, order = _order(reg, lists, mode)
     n, details, ents, pairs = len(parts), {}, [], []
     if reg.files:
@@ -138,9 +138,6 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
         e.cols = [e.cols[i] for i in order] if e.cols else [None] * n
     details = {**details, **lists.details, "same_name": mark_same_names(ents), "inn_names": inn_names(ents),
                "white_text": reg.white_cells}
-    compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
-    if reg.files and lists.parts:       # реестр + список — разные вещи: сравнения нет (для них — «Сверка»)
-        compare = None
     months = dict(sorted(reg.months.items())) if reg.files else {}
-    return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode, months,
+    return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, mode, months,
                         reg.notes + lists.notes, reg.checks)

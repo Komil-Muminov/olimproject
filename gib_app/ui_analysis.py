@@ -6,10 +6,10 @@ from PySide6.QtWidgets import (
 
 import ui_analysis_flow as flow
 
-ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организация — строка, суммы по частям.\n"
-                "Цвет строки — что случилось: Новый · Пропал · Вырос · Уменьшился · Без изменений · Появился и пропал.\n"
+ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организация — строка, суммы по частям,\n"
+                "в каких файлах она есть и в скольких («Файлов» = 1 — только в одном).\n"
                 "Оранжевая ячейка — ошибка: двойной платёж, неправильный ИНН, странная дата, повтор ИНН.\n"
-                "В Excel есть легенда; наведите на цвет или заголовок — подсказка.")
+                "Наведите на заголовок в Excel — подсказка.")
 
 
 def _action(win, title: str, sub: str, tip: str, slot):
@@ -36,7 +36,7 @@ def build_analysis_card(win):
 
     row = QHBoxLayout()
     row.setSpacing(14)
-    win.an_run_btn = _action(win, "📊  Анализ", "Excel: организации по частям, что случилось, ошибки",
+    win.an_run_btn = _action(win, "📊  Анализ", "Excel: организации по частям, где есть, ошибки",
                              ANALYSIS_TIP, lambda: flow.run(win))
     row.addWidget(win.an_run_btn)
     lay.addLayout(row)
