@@ -47,8 +47,10 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     parts, with_role = data.parts, len(data.roles) > 1
     with_total = any(p.has_sums for p in parts)          # сумм нигде нет — нет и «Всего»
     rows = sorted(data.entities, key=lambda e: -e.total)
-    progress(15, "Пишу лист «Анализ»…")
     wb = Workbook(write_only=True)
+    progress(10, "Пишу лист «Одна орг. во всех файлах»…")
+    all_inn = write_all_by_inn_sheet(wb, data.paths, mappings)      # первым листом — главный свод
+    progress(15, "Пишу лист «Анализ»…")
     ws = wb.create_sheet("Анализ")
     ws.sheet_view.showGridLines = False
     head = ["№", "ИНН", "Название"] + (["Кто"] if with_role else []) + [p.label for p in parts] + \
@@ -85,8 +87,6 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
                                                            fill=cf_fill(ERR_COLOR), font=Font(bold=True)))
     progress(68, "Пишу лист «Сверка со списком»…")
     recon = write_reconcile_sheet(wb, data)
-    progress(69, "Пишу лист «Одна орг. во всех файлах»…")
-    all_inn = write_all_by_inn_sheet(wb, data.paths, mappings)
     raw = write_raw_sheets(wb, data.paths, mappings or {})
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)

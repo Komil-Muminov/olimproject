@@ -107,7 +107,7 @@ class AnalysisFlowTest(unittest.TestCase):
         org = {r[1]: r for r in wb["Анализ"].iter_rows(min_row=6, values_only=True)}
         self.assertEqual(org[INNS[0]][head.index("Файлов")], 3)
         self.assertEqual(org[INNS[11]][head.index("Есть в файлах")], "Янв.xlsx, Фев.xlsx, Мар.xlsx")
-        self.assertIn("Одна орг. во всех файлах", wb.sheetnames)
+        self.assertEqual(wb.sheetnames[:2], ["Одна орг. во всех файлах", "Анализ"])   # главный свод — первым
         self.assertEqual([r[:3] for r in res["raw"]], [("Мар.xlsx", "Прочее", "Мар · Прочее")])
         self.assertEqual([list(r) for r in wb["Мар · Прочее"].iter_rows(values_only=True)], [["заметка", "текст"], ["ещё", 1]])
 
