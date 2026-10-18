@@ -1,4 +1,4 @@
-"""Лист «Как считали»: когда сделан анализ, какие файлы и листы взяты, какие столбцы выбраны (ИНН, суммы,
+"""Лист «Как считали»: когда сделан анализ, какие файлы и листы взяты, какие столбцы выбраны (ИНН, название,
 особенности), что скрыто в файлах. Чтобы через месяц было видно, откуда взялись цифры."""
 import os
 from datetime import datetime
@@ -6,11 +6,10 @@ from datetime import datetime
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font
 
-from analysis_periods import MODE_TITLES
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, fill_color
 
-KINDS = {"registry": "реестр платежей", "list": "список организаций", "raw": "без ИНН — как есть"}
+KINDS = {"list": "таблица с ИНН", "raw": "без ИНН — как есть"}
 OPTIONS = (("transpose", "таблица перевёрнута (организации по столбцам)"), ("by_name", "ИНН нет — по названию"),
            ("repeats", "организация в нескольких строках — не ошибка"), ("hidden_sheet", "скрытый лист"))
 
@@ -32,12 +31,6 @@ def _sheet_rows(fname: str, m: dict) -> list:
     rows = f"с {start}-й" + (f" по {m['last']}-ю" if m.get("last") else " до конца листа")
     out = [[fname, m["sheet"], KINDS.get(m["kind"], m["kind"]), "Строки", rows]]
     out += [[fname, m["sheet"], "", title, col] for title, col in m.get("labels", {}).items()]
-    sums = m.get("sums") or m["cols"].get("amount") or []
-    if len(sums) > 1:
-        out.append([fname, m["sheet"], "", "Как суммы", "каждый столбец отдельно" if m.get("separate") else "сложены"])
-    for key, title in (("f_purpose", "Отбор: основание содержит"), ("f_rec", "Отбор: получатель содержит")):
-        if m.get(key):
-            out.append([fname, m["sheet"], "", title, m[key] + "  (остальные платежи не учитывались)"])
     opts = [text for key, text in OPTIONS if m.get(key)]
     if opts:
         out.append([fname, m["sheet"], "", "Особенности", "; ".join(opts)])
@@ -51,8 +44,7 @@ def write_settings_sheet(wb, data, mappings: dict = None):
     for col, w in zip("ABCDE", (34, 26, 20, 22, 70)):
         ws.column_dimensions[col].width = w
     title_rows(ws, "КАК СЧИТАЛИ", "64748B", "Параметры анализа: что взято из каких файлов. Исходные файлы не менялись.", 5)
-    for k, v in (("Дата анализа", datetime.now().strftime("%d.%m.%Y %H:%M")), ("Файлов", len(data.paths)),
-                 ("Части", MODE_TITLES.get(data.mode, data.mode))):
+    for k, v in (("Дата анализа", datetime.now().strftime("%d.%m.%Y %H:%M")), ("Файлов", len(data.paths))):
         ws.append([WriteOnlyCell(ws, value=k), v])
     ws.append([])
     _head(ws, ["Файл", "Лист", "Что это", "Что выбрано", "Столбец / значение"])

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QDialog, QMessageBox
 
 from analysis_jobs import make_report
 from analysis_propose import propose_files
-from analysis_scan import auto_mode, scan_files
+from analysis_scan import scan_files
 from report_paths import analysis_report_path
 from ui_analysis_result import result_view
 from ui_result import show_result
@@ -66,7 +66,7 @@ def _ask_sheets(win, props: list, after):
 
 def _scanned(win, res):
     raw = res["raw"]
-    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), win.an_mappings,
+    _run(win, make_report, analysis_report_path(), raw, win.an_mappings,
          done=lambda r: _done(win, r, r["data"]))
 
 

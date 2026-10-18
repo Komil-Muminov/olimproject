@@ -4,14 +4,13 @@ import os
 
 from openpyxl.utils import get_column_letter
 
-from analysis_list_map import FIND, mapped_table, side_guess, transpose
+from analysis_list_map import FIND, mapped_table, transpose
 from analysis_model import BAD_INN, BY_NAME, DUP_ROW, HIDDEN, ORG, SHARED, Entity, Part
-from analysis_registry import inn_problem
+from inn_rules import INN_DIGITS, inn_ok, inn_problem
 from excel_sheet_info import hidden_note, sheet_scan
 from compare_finder import find_tables, name_at
 from analysis_checks import distinct_names
 from inn_check import check_inn
-from registry_stats import INN_DIGITS, inn_ok
 from utils import (cell_val, has_invisible, is_total_label, norm_text, not_a_number, number_as_text, show_invisible,
                    to_num_safe)
 
@@ -32,26 +31,6 @@ def money_cols(data, s) -> list:
     return both if len(both) > 1 else (_named(data, s, FIND["amount"])[:1] or s.value_cols[:1])
 
 
-def money_unclear(sheets: dict) -> dict | None:
-    """Несколько столбцов с числами и ни один не «Сумма» (и не Дебет/Кредит) — какой считать деньгами,
-    скажет пользователь. → догадка для окна выбора столбцов или None."""
-    for sheet, data in sheets.items():
-        found = find_tables(data)
-        for s in (found[1] if found else []):
-            if len(s.value_cols) > 1 and len(_named(data, s, TWO_SIDED)) < 2 and not _named(data, s, FIND["amount"]):
-                return side_guess(data, sheet, s)
-    return None
-
-
-def payments_like(sheets: dict) -> bool:
-    """Два столбца ИНН в одной таблице (плательщик и получатель) — похоже на реестр платежей."""
-    for data in sheets.values():
-        found = find_tables(data)
-        if found and len({tuple(s.block) for s in found[1]}) < len(found[1]):
-            return True
-    return False
-
-
 class ListCollector:
     """Собирает таблицы с ИНН из нескольких файлов: одна организация (ИНН) — одна строка."""
 
@@ -63,6 +42,8 @@ class ListCollector:
         self.bad = set()        # ИНН (как в файле) с ошибкой
         self.notes = []         # скрытые листы и строки (сводка)
         self.last_total = 0.0   # сумма последней прочитанной таблицы (каждая строка один раз) — для сверки с «Итого»
+        self.checks = []        # сверка с «Итого» в файле (excel_sheet_info.total_check)
+        self.white_cells = []   # ячейки с белым шрифтом: [файл, лист, ячейка, текст]
 
     def add_file(self, path: str, sheets: dict, mapping: dict = None) -> int:
         """→ сколько таблиц с ИНН нашлось в файле. mapping — столбцы, указанные пользователем."""

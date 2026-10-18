@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from openpyxl import Workbook  # noqa: E402
 
 from analysis_list_map import AS_LIST  # noqa: E402
-from analysis_propose import REGISTRY  # noqa: E402
 from analysis_scan import build, scan_files  # noqa: E402
 from utils import to_number  # noqa: E402
 
@@ -32,17 +31,10 @@ def _list(head, cols, sums, **extra):
 
 
 class AuditFixesTest(unittest.TestCase):
-    def test_registry_header_below_row_20(self):
-        path = _save([["Отчёт"]] + [[None]] * 48 + [["ИНН плательщика", "ИНН получателя", "Сумма"], [INNS[0], INNS[1], 7]])
-        maps = [{"sheet": "Л", "head": 49, "row0": 0, "col0": 0, "kind": REGISTRY,
-                 "cols": {"payer_inn": 0, "rec_inn": 1, "amount": [2]}}]
-        reg, _, _ = scan_files([path], {path: maps})["raw"]
-        self.assertEqual(reg.payers[INNS[0]].total, 7.0)
-
     def test_list_inn_errors_with_manual_columns(self):
         path = _save([["ИНН", "Название", "Сумма"], [INNS[0], "А", 1], [INNS[0], "А", 1], [12345678, "Потерян ноль", 1],
                       ["0", "Ноль", 1], [None, "Без ИНН", 1], [None, "Итого", 5]])
-        _, lists, _ = scan_files([path], {path: _list(0, {"inn": 0, "name": 1}, [2])})["raw"]
+        lists, _ = scan_files([path], {path: _list(0, {"inn": 0, "name": 1}, [2])})["raw"]
         bad = {r[4]: (r[5], r[6]) for r in lists.details["bad_list"]}
         self.assertEqual(bad["Потерян ноль"], ("8 цифр вместо 9 — возможно, потерян 0 в начале (должно быть 012345678)",
                                                "012345678"))
@@ -68,18 +60,18 @@ class AuditFixesTest(unittest.TestCase):
         src = _save([["ИНН", "Название"]] + [[inn, f"Орг {i}"] for i, inn in enumerate(INNS)])
         path = os.path.join(tempfile.mkdtemp(), "Вписка.xls")
         shutil.copyfile(src, path)
-        self.assertEqual(propose(path)["guess"]["cols"], {"inn": 0, "name": 1})
-        _, lists, _ = scan_files([path], {path: _list(0, {"inn": 0, "name": 1}, [])})["raw"]
+        self.assertEqual(propose(path)["sheets"]["Л"]["rows"][0], ["ИНН", "Название"])
+        lists, _ = scan_files([path], {path: _list(0, {"inn": 0, "name": 1}, [])})["raw"]
         self.assertEqual(len(lists.entities(0, 1)), 3)
 
     def test_statement_repeats_not_errors(self):
-        """Выписка: контрагент в нескольких строках — не «повтор ИНН»; галочка ставится сама."""
+        """Выписка: контрагент в нескольких строках — не «повтор ИНН»; это программа замечает сама."""
         from analysis_propose import propose
         rows = [["Дата", "Контрагент", "ИНН", "Приход"]] + [["01.04.2024", f"Орг {k % 4}", f"{100000000 + (k % 4) * 7919:09d}", 10]
                                                          for k in range(12)]
         path = _save(rows)
-        self.assertTrue(propose(path)["guess"]["repeats"])
-        _, lists, _ = scan_files([path], {path: _list(0, {"inn": 2, "name": 1}, [3], repeats=True)})["raw"]
+        self.assertTrue(propose(path)["sheets"]["Л"]["repeats"])
+        lists, _ = scan_files([path], {path: _list(0, {"inn": 2, "name": 1}, [3], repeats=True)})["raw"]
         ents = lists.entities(0, 1)
         self.assertEqual((lists.details["dup_row"], {e.sums[0] for e in ents}, any(e.flags for e in ents)), ([], {30.0}, False))
 

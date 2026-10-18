@@ -3,15 +3,12 @@
 from openpyxl.utils import get_column_letter
 
 from analysis_list_map import AS_LIST
-from analysis_propose import REGISTRY
 from column_spec import SpecError, cell_address, one_column, parse
 from compare_finder import key_in_text, key_of
 from utils import is_total_label, to_number
 
 MAIN = (("inn", "ИНН"), ("name", "Название"), ("sums", "Сумма"), ("total", "Итого (ячейка)"))
-REGISTRY_FIELDS = (("rec_inn", "ИНН получателя"), ("rec", "Получатель"), ("date", "Дата"), ("doc", "№ документа"),
-                   ("purpose", "Основание"))
-TITLES = dict(MAIN + REGISTRY_FIELDS)
+TITLES = dict(MAIN)
 
 
 def _first_data_row(rows: list, col: int, by_name: bool) -> int:
@@ -69,26 +66,14 @@ def to_mapping(sheet_name: str, sheet: dict, typed: dict, opts: dict) -> dict:
     anchor = one["inn"] or (one["name"] if by_name else None)
     if not anchor:
         raise SpecError("Укажите колонку ИНН (например, C или C5-C300)")
-    registry = bool(one["rec_inn"] or one["rec"])
     sums = [rel(c, "Сумма") for c, _, _ in parse(typed.get("sums"))]
-    if registry and not sums:
-        raise SpecError("Для реестра (есть получатель) укажите колонку суммы")
-    if registry and not one["inn"]:
-        raise SpecError("Для реестра нужна колонка ИНН плательщика")
     col, first, last = anchor
     head = first - 2 if first else _first_data_row(sheet["rows"], rel(col, "ИНН"), by_name and not one["inn"]) - 1
     cols = {key: (rel(v[0], TITLES[key]) if v else None) for key, v in one.items()}
-    if registry:
-        cols = {"payer_inn": cols["inn"], "payer": cols["name"], "rec_inn": cols["rec_inn"], "rec": cols["rec"],
-                "date": cols["date"], "doc": cols["doc"], "purpose": cols["purpose"], "amount": sums}
-    else:
-        cols = {"inn": cols["inn"], "name": cols["name"]}
-    m = {"sheet": sheet_name, "head": head, "last": last, "row0": 0, "col0": col0, "kind": REGISTRY if registry else AS_LIST,
-         "cols": cols, "typed": {TITLES[k]: v for k, v in typed.items() if v}, "total_cell": cell_address(typed.get("total")),
+    m = {"sheet": sheet_name, "head": head, "last": last, "row0": 0, "col0": col0, "kind": AS_LIST,
+         "cols": {"inn": cols["inn"], "name": cols["name"]}, "sums": sums, "typed": {TITLES[k]: v for k, v in typed.items() if v}, "total_cell": cell_address(typed.get("total")),
          "hidden_sheet": bool(sheet.get("hidden"))}
     m["labels_row"] = labels_row(sheet["rows"], head) if head >= 0 else head
     m["labels"] = _labels(sheet, m["labels_row"], typed)
     m.update({k: v for k, v in opts.items() if v})
-    if not registry:
-        m["sums"] = sums
     return m

@@ -3,14 +3,12 @@
 «Листы и ИНН», не нашлось — пользователь вписывает сам или берёт лист как есть."""
 from openpyxl.utils import get_column_letter
 
-from analysis_list_map import AS_LIST, _find
+from analysis_list_map import AS_LIST
 from analysis_lists import money_cols
 from compare_finder import find_tables
 from excel_sheet_info import sheet_scan, workbook_sheets
 from file_format import real_path
-from registry_columns import guess_header, registry_columns, two_row_columns
 
-REGISTRY = "registry"
 REPEAT_SHARE = 0.2          # столько ИНН встречаются в нескольких строках — похоже на операции (выписку)
 PREVIEW_ROWS = 300          # столько первых строк листа показывается в окне
 FULL_READ_LIMIT = 200_000   # таблицы больше — без поиска ИНН по содержимому (долго)
@@ -23,23 +21,6 @@ def _sheet_rows(sheet) -> list:
         if i + 1 >= PREVIEW_ROWS:
             break
     return rows
-
-
-def auto_columns(rows: list, kind: str) -> dict:
-    """Догадка по первым строкам листа: {"head", "cols", "sums", "found"} — для реестра или для списка
-    (found — реестр узнан по заголовкам)."""
-    if kind == REGISTRY:
-        for i, values in enumerate(rows):
-            cols = registry_columns(values) or (i > 0 and two_row_columns(rows[i - 1], values))
-            if cols:
-                return {"head": i, "cols": {k: v for k, v in cols.items() if k != "amount"}, "sums": [cols["amount"]],
-                        "found": True}
-        g = guess_header(rows)
-        return {"head": g["head"], "cols": {k: v for k, v in g["cols"].items() if k != "amount"},
-                "sums": [g["cols"]["amount"]] if g["cols"].get("amount") is not None else [], "found": False}
-    g = guess_header(rows, _find)
-    return {"head": g["head"], "cols": {"inn": g["cols"]["inn"], "name": g["cols"]["name"]},
-            "sums": [g["cols"]["amount"]] if g["cols"]["amount"] is not None else [], "found": False}
 
 
 def _list_guess(wb, name: str) -> dict | None:
@@ -67,7 +48,7 @@ def sheet_inn(wb, name: str, col0: int) -> dict:
 
 
 def propose(path: str) -> dict:
-    """→ {"path", "sheets": {лист: {"rows", "row0", "col0", "height"}}, "guess": {...}} (пустые листы пропущены)."""
+    """→ {"path", "sheets": {лист: {"rows", "row0", "col0", "height", "inn", "name"}}} (пустые листы пропущены)."""
     from python_calamine import CalamineWorkbook
 
     wb, info = CalamineWorkbook.from_path(real_path(path)), workbook_sheets(path)
@@ -83,21 +64,7 @@ def propose(path: str) -> dict:
                             "formulas": {c - (sheet.start or (0, 0))[1]: n for c, n in formulas.items()}}
     for name, sh in sheets.items():             # колонка ИНН на каждом листе — для окна «Листы и ИНН»
         sh.update(sheet_inn(wb, name, sh["col0"]) if sh["height"] <= FULL_READ_LIMIT else {"inn": None, "name": None})
-    guess = None
-    for name, sh in sheets.items():             # реестр — по заголовкам
-        g = auto_columns(sh["rows"], REGISTRY)
-        if g["found"]:
-            guess = dict(g, sheet=name, kind=REGISTRY)
-            break
-    for name, sh in sheets.items():             # иначе — список с ИНН по содержимому
-        if guess:
-            break
-        if sh["height"] <= FULL_READ_LIMIT:
-            guess = _list_guess(wb, name)
-    if not guess and sheets:
-        name = next(iter(sheets))
-        guess = dict(auto_columns(sheets[name]["rows"], AS_LIST), sheet=name, kind=AS_LIST)
-    return {"path": path, "sheets": sheets, "guess": guess}
+    return {"path": path, "sheets": sheets}
 
 
 def propose_files(paths: list, progress=lambda p, t: None) -> list:

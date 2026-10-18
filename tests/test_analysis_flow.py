@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QDialog  # noqa: E402
 import ui_analysis_flow as flow  # noqa: E402
 from analysis_jobs import make_report  # noqa: E402
 from analysis_propose import propose_files  # noqa: E402
-from analysis_scan import auto_mode, scan_files  # noqa: E402
+from analysis_scan import scan_files  # noqa: E402
 from sheet_choice import choices, to_mappings  # noqa: E402
 
 INNS = [f"{100000000 + i * 7919:09d}" for i in range(12)]
@@ -98,7 +98,7 @@ class AnalysisFlowTest(unittest.TestCase):
         self.assertEqual(problems, [])
         raw = scan_files(paths, maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = make_report(out, raw, auto_mode(raw), maps)
+        res = make_report(out, raw, maps)
         wb = load_workbook(out)
         head = [c.value for c in wb["Анализ"][5]]
         self.assertEqual(len([h for h in head if "Банк" in str(h) or "Касса" in str(h)]), 5)   # 5 листов с ИНН

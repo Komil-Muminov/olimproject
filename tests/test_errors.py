@@ -9,17 +9,14 @@ from report_errors import error_counts  # noqa: E402
 
 class ErrorCountsTest(unittest.TestCase):
     def test_same_numbers_as_sheets_by_file(self):
-        tail = ["А", "111111111", "Б", "222222222", ""]
         details = {
-            "dup": [[1, "M1.xlsx", 5, "1", None, 10.0, "платёж"] + tail, [1, "M2.xlsx", 9, "1", None, 10.0, "повтор"] + tail],
-            "bad_pay": [["M1.xlsx", 3], ["M1.xlsx", 4], ["M2.xlsx", 7]],
-            "odd": [],
+            "bad_list": [["M1.xlsx", 3], ["M1.xlsx", 4], ["M2.xlsx", 7]],
+            "dup_row": [],
             "same_name": [[1, "А"], [1, "А"], [2, "Б"], [2, "Б"]],
         }
         self.assertEqual(error_counts(details), [
-            ("Двойной платёж", {"M2.xlsx": 1}, 1),                 # пара — в файле, где повтор
-            ("Неправильный ИНН", {"M1.xlsx": 2, "M2.xlsx": 1}, 3),
             ("Одно название — разные ИНН", {}, 2),                 # группы, без разбивки по файлам
+            ("Неправильный ИНН в таблице", {"M1.xlsx": 2, "M2.xlsx": 1}, 3),
         ])
 
 
@@ -27,12 +24,12 @@ class InnRuleTest(unittest.TestCase):
     """Ошибка в ИНН — только если цифр не 9."""
 
     def test_nine_digits(self):
-        from registry_stats import inn_ok
+        from inn_rules import inn_ok
         self.assertEqual([inn_ok(x) for x in ("040000011", "040 000 011", "04-000-0011", "40000011", "0", "")],
                          [True, True, True, False, False, False])
 
     def test_problem_text(self):
-        from analysis_registry import inn_problem
+        from inn_rules import inn_problem
         self.assertEqual(inn_problem("40000011"), "8 цифр вместо 9 — возможно, потерян 0 в начале (должно быть 040000011)")
         self.assertEqual(inn_problem("12A45"), "4 цифр вместо 9 (есть буквы или знаки)")
         self.assertEqual(inn_problem("0"), "вместо ИНН стоит 0 (не указан)")

@@ -9,7 +9,7 @@ SHEET_RE = re.compile(r'<sheet\b[^>]*>')
 ROW_RE = re.compile(r'<row\b[^>]*>')
 CELL_RE = re.compile(r'<c\b[^>]*?\br="([A-Z]+)\d+"[^>]*?(?:/>|>(.*?)</c>)', re.S)
 VALUE_RE = re.compile(r"<v>[^<]")
-FORMULA_SCAN_LIMIT = 20_000_000     # большие листы (реестры) — без поиска формул (долго)
+FORMULA_SCAN_LIMIT = 20_000_000     # очень большие листы — без поиска формул (долго)
 
 
 def _attr(tag: str, name: str) -> str | None:

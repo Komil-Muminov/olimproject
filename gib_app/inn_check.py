@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 
 from compare_finder import find_tables, key_in_text, name_at as _name_at
-from registry_stats import INN_DIGITS
+from inn_rules import INN_DIGITS
 from utils import cell_val as _cell, is_total_label, norm_text
 
 

@@ -11,8 +11,7 @@ from openpyxl import Workbook  # noqa: E402
 
 from analysis_list_map import AS_LIST  # noqa: E402
 from analysis_model import BY_NAME, SHARED  # noqa: E402
-from analysis_propose import REGISTRY, propose  # noqa: E402
-from analysis_reconcile import reconcile  # noqa: E402
+from analysis_propose import propose  # noqa: E402
 from analysis_scan import build, scan_files  # noqa: E402
 
 INNS = [f"{100000000 + i * 7919:09d}" for i in range(4)]
@@ -34,7 +33,7 @@ def _list_map(head, cols, sums=(), **extra):
 
 
 def _orgs(path, maps):
-    _, lists, _ = scan_files([path], {path: maps})["raw"]
+    lists, _ = scan_files([path], {path: maps})["raw"]
     return {e.name: e for e in lists.entities(0, len(lists.parts))}
 
 
@@ -61,18 +60,14 @@ class ListCasesTest(unittest.TestCase):
         self.assertEqual((SHARED in orgs["А"].flags, SHARED in orgs["В"].flags), (True, False))
 
     def test_no_inn_match_by_name(self):
-        """Список без ИНН — организация находится в реестре по названию (без кавычек и формы ООО)."""
-        lst = _save("без ИНН.xlsx", [["Название", "План"], ['ООО "Альфа"', 50], ["Бета", 7]])
-        reg = _save("реестр.xlsx", [["Плательщик", "ИНН плательщика", "Получатель", "ИНН получателя", "Сумма"],
-                                    ["Альфа ООО", INNS[0], "Бюджет", INNS[3], 30]])
-        maps = {lst: _list_map(0, {"inn": None, "name": 0}, [1], by_name=True),
-                reg: [{"sheet": "Л", "head": 0, "row0": 0, "col0": 0, "kind": REGISTRY,
-                       "cols": {"payer": 0, "payer_inn": 1, "rec": 2, "rec_inn": 3, "amount": [4]}}]}
-        data = build(*scan_files([lst, reg], maps)["raw"])
-        _, heads, rows = reconcile(data)
-        alpha = next(r for r in rows if "Альфа" in r.name)
-        self.assertEqual((alpha.values, alpha.paid, alpha.to[0][0].lower()), ([50.0], [30.0], "бюджет"))
-        self.assertTrue(all(BY_NAME in e.flags for e in data.entities if e.role == "организация"))
+        """Список без ИНН — организации по названию (без кавычек и формы ООО), с пометкой «по названию»."""
+        a = _save("без ИНН.xlsx", [["Название", "План"], ['ООО "Альфа"', 50], ["Бета", 7]])
+        b = _save("ещё.xlsx", [["Название", "План"], ["Альфа ООО", 30]])
+        maps = {p: _list_map(0, {"inn": None, "name": 0}, [1], by_name=True) for p in (a, b)}
+        data = build(*scan_files([a, b], maps)["raw"])
+        alpha = next(e for e in data.entities if "Альфа" in e.name)
+        self.assertEqual(alpha.sums, [50.0, 30.0])                       # одна организация в обоих файлах
+        self.assertTrue(all(BY_NAME in e.flags for e in data.entities))
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from openpyxl import Workbook, load_workbook  # noqa: E402
 
 from analysis_jobs import make_report  # noqa: E402
 from analysis_propose import propose  # noqa: E402
-from analysis_scan import auto_mode, scan_files  # noqa: E402
+from analysis_scan import scan_files  # noqa: E402
 from column_entry import to_mapping  # noqa: E402
 from column_spec import SpecError, cell_address, parse  # noqa: E402
 
@@ -51,27 +51,19 @@ class TypedColumnsTest(unittest.TestCase):
                                 [INNS[0], "А", 10], [INNS[1], "Б", 20], [INNS[2], "В", 30]])
         m = _map(path, inn="a3-a4", name="b", sums="c")[0]
         self.assertEqual((m["head"], m["last"]), (1, 4))
-        _, lists, _ = scan_files([path], {path: [m]})["raw"]
+        lists, _ = scan_files([path], {path: [m]})["raw"]
         self.assertEqual([e.name for e in lists.entities(0, 1)], ["А"])          # строка 5 — за пределами
         m = _map(path, inn="a", name="b", sums="c")[0]
         self.assertEqual((m["head"], m["labels_row"], m["labels"]["Название"]), (2, 1, "b  →  B: Название"))
 
-    def test_total_check_and_registry(self):
+    def test_total_check(self):
         path = _save("р.xlsx", [["Дата", "ИНН плат", "ИНН получ", "Сумма"], [date(2024, 1, 5), INNS[0], INNS[3], 70],
                                 [date(2024, 1, 6), INNS[1], INNS[3], 30], [None, None, "Итого", 101]])
-        maps = {path: _map(path, inn="b", rec_inn="c", sums="d", date="a", total="d4")}
-        self.assertEqual(maps[path][0]["kind"], "registry")
+        maps = {path: _map(path, inn="b", sums="d", total="d4")}
+        self.assertEqual(maps[path][0]["kind"], "list")
         raw = scan_files([path], maps)["raw"]
         check = raw[0].checks[0]
         self.assertEqual((check["cell"], check["in_file"], check["program"], check["diff"]), ("D4", 101, 100.0, -1.0))
-
-    def test_total_row_is_not_payment(self):
-        """«Итого» — не платёж, а «Ҷамъияти дорои масъулияти маҳдуд» (ООО) — платёж, хоть и начинается с «Ҷамъ»."""
-        from registry_read import to_payment
-        cols = {"payer": 0, "payer_inn": 1, "amount": 2}
-        self.assertIsNotNone(to_payment(5, ["Ҷамъияти дорои масъулияти маҳдуди «А»", INNS[0], 10], cols))
-        self.assertIsNone(to_payment(6, ["Итого:", None, 10], cols))
-        self.assertIsNone(to_payment(7, ["Ҷамъ", None, 10], cols))
 
     def test_all_files_by_inn(self):
         a = _save("список.xlsx", [["ИНН", "План"], [INNS[0], 5], [INNS[2], 7]])
@@ -79,7 +71,7 @@ class TypedColumnsTest(unittest.TestCase):
         maps = {a: _map(a, inn="a", sums="b"), b: _map(b, inn="a", sums="b")}
         raw = scan_files([a, b], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = make_report(out, raw, auto_mode(raw), maps)
+        res = make_report(out, raw, maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})   # и те, что в одном файле
         ws = load_workbook(out)["Одна орг. во всех файлах"]
         rows = list(ws.iter_rows(min_row=4, values_only=True))
@@ -110,7 +102,7 @@ class TypedColumnsTest(unittest.TestCase):
         maps = {path: [to_mapping(s, p["sheets"][s], t, {}) for s, t in typed.items()]}
         raw = scan_files([path], maps)["raw"]
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = make_report(out, raw, auto_mode(raw), maps)
+        res = make_report(out, raw, maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 3, "multi": 1, "rows": 5, "cut": False})
         rows = list(load_workbook(out)["Одна орг. во всех файлах"].iter_rows(min_row=4, values_only=True))
         self.assertEqual(rows[0][7:9], ("год.xlsx · Янв: A ИНН", "год.xlsx · Янв: B Сумма"))
@@ -123,11 +115,11 @@ class TypedColumnsTest(unittest.TestCase):
         path = _save("один.xlsx", [["ИНН", "Сумма"], [INNS[0], 5]])
         maps = {path: _map(path, inn="a", sums="b")}
         raw = scan_files([path], maps)["raw"]
-        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), maps)
+        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, maps)
         self.assertEqual(res["all_by_inn"], {"orgs": 1, "multi": 0, "rows": 1, "cut": False})
         maps = {path: [{"sheet": "Л", "kind": "raw"}]}
         raw = scan_files([path], maps)["raw"]
-        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, auto_mode(raw), maps)
+        res = make_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), raw, maps)
         self.assertIsNone(res["all_by_inn"])
         self.assertEqual(res["raw"][0][:2], ("один.xlsx", "Л"))
 

@@ -13,12 +13,9 @@ from openpyxl.utils import get_column_letter
 from analysis_model import FLAG_HINTS, FLAGS, present_files
 from report_colors import ERR_COLOR, add_error_color, cf_fill
 from report_errors import write_errors_sheets
-from report_months import write_months_sheet
 from report_all_by_inn import write_all_by_inn_sheet
 from report_raw_sheets import write_raw_sheets
-from report_reconcile import write_reconcile_sheet
 from report_settings import write_settings_sheet
-from report_pairs import write_pairs_sheet
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
 
@@ -44,7 +41,7 @@ def _cell(ws, v, hint=None, **style):
 
 
 def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None) -> dict:
-    parts, with_role = data.parts, len(data.roles) > 1
+    parts = data.parts
     with_total = any(p.has_sums for p in parts)          # сумм нигде нет — нет и «Всего»
     rows = sorted(data.entities, key=lambda e: -e.total)
     wb = Workbook(write_only=True)
@@ -53,25 +50,25 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     progress(15, "Пишу лист «Анализ»…")
     ws = wb.create_sheet("Анализ")
     ws.sheet_view.showGridLines = False
-    head = ["№", "ИНН", "Название"] + (["Кто"] if with_role else []) + [p.label for p in parts] + \
+    head = ["№", "ИНН", "Название"] + [p.label for p in parts] + \
         ["Всего"] * with_total + ["Есть в файлах", "Файлов", "Ошибки", "Названий"]
     n = len(head)
     err_col = n - 1
-    widths = [7, 13, 46] + [12] * with_role + [17] * len(parts) + [18] * with_total + [30, 9, 30, 12]
+    widths = [7, 13, 46] + [17] * len(parts) + [18] * with_total + [30, 9, 30, 12]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = f"D{HEAD_ROW + 1}"
     title_rows(ws, "ГЛУБОКИЙ АНАЛИЗ", "0F172A", f"Создано {datetime.now():%d.%m.%Y %H:%M} · части: "
                + ", ".join(f"«{p.label}»" for p in parts), n)
     _legend(ws)
-    hints = _head_hints(parts, with_role)
+    hints = _head_hints(parts)
     ws.append([_cell(ws, t, hints.get(t), font=Font(bold=True), fill=fill_color("E2E8F0"), border=BORDER,
                      alignment=CENTER) for t in head])
     for k, e in enumerate(rows, 1):
         files = present_files(e, parts)
         sums = [(_cell(ws, e.sums[i], number_format=NUM) if p.has_sums else "есть") if e.counts[i] else None
                 for i, p in enumerate(parts)]
-        ws.append([k, e.inn, _name_cell(ws, e)] + ([e.role] if with_role else []) + sums
+        ws.append([k, e.inn, _name_cell(ws, e)] + sums
                   + [_cell(ws, e.total, number_format=NUM)] * with_total + [", ".join(files), len(files),
                      ", ".join(f for f in FLAGS if f in e.flags),
                      e.names if e.names > 1 else None])
@@ -85,19 +82,15 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
         for rng in (f"C{HEAD_ROW + 1}:C{last}", f"{names_col}{HEAD_ROW + 1}:{names_col}{last}"):
             ws.conditional_formatting.add(rng, FormulaRule(formula=[f"${names_col}{HEAD_ROW + 1}>1"],
                                                            fill=cf_fill(ERR_COLOR), font=Font(bold=True)))
-    progress(68, "Пишу лист «Сверка со списком»…")
-    recon = write_reconcile_sheet(wb, data)
+    progress(70, "Копирую листы без ИНН…")
     raw = write_raw_sheets(wb, data.paths, mappings or {})
-    progress(70, "Пишу лист «Кто кому платит»…")
-    write_pairs_sheet(wb, data)
-    write_months_sheet(wb, data)
     progress(80, "Пишу листы с ошибками…")
     write_errors_sheets(wb, data.details)
     write_settings_sheet(wb, data, mappings)
     progress(95, "Сохраняю…")
     wb.save(path)
-    return {"path": path, "rows": len(rows), "flags": Counter(f for e in rows for f in e.flags), "reconcile": recon,
-            "all_by_inn": all_inn, "raw": raw}
+    return {"path": path, "rows": len(rows), "flags": Counter(f for e in rows for f in e.flags), "all_by_inn": all_inn,
+            "raw": raw}
 
 
 def _legend(ws):
@@ -109,10 +102,9 @@ def _legend(ws):
                      border=BORDER, alignment=CENTER, font=Font(bold=True))])
 
 
-def _head_hints(parts, with_role) -> dict:
+def _head_hints(parts) -> dict:
     hints = {"ИНН": "ИНН организации (как записан в файле).",
              "Название": "Самое частое написание названия у этого ИНН.",
-             "Кто": "плательщик — кто платил; получатель — кому платили; организация — из обычной таблицы с ИНН.",
              "Всего": "Сумма по всем частям.",
              "Есть в файлах": "В каких файлах есть эта организация (листы одного файла — один файл).",
              "Файлов": "В скольких файлах есть организация. 1 — только в одном файле: фильтром можно отобрать.",
