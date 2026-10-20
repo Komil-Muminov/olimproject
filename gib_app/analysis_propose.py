@@ -1,7 +1,7 @@
 """Перед глубоким анализом: что программа думает о каждом файле — листы (первые строки для окна выбора)
 и догадка: какой лист, строка заголовков, реестр или список, где ИНН и какие столбцы суммировать.
 Решает пользователь — догадка только подставляется в окно «Как читать файл»."""
-from analysis_list_map import AS_LIST, _find
+from analysis_list_map import AS_LIST, REPEAT_SHARE, _find
 from analysis_lists import money_cols
 from compare_finder import find_tables
 from excel_sheet_info import sheet_scan, workbook_sheets
@@ -9,7 +9,6 @@ from file_format import real_path
 from registry_columns import guess_header, registry_columns, two_row_columns
 
 REGISTRY = "registry"
-REPEAT_SHARE = 0.2          # столько ИНН встречаются в нескольких строках — похоже на операции (выписку)
 PREVIEW_ROWS = 300          # столько первых строк листа показывается в окне
 FULL_READ_LIMIT = 200_000   # таблицы больше — без поиска ИНН по содержимому (долго)
 

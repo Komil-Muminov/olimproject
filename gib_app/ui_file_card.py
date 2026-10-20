@@ -1,21 +1,24 @@
-"""Карточка файла на экране глубокого анализа: лист и колонки, вписанные от руки (C, C5, C5-C300, «G, H»).
-У каждого файла — своя карточка; справа видно, готова ли она. Программа ничего не подставляет."""
+"""Карточка файла на экране глубокого анализа: лист и четыре колонки, вписанные от руки (C, C5, C5-C300, «G, H»):
+ИНН, Название, Сумма, Итого. Остальные колонки файла программа не разбирает — они видны в отчёте как есть.
+Справа — короткий статус; неверное поле обводится красным, полный текст ошибки — при наведении."""
 import os
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout
 
-from column_entry import MAIN, REGISTRY_FIELDS, to_mapping
-from column_spec import SpecError
+from column_entry import MAIN, to_mapping
+from column_spec import SpecError, one_column, parse
 from ui_file_columns import formula_warning
-from ui_file_widgets import collapsible, filter_edits
 
-HINTS = {"inn": "напр. C или C5-C300", "name": "напр. B", "sums": "напр. G или G, H", "total": "напр. G400",
-         "rec_inn": "напр. J", "rec": "напр. I", "date": "напр. B", "doc": "напр. A", "purpose": "напр. O"}
-FLAGS = (("by_name", "ИНН нет — искать по названию (менее надёжно)"),
-         ("repeats", "Одна организация может быть в нескольких строках (операции, выписка) — не ошибка"),
-         ("separate", "Суммы не складывать — каждая колонка отдельно (например, План и Факт)"))
-OK_STYLE, BAD_STYLE = "color:#15803D; font-weight:600;", "color:#C2410C; font-weight:600;"
+HINTS = {"inn": "напр. C или C5-C300", "name": "напр. B", "sums": "напр. G или G, H", "total": "напр. N"}
+TIPS = {"inn": "Колонка с ИНН (обязательно). Строки берутся отсюда: C — вся колонка, C5-C300 — строки 5…300.",
+        "name": "Колонка с названием организации.",
+        "sums": "Колонки с деньгами: G или G, H (в строке складываются).",
+        "total": "Колонка «Итого» в каждой строке: если она не равна сумме колонок «Сумма» — организация "
+                 "подсвечивается в отчёте."}
+OK_STYLE, BAD_STYLE, OFF_STYLE = "color:#15803D; font-weight:600;", "color:#C2410C; font-weight:600;", "color:#64748B;"
+BAD_FIELD = "QLineEdit { border: 1px solid #DC2626; border-radius: 6px; }"
+STATUS_WIDTH = 230
 
 
 class FileCard(QFrame):
@@ -34,51 +37,34 @@ class FileCard(QFrame):
         top.addWidget(self.use)
         top.addStretch()
         self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.status.setMaximumWidth(560)
+        self.status.setFixedWidth(STATUS_WIDTH)           # статус одной строкой — карточка не прыгает
         top.addWidget(self.status)
         lay.addLayout(top)
         if not self.sheets:                 # пустой файл — читать нечего
             self.use.setChecked(False)
             self.use.setEnabled(False)
-            self.status.setText("пустой файл — пропускается")
+            self._set_status("пустой файл — пропускается", OFF_STYLE)
             return
         self.use.setChecked(True)
         self.use.toggled.connect(self._check)
-        self.edits, self.flags = {}, {}
-        main = QGridLayout()
+        self.edits = {}
+        grid = QGridLayout()
         self.sheet = QComboBox()
         for name, sh in self.sheets.items():
             self.sheet.addItem(name + ("   (скрытый лист)" if sh.get("hidden") else ""), name)
         self.sheet.currentIndexChanged.connect(self._check)
-        self._fields(main, [("Лист", self.sheet)] + [(title, self._edit(key)) for key, title in MAIN])
-        lay.addLayout(main)
-        reg_title = QLabel("Реестр платежей — если в файле есть получатель:")
-        reg_title.setObjectName("muted")
-        lay.addWidget(reg_title)
-        reg = QGridLayout()
-        self._fields(reg, [(title, self._edit(key)) for key, title in REGISTRY_FIELDS])
-        lay.addLayout(reg)
-        more = collapsible("Дополнительно", lay)
-        for key, text in FLAGS:
-            self.flags[key] = QCheckBox(text)
-            self.flags[key].toggled.connect(self._check)
-            more.addRow("", self.flags[key])
-        self.f_purpose, self.f_rec = filter_edits(more, self._check)
-        self._check()
-
-    @staticmethod
-    def _fields(grid: QGridLayout, items: list):
-        """Подписи сверху, поля под ними — в одну строку."""
-        for col, (title, widget) in enumerate(items):
+        for col, (title, widget) in enumerate([("Лист", self.sheet)] + [(t, self._edit(k)) for k, t in MAIN]):
             label = QLabel(title)
             label.setObjectName("muted")
             grid.addWidget(label, 0, col)
             grid.addWidget(widget, 1, col)
+        lay.addLayout(grid)
+        self._check()
 
     def _edit(self, key: str) -> QLineEdit:
         self.edits[key] = QLineEdit()
         self.edits[key].setPlaceholderText(HINTS[key])
+        self.edits[key].setToolTip(TIPS[key])
         self.edits[key].textChanged.connect(self._check)
         return self.edits[key]
 
@@ -87,9 +73,7 @@ class FileCard(QFrame):
 
     def _build(self) -> dict:
         name = self.sheet.currentData()
-        opts = {key: box.isChecked() for key, box in self.flags.items()}
-        opts.update(f_purpose=self.f_purpose.text().strip(), f_rec=self.f_rec.text().strip())
-        return to_mapping(name, self.sheets[name], {k: e.text().strip() for k, e in self.edits.items()}, opts)
+        return to_mapping(name, self.sheets[name], {k: e.text().strip() for k, e in self.edits.items()}, {})
 
     def problem(self) -> str:
         """Чего не хватает ("" — всё указано). Не взятый в анализ файл — без проблем."""
@@ -101,18 +85,35 @@ class FileCard(QFrame):
         except SpecError as e:
             return str(e)
 
-    def _check(self):
-        problem = self.problem()
-        if not self.included():
-            text, style = "не берётся в анализ", "color:#64748B;"
-        elif problem:
-            text, style = f"⚠ {problem}", BAD_STYLE
-        else:
-            m = self._build()
-            note = formula_warning(m["sheet"], self.sheets[m["sheet"]], {"sums": m.get("sums") or m["cols"].get("amount") or []})
-            text, style = (f"✓ готово · {note}" if note else "✓ готово"), (BAD_STYLE if note else OK_STYLE)
+    def _field_errors(self) -> dict:
+        """Поле → текст ошибки (для красной рамки и подсказки)."""
+        out = {} if self.edits["inn"].text().strip() else {"inn": "Обязательно: колонка с ИНН, например C или C5-C300"}
+        for key, edit in self.edits.items():
+            try:
+                parse(edit.text()) if key == "sums" else one_column(edit.text(), dict(MAIN)[key])
+            except SpecError as e:
+                out[key] = str(e)
+        return out
+
+    def _set_status(self, text: str, style: str, tip: str = ""):
         self.status.setText(text)
         self.status.setStyleSheet(style)
+        self.status.setToolTip(tip or text)
+
+    def _check(self):
+        bad = self._field_errors() if self.included() else {}
+        for key, edit in self.edits.items():
+            edit.setStyleSheet(BAD_FIELD if key in bad else "")
+            edit.setToolTip(bad.get(key) or TIPS[key])
+        problem = self.problem()
+        if not self.included():
+            self._set_status("не берётся в анализ", OFF_STYLE)
+        elif problem:
+            self._set_status("⚠ проверьте поля", BAD_STYLE, problem)
+        else:
+            m = self._build()
+            note = formula_warning(m["sheet"], self.sheets[m["sheet"]], {"sums": m.get("sums") or []})
+            self._set_status("⚠ формулы без значений" if note else "✓ готово", BAD_STYLE if note else OK_STYLE, note)
         self.changed.emit()
 
     def mapping(self) -> list:

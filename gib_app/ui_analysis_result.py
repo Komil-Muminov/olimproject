@@ -6,7 +6,6 @@ from html import escape
 from analysis_model import STATUSES, part_summary, status_hints
 from report_colors import COLORS
 from report_errors import error_counts
-from utils import format_money
 
 MUTED = "#64748B"
 
@@ -71,12 +70,6 @@ def result_view(res: dict, data) -> tuple:
     st = res["statuses"]
     lines = [f"<span style='color:{MUTED}'>{escape(os.path.basename(res['path']))} · папка «Свод по глубокому "
              f"анализу»</span>", "", _parts_table(data)]
-    for c in data.checks:               # сверка с «Итого», которое пользователь указал в файле
-        verdict = ("в ячейке не число" if c["diff"] is None else "<span style='color:#15803D'>сходится ✓</span>"
-                   if abs(c["diff"]) < 0.01 else f"<b style='color:#B91C1C'>расхождение {format_money(c['diff'])}</b>")
-        lines.append(f"Итого {escape(os.path.basename(c['file']))} ({c['cell']}): в файле "
-                     f"{format_money(c['in_file']) if c['in_file'] is not None else escape(str(c['raw']))}, "
-                     f"программа {format_money(c['program'])} — {verdict}")
     every = res.get("all_by_inn")
     if every:
         lines.append(f"<b>Одна орг. во всех файлах</b>: {_int(every['orgs'])} организаций, из них {_int(every['multi'])} есть в нескольких файлах "

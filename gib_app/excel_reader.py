@@ -52,17 +52,25 @@ def _xls_to_xlsx(path: str) -> str:
     return out
 
 
+def _calamine_rows(sheet) -> list:
+    """Значения листа calamine с первой ячейки (A1), как у openpyxl: пусто — None."""
+    row0, col0 = sheet.start or (0, 0)
+    return [[] for _ in range(row0)] + [[None] * col0 + [None if v == "" else v for v in r] for r in sheet.to_python()]
+
+
 def _calamine_sheets(path: str) -> dict:
-    """Старый .xls — быстро, без Excel: значения листов с первой ячейки (A1), как у openpyxl."""
+    """Старый .xls — быстро, без Excel: значения всех листов."""
     from python_calamine import CalamineWorkbook
 
-    wb, out = CalamineWorkbook.from_path(path), {}
-    for name in wb.sheet_names:
-        sheet = wb.get_sheet_by_name(name)
-        row0, col0 = sheet.start or (0, 0)
-        rows = [[None] * col0 + [None if v == "" else v for v in r] for r in sheet.to_python()]
-        out[name] = [[] for _ in range(row0)] + rows
-    return out
+    wb = CalamineWorkbook.from_path(path)
+    return {name: _calamine_rows(wb.get_sheet_by_name(name)) for name in wb.sheet_names}
+
+
+def sheet_values(path: str, sheet: str) -> list:
+    """Один лист любого формата (.xlsx / .xlsm / .xls) — быстро, через calamine; строки и столбцы — с A1."""
+    from python_calamine import CalamineWorkbook
+
+    return _calamine_rows(CalamineWorkbook.from_path(real_path(path)).get_sheet_by_name(sheet))
 
 
 class Book:

@@ -4,11 +4,11 @@ from openpyxl.utils import get_column_letter
 
 from analysis_list_map import AS_LIST
 from analysis_propose import REGISTRY
-from column_spec import SpecError, cell_address, one_column, parse
+from column_spec import SpecError, one_column, parse
 from compare_finder import key_in_text, key_of
 from utils import is_total_label, to_number
 
-MAIN = (("inn", "ИНН"), ("name", "Название"), ("sums", "Сумма"), ("total", "Итого (ячейка)"))
+MAIN = (("inn", "ИНН"), ("name", "Название"), ("sums", "Сумма"), ("total", "Итого (колонка)"))
 REGISTRY_FIELDS = (("rec_inn", "ИНН получателя"), ("rec", "Получатель"), ("date", "Дата"), ("doc", "№ документа"),
                    ("purpose", "Основание"))
 TITLES = dict(MAIN + REGISTRY_FIELDS)
@@ -65,6 +65,7 @@ def to_mapping(sheet_name: str, sheet: dict, typed: dict, opts: dict) -> dict:
         return c - col0
 
     one = {key: one_column(typed.get(key), title) for key, title in TITLES.items() if key not in ("sums", "total")}
+    total = one_column(typed.get("total"), "Итого")             # колонка; строки — из поля ИНН
     by_name = bool(opts.get("by_name"))
     anchor = one["inn"] or (one["name"] if by_name else None)
     if not anchor:
@@ -84,7 +85,7 @@ def to_mapping(sheet_name: str, sheet: dict, typed: dict, opts: dict) -> dict:
     else:
         cols = {"inn": cols["inn"], "name": cols["name"]}
     m = {"sheet": sheet_name, "head": head, "last": last, "row0": 0, "col0": col0, "kind": REGISTRY if registry else AS_LIST,
-         "cols": cols, "typed": {TITLES[k]: v for k, v in typed.items() if v}, "total_cell": cell_address(typed.get("total")),
+         "cols": cols, "typed": {TITLES[k]: v for k, v in typed.items() if v}, "total_col": rel(total[0], "Итого") if total else None,
          "hidden_sheet": bool(sheet.get("hidden"))}
     m["labels_row"] = labels_row(sheet["rows"], head) if head >= 0 else head
     m["labels"] = _labels(sheet, m["labels_row"], typed)

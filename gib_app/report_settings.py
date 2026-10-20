@@ -65,13 +65,6 @@ def write_settings_sheet(wb, data, mappings: dict = None):
                 ws.append(row)
         else:
             ws.append([fname, "", "", "Столбцы", "определены программой автоматически"])
-    if data.checks:
-        ws.append([])
-        _head(ws, ["Файл", "Лист", "Итого в файле (ячейка)", "Насчитала программа", "Разница (программа − файл)"])
-        for c in data.checks:
-            shown = c["raw"] if c["in_file"] is None else c["in_file"]
-            ws.append([os.path.basename(c["file"]), c["sheet"], f"{c['cell']}: {shown}", c["program"],
-                       "в ячейке не число" if c["diff"] is None else ("сходится ✓" if abs(c["diff"]) < 0.01 else c["diff"])])
     if data.notes:
         ws.append([])
         _head(ws, ["Файл", "Лист", "Скрытое", "", "Что это значит"])

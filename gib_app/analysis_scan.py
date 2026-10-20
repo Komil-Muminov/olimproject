@@ -9,8 +9,8 @@ from analysis_model import AnalysisData
 from analysis_periods import FILES, available_modes, registry_slots
 from analysis_registry import registry_entities, registry_errors, registry_pairs, registry_parts
 from excel_com import WriteError
-from excel_reader import Book
-from excel_sheet_info import hidden_note, sheet_scan, total_check, white_cells
+from excel_reader import Book, sheet_values
+from excel_sheet_info import hidden_note, sheet_scan, white_cells
 from registry_read import read_registry
 from registry_stats import Registry
 
@@ -31,22 +31,17 @@ def _add_registry(reg, path, sheets, tick, hidden=frozenset()):
 
 def _read_chosen(path, sheet_maps: list, reg, lists, tick):
     """Листы, настроенные пользователем (окно «Как читать файл»): реестры и списки, каждый лист — по-своему."""
-    data, found = None, 0
+    found = 0
     for m in sheet_maps:
-        if m["kind"] == AS_LIST:
-            data = data or Book(path).sheets
-            found += lists.add_file(path, data, m)
-            check = total_check(path, m, lists.last_total)
+        if m["kind"] == AS_LIST:            # один нужный лист — быстро (реестр на 800 тыс. строк тоже)
+            found += lists.add_file(path, {m["sheet"]: sheet_values(path, m["sheet"])}, m)
         else:
             hidden = sheet_scan(path, m["sheet"])["hidden_rows"]
             note = hidden_note(path, m["sheet"], hidden)
             reg.notes += [note] if note else []
             sheets, _ = read_registry(path, m)
-            before = len(reg.files)
             _add_registry(reg, path, sheets, tick, hidden if note and note["listed"] else frozenset())
             found += len(sheets)
-            check = total_check(path, m, sum(f.total for f in reg.files[before:]))
-        reg.checks += [check] if check else []
         reg.white_cells += [[os.path.basename(path), m["sheet"], ref, text] for ref, text in white_cells(path, m["sheet"])]
     if not found:
         raise WriteError(f"В «{os.path.basename(path)}» в выбранных столбцах ИНН нет значений.")
@@ -143,4 +138,4 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
         compare = None
     months = dict(sorted(reg.months.items())) if reg.files else {}
     return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode, months,
-                        reg.notes + lists.notes, reg.checks)
+                        reg.notes + lists.notes)

@@ -26,6 +26,15 @@ CHANGE_HEAD = ["Изменение", "Изменение, %"]
 AUTHOR = "Распределение по ГИБ"
 
 
+def _errors_cell(ws, e):
+    """«Ошибки»: что найдено; если «Итого» в строках не сходится — при наведении где и на сколько (первые 15)."""
+    text = ", ".join(f for f in FLAGS if f in e.flags)
+    if not e.hover:
+        return text
+    more = f"\n…и ещё {len(e.hover) - 15}" if len(e.hover) > 15 else ""
+    return _cell(ws, text, "«Итого» не сходится:\n" + "\n".join(f"• {h}" for h in e.hover[:15]) + more)
+
+
 def _name_cell(ws, e):
     """Название; если у ИНН несколько названий — при наведении все варианты (первые 20)."""
     if len(e.variants) < 2:
@@ -74,7 +83,7 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
                 for i, p in enumerate(parts)]
         ws.append([k, e.inn, _name_cell(ws, e)] + ([e.role] if with_role else []) + sums
                   + [_cell(ws, e.total, number_format=NUM)] + (_change_cells(ws, e, parts, pair) if pair else [])
-                  + [st, ", ".join(f for f in FLAGS if f in e.flags),
+                  + [st, _errors_cell(ws, e),
                      e.names if e.names > 1 else None])
         if k % 20000 == 0:
             progress(15 + int(60 * k / len(rows)), "Пишу лист «Анализ»…")

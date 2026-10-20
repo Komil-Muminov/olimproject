@@ -56,14 +56,25 @@ class TypedColumnsTest(unittest.TestCase):
         m = _map(path, inn="a", name="b", sums="c")[0]
         self.assertEqual((m["head"], m["labels_row"], m["labels"]["Название"]), (2, 1, "b  →  B: Название"))
 
-    def test_total_check_and_registry(self):
-        path = _save("р.xlsx", [["Дата", "ИНН плат", "ИНН получ", "Сумма"], [date(2024, 1, 5), INNS[0], INNS[3], 70],
-                                [date(2024, 1, 6), INNS[1], INNS[3], 30], [None, None, "Итого", 101]])
-        maps = {path: _map(path, inn="b", rec_inn="c", sums="d", date="a", total="d4")}
-        self.assertEqual(maps[path][0]["kind"], "registry")
+    def test_row_total_mismatch(self):
+        """«Итого» — колонка в каждой строке: не равна сумме колонок «Сумма» — строка выписана, организация
+        помечена, в «Анализе» при наведении видно, где и на сколько."""
+        path = _save("план.xlsx", [["ИНН", "Название", "Янв", "Фев", "Итого"], [INNS[0], "А", 10, 20, 30],
+                                   [INNS[1], "Б", 5, 5, 11], [INNS[2], "В", 1, 1, None]])
+        maps = {path: _map(path, inn="a", name="b", sums="c, d", total="e")}
         raw = scan_files([path], maps)["raw"]
-        check = raw[0].checks[0]
-        self.assertEqual((check["cell"], check["in_file"], check["program"], check["diff"]), ("D4", 101, 100.0, -1.0))
+        from analysis_scan import build
+        data = build(*raw)
+        self.assertEqual(data.details["total_diff"], [["план.xlsx", "«Л»", 3, INNS[1], "Б", 11, 10.0, -1.0]])
+        b_org = next(e for e in data.entities if e.inn == INNS[1])
+        self.assertIn("итого не сходится", b_org.flags)
+        self.assertIn("строка 3", b_org.hover[0])
+        out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
+        make_report(out, raw, auto_mode(raw), None, maps)
+        ws = load_workbook(out)["Анализ"]
+        cell = next(ws.cell(r, ws.max_column - 1) for r in range(5, ws.max_row + 1) if ws.cell(r, 2).value == INNS[1])
+        self.assertIn("итого не сходится", cell.value)
+        self.assertIn("разница -1,00", cell.comment.text)
 
     def test_total_row_is_not_payment(self):
         """«Итого» — не платёж, а «Ҷамъияти дорои масъулияти маҳдуд» (ООО) — платёж, хоть и начинается с «Ҷамъ»."""

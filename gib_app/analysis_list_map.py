@@ -8,6 +8,7 @@ from registry_columns import guess_header
 from utils import cell_val, find_col, is_total_label, norm_text
 
 AS_LIST = "list"        # пользователь сказал: читать файл как обычный список организаций
+REPEAT_SHARE = 0.2      # столько ИНН встречаются в нескольких строках — похоже на операции (выписку, реестр)
 NAME_KEY = "≈"          # ключ организации без ИНН: «≈» + название без кавычек и форм
 SPLIT_RE = re.compile(r"[,;\n]+")      # несколько организаций в одной ячейке
 FORMS = {"ооо", "оао", "зао", "пао", "ао", "ип", "тоо", "чдмм", "чск", "ксп", "квд", "ддтт", "мдт", "ммд", "ч"}
@@ -107,7 +108,8 @@ def mapped_table(data: list, mapping: dict) -> SideList:
     by_name = bool(mapping.get("by_name"))
     s = SideList(c["name"] if by_name else c["inn"], c.get("name"), cols, [v + c0 + 1 for v in money], block=cols,
                  header=header, fixed_money=True, by_name=by_name, separate=bool(mapping.get("separate")),
-                 repeats=bool(mapping.get("repeats")))
+                 repeats=bool(mapping.get("repeats")),
+                 total_col=mapping["total_col"] + c0 + 1 if mapping.get("total_col") is not None else None)
     last = min(len(data), mapping.get("last") or len(data))       # «C5-C300» — дальше 300-й строки не читать
     for r in range(header + 1, last + 1):
         keys = _row_keys(data, r, s)

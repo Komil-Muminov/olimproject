@@ -97,7 +97,8 @@ class ProposeTest(unittest.TestCase):
         self.assertEqual((m["kind"], m["head"], m["last"], m["cols"]["inn"], m["sums"]), (AS_LIST, 0, 5, 0, [2, 3]))
         d.edits["inn"].setText("a5-b9")
         self.assertIn("одной колонке", d.problem())
-        self.assertIn("одной колонке", d.status.text())
+        self.assertIn("одной колонке", d.status.toolTip())                 # статус короткий, подробно — при наведении
+        self.assertIn("#DC2626", d.edits["inn"].styleSheet())                 # неверное поле — красная рамка
 
 if __name__ == "__main__":
     unittest.main()

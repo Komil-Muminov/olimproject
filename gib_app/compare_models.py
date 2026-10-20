@@ -23,6 +23,7 @@ class SideList:
     separate: bool = False                       # столбцы сумм не складывать: каждый — отдельной частью
     repeats: bool = False                        # организация в нескольких строках — норма (операции, выписка)
     hidden_rows: set = field(default_factory=set)  # скрытые строки листа (номера строк Excel)
+    total_col: int | None = None                 # колонка «Итого» в каждой строке (сверка с суммой колонок)
     shared: set = field(default_factory=set)     # ключи из строк, где было несколько организаций
     row_names: dict = field(default_factory=dict)  # (ключ, строка) → название (если ячейка разбита на части)
 

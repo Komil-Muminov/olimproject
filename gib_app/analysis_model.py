@@ -29,9 +29,9 @@ def status_hints(parts: list, pair=None) -> dict:
 
 DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW = "двойной платёж", "неправильный ИНН", "странная дата", "повтор ИНН"
 SAME_NAME = "одно название — разные ИНН"
-DIFF_NAMES = "разные названия"
+DIFF_NAMES, TOTAL_DIFF = "разные названия", "итого не сходится"
 SHARED, BY_NAME, HIDDEN = "общая строка", "по названию", "скрытая строка"   # пометки (не ошибки): см. FLAG_HINTS
-FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW, SAME_NAME, DIFF_NAMES, SHARED, BY_NAME, HIDDEN)
+FLAGS = (DUP_PAY, BAD_INN, ODD_DATE, DUP_ROW, SAME_NAME, DIFF_NAMES, TOTAL_DIFF, SHARED, BY_NAME, HIDDEN)
 FLAG_HINTS = {
     DUP_PAY: "Один и тот же платёж записан два раза или больше: одинаковые №, дата, ИНН плательщика, "
              "ИНН получателя и сумма.",
@@ -41,6 +41,7 @@ FLAG_HINTS = {
     DUP_ROW: "Один ИНН записан в одной таблице несколько раз.",
     SAME_NAME: "У организации с таким же названием есть другой ИНН — возможно, ошибка в ИНН (или это филиалы).",
     DIFF_NAMES: "У этого ИНН в файлах записаны разные названия — наведите на название, чтобы увидеть все.",
+    TOTAL_DIFF: "«Итого» в строке файла не равно сумме колонок «Сумма» — наведите на ячейку, чтобы увидеть, где.",
     SHARED: "В строке списка было несколько организаций («ООО А, ООО Б») — сумма строки записана каждой целиком.",
     BY_NAME: "В списке нет ИНН — организация сопоставлена по названию (менее надёжно: проверьте).",
     HIDDEN: "Есть в скрытой строке файла (в Excel её не видно) — проверьте, почему строку скрыли.",
@@ -70,6 +71,7 @@ class Entity:
     names: int = 1                   # сколько разных написаний названия
     cols: list = field(default_factory=list)    # по частям: значения столбцов сумм списка по отдельности (или None)
     variants: list = field(default_factory=list)  # разные написания названия (самое частое первым)
+    hover: list = field(default_factory=list)     # подсказки к «Ошибки» (где «Итого» не сходится)
 
     @property
     def total(self) -> float:
@@ -98,7 +100,6 @@ class AnalysisData:
     mode: str = "files"                              # files / quarters / months
     months: dict = field(default_factory=dict)       # реестры: (год, месяц) → [сумма, платежей] — для графика
     notes: list = field(default_factory=list)        # скрытые листы и строки (excel_sheet_info.hidden_note)
-    checks: list = field(default_factory=list)       # сверка с «Итого» в файле (excel_sheet_info.total_check)
 
     @property
     def roles(self) -> list:

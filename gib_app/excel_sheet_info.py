@@ -73,33 +73,6 @@ def hidden_note(path: str, sheet: str, hidden_rows: set) -> dict | None:
             "listed": len(hidden_rows) <= HIDDEN_LIST_LIMIT}
 
 
-def cell_value(path: str, sheet: str, col: int, row: int):
-    """Значение ячейки (столбец с 0, строка Excel с 1) — для сверки с «Итого» в файле."""
-    from python_calamine import CalamineWorkbook
-
-    sh = CalamineWorkbook.from_path(real_path(path)).get_sheet_by_name(sheet)
-    c = col - (sh.start or (0, 0))[1]
-    for i, values in enumerate(sh.iter_rows()):     # строки — с первой строки листа
-        if i == row - 1:
-            return values[c] if 0 <= c < len(values) and values[c] != "" else None
-    return None
-
-
-def total_check(path: str, m: dict, program: float) -> dict | None:
-    """Сверка: итог в ячейке файла (её вписал пользователь) и сумма, которую насчитала программа."""
-    if not m.get("total_cell"):
-        return None
-    from openpyxl.utils import get_column_letter
-    from utils import to_number
-
-    col, row = m["total_cell"]
-    raw = cell_value(path, m["sheet"], col, row)
-    in_file = to_number(raw)
-    return {"file": path, "sheet": m["sheet"], "cell": f"{get_column_letter(col + 1)}{row}", "raw": raw,
-            "in_file": in_file, "program": round(program, 2),
-            "diff": None if in_file is None else round(program - in_file, 2)}
-
-
 WHITE_RE = re.compile(r'<color\b[^>]*\b(?:rgb="(?:[0-9A-F]{2})?FFFFFF"|theme="0")[^>]*/>', re.I)   # «AARRGGBB»
 CELL_TAG_RE = re.compile(r"<c\b([^>]*?)(?<!/)>(.*?)</c>", re.S)        # пустые <c …/> пропускаются
 
