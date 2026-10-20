@@ -19,3 +19,9 @@ def analysis_report_path() -> str:
 
 
 
+
+
+def inn_report_path(inn: str) -> str:
+    """«ИНН 040058284 20.10.2026 15-30.xlsx» в папке «Свод по глубокому анализу»."""
+    from datetime import datetime
+    return unique_path(os.path.join(analysis_dir(), f"ИНН {inn} {datetime.now():%d.%m.%Y %H-%M}"))

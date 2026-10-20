@@ -1,6 +1,8 @@
 """Экран глубокого анализа: у каждого выбранного файла своя карточка с колонками (ui_file_card), внизу — «Анализ»."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
+)
 
 import ui_analysis_flow as flow
 
@@ -33,6 +35,21 @@ def build_analysis_card(win):
     win.an_cards.addStretch()
     scroll.setWidget(holder)
     lay.addWidget(scroll, 1)
+
+    search = QHBoxLayout()                  # один ИНН — все его строки из всех файлов
+    title = QLabel("🔎  Один ИНН во всех файлах:")
+    title.setStyleSheet("font-weight:600;")
+    search.addWidget(title)
+    win.an_inn = QLineEdit()
+    win.an_inn.setPlaceholderText("ИНН, например 040058284")
+    win.an_inn.setMaxLength(20)
+    win.an_inn.returnPressed.connect(lambda: flow.search_inn(win))
+    search.addWidget(win.an_inn, 1)
+    win.an_inn_btn = QPushButton("В Excel")
+    win.an_inn_btn.setToolTip("Все строки этого ИНН из всех взятых файлов (колонки — из карточек), без предела по строкам")
+    win.an_inn_btn.clicked.connect(lambda: flow.search_inn(win))
+    search.addWidget(win.an_inn_btn)
+    lay.addLayout(search)
 
     win.an_progress = QProgressBar()
     win.an_progress.setVisible(False)

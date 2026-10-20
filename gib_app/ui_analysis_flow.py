@@ -1,14 +1,18 @@
 """Глубокий анализ: файлы → у каждого своя карточка с колонками → «Анализ» → чтение в фоне → Excel → итог."""
-from PySide6.QtWidgets import QDialog
+import os
+
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from analysis_jobs import make_report
 from analysis_propose import propose_files
 from analysis_scan import auto_mode, scan_files
-from report_paths import analysis_report_path
+from report_inn_search import clean_inn, write_inn_report
+from report_paths import analysis_report_path, inn_report_path
 from ui_analysis_result import result_view
 from ui_file_card import FileCard
 from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
+from utils import format_money
 from worker import Worker
 
 ANALYSIS_PAGE = 3
@@ -46,11 +50,12 @@ def _ready(win) -> bool:
 
 def _update_run(win):
     if not win.worker:
-        win.an_run_btn.setEnabled(_ready(win))
+        for b in (win.an_run_btn, win.an_inn_btn):
+            b.setEnabled(_ready(win))
 
 
 def _run(win, func, *args, done):
-    for b in (win.an_run_btn, win.an_other_btn):
+    for b in (win.an_run_btn, win.an_other_btn, win.an_inn_btn):
         b.setEnabled(False)
     win.an_progress.setVisible(True)
     win.an_progress.setValue(0)
@@ -72,9 +77,39 @@ def run(win):
     """«Анализ»: колонки из карточек (только взятые файлы) → чтение в фоне → Excel."""
     if win.worker or not _ready(win):
         return
-    cards = [c for c in win.an_file_cards if c.included()]
-    win.an_mappings = {c.path: c.mapping() for c in cards}
-    _run(win, scan_files, [c.path for c in cards], win.an_mappings, done=lambda res: _scanned(win, res))
+    win.an_mappings = _chosen(win)
+    _run(win, scan_files, list(win.an_mappings), win.an_mappings, done=lambda res: _scanned(win, res))
+
+
+def _chosen(win) -> dict:
+    """Колонки из карточек — только взятые файлы."""
+    return {c.path: c.mapping() for c in win.an_file_cards if c.included()}
+
+
+def search_inn(win):
+    """«Один ИНН во всех файлах»: все его строки из всех взятых файлов → отдельный Excel."""
+    inn = clean_inn(win.an_inn.text())
+    if win.worker or not _ready(win):
+        return
+    if not 8 <= len(inn) <= 14:
+        QMessageBox.information(win, "Один ИНН во всех файлах", "Введите ИНН цифрами, например 040058284.")
+        return
+    win.an_mappings = _chosen(win)
+    _run(win, write_inn_report, inn_report_path(inn), list(win.an_mappings), win.an_mappings, inn,
+         done=lambda res: _inn_done(win, res))
+
+
+def _inn_done(win, res):
+    if not res["path"]:
+        QMessageBox.information(win, "Один ИНН во всех файлах", f"ИНН {res['inn']} не найден ни в одном файле.")
+        return
+    files = [f"{name}: <b>{count}</b> строк" + (f" на <b>{format_money(total)}</b>" if total is not None else "")
+             for name, count, total in res["files"]]
+    show_result(win, True, f"✓  ИНН {res['inn']} — {res['rows']} строк", [
+        f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
+        f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", ""] + files,
+        path=res["path"], note="Исходные файлы не изменены.")
+    win.back_page = ANALYSIS_PAGE
 
 
 def _scanned(win, res):
