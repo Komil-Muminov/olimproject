@@ -17,6 +17,7 @@ from report_months import write_months_sheet
 from report_all_by_inn import write_all_by_inn_sheet
 from report_reconcile import write_reconcile_sheet
 from report_settings import write_settings_sheet
+from report_threshold import write_threshold_sheet
 from report_pairs import write_pairs_sheet
 from report_fast import title_rows
 from report_styles import BORDER, CENTER, NUM, fill_color
@@ -52,7 +53,7 @@ def _cell(ws, v, hint=None, **style):
     return c
 
 
-def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None) -> dict:
+def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None, threshold=None) -> dict:
     parts, with_role = data.parts, len(data.roles) > 1
     pair = data.compare
     rows = sorted(((e, status(e, parts, pair) if pair else "") for e in data.entities), key=lambda r: -r[0].total)
@@ -99,16 +100,18 @@ def write_analysis_report(path, data, progress=lambda p, t: None, mappings=None)
     recon = write_reconcile_sheet(wb, data)
     progress(69, "Пишу лист «Одна орг. во всех файлах»…")
     all_inn = write_all_by_inn_sheet(wb, data.paths, mappings)
+    big = write_threshold_sheet(wb, data.paths, mappings, threshold)
     progress(70, "Пишу лист «Кто кому платит»…")
     write_pairs_sheet(wb, data)
     write_months_sheet(wb, data)
     progress(80, "Пишу листы с ошибками…")
     write_errors_sheets(wb, data.details)
-    write_settings_sheet(wb, data, mappings)
+    write_settings_sheet(wb, data, mappings, threshold)
     progress(95, "Сохраняю…")
     wb.save(path)
     return {"path": path, "rows": len(rows), "statuses": Counter(st for _, st in rows if st),
-            "flags": Counter(f for e, _ in rows for f in e.flags), "reconcile": recon, "all_by_inn": all_inn}
+            "flags": Counter(f for e, _ in rows for f in e.flags), "reconcile": recon, "all_by_inn": all_inn,
+            "threshold": big}
 
 
 def _change_cells(ws, e, parts, pair) -> list:

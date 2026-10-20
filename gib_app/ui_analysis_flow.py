@@ -12,7 +12,7 @@ from ui_analysis_result import result_view
 from ui_file_card import FileCard
 from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
-from utils import format_money
+from utils import format_money, to_number
 from worker import Worker
 
 ANALYSIS_PAGE = 3
@@ -75,15 +75,29 @@ def _idle(win):
 
 def run(win):
     """«Анализ»: колонки из карточек (только взятые файлы) → чтение в фоне → Excel."""
-    if win.worker or not _ready(win):
+    if win.worker or not _ready(win) or (threshold := _threshold(win)) is False:
         return
-    win.an_mappings = _chosen(win)
+    win.an_mappings, win.an_threshold = _chosen(win), threshold
     _run(win, scan_files, list(win.an_mappings), win.an_mappings, done=lambda res: _scanned(win, res))
 
 
 def _chosen(win) -> dict:
     """Колонки из карточек — только взятые файлы."""
     return {c.path: c.mapping() for c in win.an_file_cards if c.included()}
+
+
+def _threshold(win):
+    """Порог суммы с экрана: (от, до) или None; неправильное число — сообщение и False."""
+    texts = (win.an_min.text().strip(), win.an_max.text().strip())
+    values = [to_number(t) if t else None for t in texts]
+    if any(t and v is None for t, v in zip(texts, values)):
+        QMessageBox.information(win, "Порог суммы", "Впишите сумму числом, например 2000 или 2 000,50.")
+        return False
+    lo, hi = values
+    if lo is not None and hi is not None and hi < lo:
+        QMessageBox.information(win, "Порог суммы", "«До» меньше, чем «от».")
+        return False
+    return (lo, hi) if lo is not None or hi is not None else None
 
 
 def search_inn(win):
@@ -94,14 +108,17 @@ def search_inn(win):
     if not 8 <= len(inn) <= 14:
         QMessageBox.information(win, "Один ИНН во всех файлах", "Введите ИНН цифрами, например 040058284.")
         return
+    if (threshold := _threshold(win)) is False:
+        return
     win.an_mappings = _chosen(win)
-    _run(win, write_inn_report, inn_report_path(inn), list(win.an_mappings), win.an_mappings, inn,
+    _run(win, write_inn_report, inn_report_path(inn), list(win.an_mappings), win.an_mappings, inn, threshold,
          done=lambda res: _inn_done(win, res))
 
 
 def _inn_done(win, res):
     if not res["path"]:
-        QMessageBox.information(win, "Один ИНН во всех файлах", f"ИНН {res['inn']} не найден ни в одном файле.")
+        limit = " с такой суммой" if res.get("threshold") else ""
+        QMessageBox.information(win, "Один ИНН во всех файлах", f"Записей ИНН {res['inn']}{limit} нет ни в одном файле.")
         return
     files = [f"{name}: <b>{count}</b> строк" + (f" на <b>{format_money(total)}</b>" if total is not None else "")
              for name, count, total in res["files"]]
@@ -120,7 +137,7 @@ def _scanned(win, res):
         if dlg.exec() != QDialog.Accepted:
             return
         pair = dlg.pair()
-    _run(win, make_report, analysis_report_path(), raw, mode, pair, win.an_mappings,
+    _run(win, make_report, analysis_report_path(), raw, mode, pair, win.an_mappings, win.an_threshold,
          done=lambda r: _done(win, r, r["data"]))
 
 

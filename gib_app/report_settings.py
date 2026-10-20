@@ -8,6 +8,7 @@ from openpyxl.styles import Font
 
 from analysis_periods import MODE_TITLES
 from report_fast import title_rows
+from report_rows import threshold_text
 from report_styles import BORDER, CENTER, fill_color
 
 KINDS = {"registry": "реестр платежей", "list": "список организаций"}
@@ -44,7 +45,7 @@ def _sheet_rows(fname: str, m: dict) -> list:
     return out
 
 
-def write_settings_sheet(wb, data, mappings: dict = None):
+def write_settings_sheet(wb, data, mappings: dict = None, threshold=None):
     ws = wb.create_sheet("Как считали")
     ws.sheet_properties.tabColor = "64748B"
     ws.sheet_view.showGridLines = False
@@ -54,7 +55,8 @@ def write_settings_sheet(wb, data, mappings: dict = None):
     a, b = data.compare or (None, None)
     for k, v in (("Дата анализа", datetime.now().strftime("%d.%m.%Y %H:%M")), ("Файлов", len(data.paths)),
                  ("Части", MODE_TITLES.get(data.mode, data.mode)),
-                 ("Сравнение", f"«{data.parts[a].label}» → «{data.parts[b].label}»" if data.compare else "нет")):
+                 ("Сравнение", f"«{data.parts[a].label}» → «{data.parts[b].label}»" if data.compare else "нет"),
+                 ("Порог суммы", threshold_text(threshold) + " (лист «Суммы …»)" if threshold else "нет")):
         ws.append([WriteOnlyCell(ws, value=k), v])
     ws.append([])
     _head(ws, ["Файл", "Лист", "Что это", "Что выбрано", "Столбец / значение"])

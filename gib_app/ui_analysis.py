@@ -50,6 +50,22 @@ def build_analysis_card(win):
     win.an_inn_btn.clicked.connect(lambda: flow.search_inn(win))
     search.addWidget(win.an_inn_btn)
     lay.addLayout(search)
+    limit = QHBoxLayout()                   # порог суммы — и для «Анализа» (лист «Суммы …»), и для поиска по ИНН
+    title = QLabel("💰  Порог суммы:   от")
+    title.setStyleSheet("font-weight:600;")
+    limit.addWidget(title)
+    win.an_min, win.an_max = QLineEdit(), QLineEdit()
+    for edit, hint in ((win.an_min, "напр. 2000"), (win.an_max, "без ограничения")):
+        edit.setPlaceholderText(hint)
+        edit.setMaximumWidth(220)
+    limit.addWidget(win.an_min)
+    limit.addWidget(QLabel("до"))
+    limit.addWidget(win.an_max)
+    note = QLabel("записи с такой суммой — отдельным листом; на итоги не влияет")
+    note.setObjectName("muted")
+    limit.addWidget(note)
+    limit.addStretch()
+    lay.addLayout(limit)
 
     win.an_progress = QProgressBar()
     win.an_progress.setVisible(False)

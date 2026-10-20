@@ -45,6 +45,8 @@ class AnalysisFlowTest(unittest.TestCase):
         win = type("Win", (), {})()
         win.worker, win.an_run_btn = None, type("B", (), {"setEnabled": lambda s, v: setattr(s, "on", v)})()
         win.an_file_cards = [FileCard(p) for p in props]
+        from PySide6.QtWidgets import QLineEdit
+        win.an_min, win.an_max = QLineEdit(), QLineEdit()                  # порог суммы — пусто
         self.started = None
         flow._run = lambda w, func, *args, done: setattr(self, "started", args)
         return win

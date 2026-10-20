@@ -42,9 +42,26 @@ class InnSearchTest(unittest.TestCase):
         res = write_inn_report(out, [a, b], maps, "40058284")              # ноль впереди потерян — не страшно
         self.assertEqual((res["rows"], res["files"]), (3, [("30 фоиза.xlsx", 1, 39.0), ("M1-4.xlsx", 2, 150.0)]))
         rows = list(load_workbook(out).active.iter_rows(min_row=8, values_only=True))
-        self.assertEqual(rows[0][:4], ("Файл", "Лист", "Строка", "30 фоиза.xlsx: A РМА"))
+        self.assertEqual(rows[0][:5], ("Файл", "Лист", "Строка", "Сумма строки", "30 фоиза.xlsx: A РМА"))
         self.assertEqual([r[:3] for r in rows[1:]], [("30 фоиза.xlsx", "Л", 2), ("M1-4.xlsx", "Л", 2), ("M1-4.xlsx", "Л", 4)])
         self.assertIn("дивиденд", rows[-1])
+        res = write_inn_report(os.path.join(tempfile.mkdtemp(), "p.xlsx"), [a, b], maps, INN, threshold=(60, None))
+        self.assertEqual(res["files"], [("M1-4.xlsx", 1, 100.0)])           # порог «от 60»: 39 и 50 — мимо
+
+    def test_threshold_sheet_in_analysis(self):
+        """Порог «от 40» в «Анализе»: лист «Суммы от 40,00» — записи из всех файлов с суммой строки от 40."""
+        from analysis_jobs import make_report
+        from analysis_scan import auto_mode, scan_files
+        a = _save("a.xlsx", [["ИНН", "Сумма"], [INN, 39], ["630000962", 45]])
+        b = _save("b.xlsx", [["ИНН", "Сумма"], [INN, 100], ["630000962", 5]])
+        maps = {a: _map(a, inn="a", sums="b"), b: _map(b, inn="a", sums="b")}
+        raw = scan_files([a, b], maps)["raw"]
+        out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
+        res = make_report(out, raw, auto_mode(raw), None, maps, (40, None))
+        self.assertEqual(res["threshold"], {"text": "от 40,00", "rows": 2, "total": 145.0, "cut": False})
+        ws = load_workbook(out)["Суммы от 40,00"]
+        rows = [r[:4] for r in ws.iter_rows(min_row=9, values_only=True)]
+        self.assertEqual(rows, [("a.xlsx", "Л", 3, 45), ("b.xlsx", "Л", 2, 100)])
 
     def test_not_found(self):
         a = _save("a.xlsx", [["ИНН"], ["630000962"]])

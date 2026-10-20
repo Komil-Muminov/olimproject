@@ -70,6 +70,11 @@ def result_view(res: dict, data) -> tuple:
     st = res["statuses"]
     lines = [f"<span style='color:{MUTED}'>{escape(os.path.basename(res['path']))} · папка «Свод по глубокому "
              f"анализу»</span>", "", _parts_table(data)]
+    big = res.get("threshold")
+    if big:
+        lines.append(f"<b>Суммы {escape(big['text'])}</b>: {_int(big['rows'])} записей на {short_money(big['total'])}"
+                     + (" (показаны не все)" if big["cut"] else "")
+                     + f" <span style='color:{MUTED}'>— лист «Суммы {escape(big['text'])}»</span>")
     every = res.get("all_by_inn")
     if every:
         lines.append(f"<b>Одна орг. во всех файлах</b>: {_int(every['orgs'])} организаций, из них {_int(every['multi'])} есть в нескольких файлах "
