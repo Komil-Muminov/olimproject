@@ -1,14 +1,5 @@
-"""Мелкие виджеты окна «Как читать файл»: кнопки «Готово / Отменить анализ», поля отбора, сворачиваемый блок."""
-from PySide6.QtWidgets import QDialogButtonBox, QFormLayout, QLineEdit, QToolButton, QWidget
-
-
-def dialog_buttons(dlg) -> QDialogButtonBox:
-    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-    buttons.button(QDialogButtonBox.Ok).setText("Готово")
-    buttons.button(QDialogButtonBox.Cancel).setText("Отменить анализ")
-    buttons.accepted.connect(dlg.accept)
-    buttons.rejected.connect(dlg.reject)
-    return buttons
+"""Мелкие виджеты карточки файла: поля отбора платежей, сворачиваемый блок."""
+from PySide6.QtWidgets import QFormLayout, QLineEdit, QToolButton, QWidget
 
 
 def filter_edits(panel_layout, on_change) -> tuple:

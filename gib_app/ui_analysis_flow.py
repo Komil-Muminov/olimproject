@@ -1,14 +1,12 @@
-"""Глубокий анализ: файлы → для каждого «Как читать файл» → чтение в фоне → Excel → итог простыми словами."""
-import os
-
-from PySide6.QtWidgets import QDialog, QMessageBox
+"""Глубокий анализ: файлы → у каждого своя карточка с колонками → «Анализ» → чтение в фоне → Excel → итог."""
+from PySide6.QtWidgets import QDialog
 
 from analysis_jobs import make_report
 from analysis_propose import propose_files
 from analysis_scan import auto_mode, scan_files
 from report_paths import analysis_report_path
 from ui_analysis_result import result_view
-from ui_file_dialog import FileDialog
+from ui_file_card import FileCard
 from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
 from worker import Worker
@@ -17,10 +15,38 @@ ANALYSIS_PAGE = 3
 
 
 def start(win, paths: list):
-    """Выбраны файлы: показать их и кнопку «Анализировать»."""
-    win.an_paths, win.an_mappings = list(paths), {}
-    win.an_files.setText("📚  " + ",  ".join(os.path.basename(p) for p in paths))
+    """Выбраны файлы: посмотреть их листы в фоне и показать по карточке на файл."""
+    win.an_paths, win.an_mappings, win.an_file_cards = list(paths), {}, []
+    _clear_cards(win)
     win.pages.setCurrentIndex(ANALYSIS_PAGE)
+    _run(win, propose_files, win.an_paths, done=lambda props: _show_cards(win, props))
+
+
+def _clear_cards(win):
+    while win.an_cards.count() > 1:                 # последний элемент — растяжка
+        item = win.an_cards.takeAt(0)
+        if item.widget():
+            item.widget().deleteLater()
+
+
+def _show_cards(win, props: list):
+    for prop in props:
+        card = FileCard(prop)
+        card.changed.connect(lambda: _update_run(win))
+        win.an_cards.insertWidget(win.an_cards.count() - 1, card)
+        win.an_file_cards.append(card)
+    _update_run(win)
+
+
+def _ready(win) -> bool:
+    """«Анализ» можно: хотя бы один файл взят и у всех взятых колонки указаны."""
+    cards = getattr(win, "an_file_cards", [])
+    return any(c.included() for c in cards) and not any(c.problem() for c in cards)
+
+
+def _update_run(win):
+    if not win.worker:
+        win.an_run_btn.setEnabled(_ready(win))
 
 
 def _run(win, func, *args, done):
@@ -38,51 +64,17 @@ def _run(win, func, *args, done):
 def _idle(win):
     win.worker = None
     win.an_progress.setVisible(False)
-    for b in (win.an_run_btn, win.an_other_btn):
-        b.setEnabled(True)
+    win.an_other_btn.setEnabled(True)
+    _update_run(win)
 
 
 def run(win):
-    """«Анализ»: посмотреть файлы → для каждого окно «Как читать файл» (решает пользователь) → Excel."""
-    if not win.worker:
-        _run(win, propose_files, win.an_paths, done=lambda props: _ask_files(win, props, lambda used: _run(
-            win, scan_files, used, win.an_mappings, done=lambda res: _scanned(win, res))))
-
-
-def _skip(win, name: str, rest: int) -> bool:
-    """«Отмена» в окне файла: пропустить только его (True) или остановить весь анализ (False)."""
-    if not rest:
-        return False
-    box = QMessageBox(QMessageBox.Question, "Анализ", f"Файл «{name}» не настроен.", parent=win)
-    box.setInformativeText("Пропустить его и продолжить с остальными? Уже настроенные файлы сохранятся.")
-    skip = box.addButton("Пропустить файл", QMessageBox.AcceptRole)
-    box.addButton("Остановить анализ", QMessageBox.RejectRole)
-    box.exec()
-    return box.clickedButton() is skip
-
-
-def _ask_files(win, props: list, after):
-    """Окно «Как читать файл» для каждого файла; пустые и пропущенные — мимо; есть что читать — after(пути)."""
-    mappings, skipped, n = {}, [], len(props)
-    for k, prop in enumerate(props, 1):
-        name = os.path.basename(prop["path"])
-        if not prop["sheets"]:
-            skipped.append(f"{name} — пустой")
-            continue
-        dlg = FileDialog(win, prop, k, n)
-        if dlg.exec() == QDialog.Accepted:
-            mappings[prop["path"]] = dlg.mapping()
-        elif _skip(win, name, len(mappings) + n - k):
-            skipped.append(f"{name} — пропущен")
-        else:
-            return
-    if not mappings:
-        QMessageBox.warning(win, "Анализ", "Нечего анализировать:\n" + "\n".join(skipped))
+    """«Анализ»: колонки из карточек (только взятые файлы) → чтение в фоне → Excel."""
+    if win.worker or not _ready(win):
         return
-    if skipped:
-        QMessageBox.information(win, "Анализ", "Без этих файлов:\n" + "\n".join(skipped))
-    win.an_mappings = mappings
-    after([p["path"] for p in props if p["path"] in mappings])
+    cards = [c for c in win.an_file_cards if c.included()]
+    win.an_mappings = {c.path: c.mapping() for c in cards}
+    _run(win, scan_files, [c.path for c in cards], win.an_mappings, done=lambda res: _scanned(win, res))
 
 
 def _scanned(win, res):

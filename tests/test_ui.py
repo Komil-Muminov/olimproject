@@ -47,17 +47,36 @@ class TestMainWindow(unittest.TestCase):
         w = MainWindow()
         self.assertIn("Как пользоваться", w.help_btn.text())
         text = HelpDialog(w).text.toPlainText()
-        for part in ("Заполнить ГИБ", "Как читать файл", "C5-C300", "Одна орг. во всех файлах", "Ошибки"):
+        for part in ("Заполнить ГИБ", "своя карточка", "C5-C300", "Одна орг. во всех файлах", "Ошибки"):
             self.assertIn(part, text)
         w.close()
 
     def test_analysis_screen(self):
+        """По карточке на файл; «Анализ» нажимается, когда у всех взятых файлов указана колонка ИНН."""
+        import tempfile
+        import time
+        from openpyxl import Workbook
         from ui import MainWindow
         import ui_analysis_flow
+        paths = []
+        for name in ("M1-4.xlsx", "M5-8.xlsx"):
+            paths.append(os.path.join(tempfile.mkdtemp(), name))
+            wb = Workbook()
+            wb.active.append(["ИНН", "Сумма"])
+            wb.active.append(["040000011", 5])
+            wb.save(paths[-1])
         w = MainWindow()
-        ui_analysis_flow.start(w, ["C:/x/M1-4.xlsx", "C:/x/M5-8.xlsx"])
+        ui_analysis_flow.start(w, paths)
+        while w.worker:
+            self.app.processEvents()
+            time.sleep(0.02)
+        self.app.processEvents()
         self.assertEqual(w.pages.currentIndex(), ui_analysis_flow.ANALYSIS_PAGE)
-        self.assertIn("M1-4.xlsx", w.an_files.text())
+        self.assertEqual([os.path.basename(c.path) for c in w.an_file_cards], ["M1-4.xlsx", "M5-8.xlsx"])
+        self.assertFalse(w.an_run_btn.isEnabled())               # колонки ещё не вписаны
+        w.an_file_cards[0].edits["inn"].setText("a")
+        self.assertFalse(w.an_run_btn.isEnabled())               # второй файл не заполнен
+        w.an_file_cards[1].use.setChecked(False)                 # …и не берётся
         self.assertTrue(w.an_run_btn.isEnabled())
         w.close()
 
