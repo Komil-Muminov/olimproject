@@ -1,8 +1,6 @@
-"""Экран глубокого анализа: выбранные файлы и кнопка «Анализ»."""
+"""Экран глубокого анализа: выбранные файлы и кнопка «Анализ» внизу (как «Открыть в Excel» на экране итога)."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout
-)
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout
 
 import ui_analysis_flow as flow
 
@@ -10,17 +8,6 @@ ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организа
                 "Цвет строки — что случилось: Новый · Пропал · Вырос · Уменьшился · Без изменений · Появился и пропал.\n"
                 "Оранжевая ячейка — ошибка: двойной платёж, неправильный ИНН, странная дата, повтор ИНН.\n"
                 "В Excel есть легенда; наведите на цвет или заголовок — подсказка.")
-
-
-def _action(win, title: str, sub: str, tip: str, slot):
-    """Большая кнопка-карточка: название и одна строка пояснения."""
-    b = QPushButton(f"{title}\n{sub}")
-    b.setObjectName("actionCard")
-    b.setToolTip(tip)
-    b.setCursor(Qt.PointingHandCursor)
-    b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    b.clicked.connect(slot)
-    return b
 
 
 def build_analysis_card(win):
@@ -33,14 +20,11 @@ def build_analysis_card(win):
     win.an_files.setObjectName("fileName")
     win.an_files.setWordWrap(True)
     lay.addWidget(win.an_files)
-
-    row = QHBoxLayout()
-    row.setSpacing(14)
-    win.an_run_btn = _action(win, "📊  Анализ", "Excel: организации по частям, что случилось, ошибки",
-                             ANALYSIS_TIP, lambda: flow.run(win))
-    row.addWidget(win.an_run_btn)
-    lay.addLayout(row)
-
+    note = QLabel("Нажмите «Анализ»: для каждого файла откроется окно, где вы укажете колонки (ИНН, сумма…). "
+                  "Исходные файлы не меняются · результат — в папке «Свод по глубокому анализу».")
+    note.setObjectName("muted")
+    note.setWordWrap(True)
+    lay.addWidget(note)
     lay.addStretch()
 
     win.an_progress = QProgressBar()
@@ -54,8 +38,11 @@ def build_analysis_card(win):
     win.an_other_btn.clicked.connect(win.choose_file)
     btns.addWidget(win.an_other_btn)
     btns.addStretch()
-    note = QLabel("Исходные файлы не меняются · результат — в папке «Свод по глубокому анализу»")
-    note.setObjectName("muted")
-    btns.addWidget(note)
+    win.an_run_btn = QPushButton("📊  Анализ")
+    win.an_run_btn.setObjectName("primary")
+    win.an_run_btn.setToolTip(ANALYSIS_TIP)
+    win.an_run_btn.setCursor(Qt.PointingHandCursor)
+    win.an_run_btn.clicked.connect(lambda: flow.run(win))
+    btns.addWidget(win.an_run_btn)
     lay.addLayout(btns)
     return card
