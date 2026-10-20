@@ -16,7 +16,7 @@ from registry_stats import INN_DIGITS, inn_ok
 from utils import (cell_val, has_invisible, is_total_label, norm_text, not_a_number, number_as_text, show_invisible,
                    to_num_safe)
 
-AUTO_REPEATS = 0.5      # больше половины ИНН в нескольких строках — выписка / реестр: повтор ИНН не ошибка
+SHOW_ROWS = 30          # номеров строк в ячейке «Строки» (в ячейку Excel влезает 32 767 знаков)
 # деньги в двух столбцах (ушло / пришло) — считаются оба
 TWO_SIDED = ("дебет", "кредит", "debit", "credit", "приход", "расход")
 
@@ -72,8 +72,6 @@ class ListCollector:
             data = sheets[mapping["sheet"]]
             data = transpose(data) if mapping.get("transpose") else data       # организации по столбцам
             s = mapped_table(data, mapping)
-            if not s.repeats and sum(len(r) > 1 for r in s.all_rows.values()) > AUTO_REPEATS * max(len(s.all_rows), 1):
-                s.repeats = mapping["repeats"] = True       # выписка / реестр: повтор ИНН — норма (видно в «Как считали»)
             if not mapping.get("transpose"):    # у перевёрнутой строки листа — это столбцы таблицы
                 s.hidden_rows = sheet_scan(path, mapping["sheet"])["hidden_rows"]
             note = hidden_note(path, mapping["sheet"], s.hidden_rows)
@@ -124,8 +122,8 @@ class ListCollector:
         name = lambda k, r: s.row_names.get((k, r)) or name_at(data, r, s)
         for k, rows in s.all_rows.items():
             if len(rows) > 1 and not s.repeats:          # в выписке контрагент повторяется — это не ошибка
-                details["dup_row"].append([fname, where, ", ".join(map(str, rows)), s.keys[k], name(k, rows[0]),
-                                           f"{len(rows)} раза"])
+                shown = ", ".join(map(str, rows[:SHOW_ROWS])) + (f" …всего {len(rows)} строк" if len(rows) > SHOW_ROWS else "")
+                details["dup_row"].append([fname, where, shown, s.keys[k], name(k, rows[0]), f"{len(rows)} раза"])
             inn = s.keys[k]
             if not s.by_name and not inn_ok(inn):
                 fix = inn.zfill(INN_DIGITS) if inn.isdigit() and len(inn) == INN_DIGITS - 1 else ""
