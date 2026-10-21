@@ -71,7 +71,7 @@ class FileCard(QFrame):
 
     def _build(self) -> dict:
         name = self.sheet.currentData()
-        return to_mapping(name, self.sheets[name], {k: e.text().strip() for k, e in self.edits.items()}, {})
+        return to_mapping(name, self.sheets[name], {k: e.text().strip() for k, e in self.edits.items()})
 
     def problem(self) -> str:
         """Чего не хватает ("" — всё указано). Не взятый в анализ файл — без проблем."""
@@ -115,5 +115,5 @@ class FileCard(QFrame):
         self.changed.emit()
 
     def mapping(self) -> list:
-        """Для scan_files: настройка выбранного листа."""
+        """Настройка выбранного листа (список — на будущее несколько листов)."""
         return [self._build()]

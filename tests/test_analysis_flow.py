@@ -1,5 +1,4 @@
-"""Глубокий анализ, несколько файлов: у каждого карточка; не взятый и пустой файл не мешают остальным;
-больше двух файлов — без «было → стало»."""
+"""Фильтр по файлам: у каждого файла карточка; не взятый и пустой файл не мешают остальным."""
 import os
 import sys
 import tempfile
@@ -11,11 +10,9 @@ from openpyxl import Workbook  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import ui_analysis_flow as flow  # noqa: E402
-from analysis_list_map import AS_LIST  # noqa: E402
-from analysis_scan import auto_mode, build, scan_files  # noqa: E402
+from file_sheets import read_sheets  # noqa: E402
 
 INNS = [f"{100000000 + i * 7919:09d}" for i in range(3)]
-MAP = [{"sheet": "Л", "head": 0, "row0": 0, "col0": 0, "kind": AS_LIST, "cols": {"inn": 0, "name": 1}, "sums": [2]}]
 
 
 def _save(name, amount):
@@ -26,11 +23,6 @@ def _save(name, amount):
         wb.active.append(r)
     wb.save(path)
     return path
-
-
-def _raw(n):
-    paths = [_save(f"{i + 1}.xlsx", 100 * (i + 1)) for i in range(n)]
-    return scan_files(paths, {p: MAP for p in paths})["raw"]
 
 
 class AnalysisFlowTest(unittest.TestCase):
@@ -58,8 +50,7 @@ class AnalysisFlowTest(unittest.TestCase):
 
     def test_only_included_files_go_to_analysis(self):
         a, b, c = (_save(n, 5) for n in ("a.xlsx", "b.xlsx", "c.xlsx"))
-        from analysis_propose import propose
-        win = self._win([propose(p) for p in (a, b, c)])
+        win = self._win([read_sheets(p) for p in (a, b, c)])
         for card in win.an_file_cards:
             card.edits["inn"].setText("a")
         win.an_file_cards[1].use.setChecked(False)              # b не берём
@@ -68,8 +59,7 @@ class AnalysisFlowTest(unittest.TestCase):
         self.assertEqual((paths, set(mappings), inn, threshold), ([a, c], {a, c}, "040058284", None))
 
     def test_not_ready_until_inn_given(self):
-        from analysis_propose import propose
-        win = self._win([propose(_save("a.xlsx", 5))])
+        win = self._win([read_sheets(_save("a.xlsx", 5))])
         flow.run(win)
         self.assertIsNone(self.started)                          # колонка ИНН не вписана — поиск не запускается
 
@@ -78,10 +68,6 @@ class AnalysisFlowTest(unittest.TestCase):
         card = FileCard({"path": "пустой.xlsx", "sheets": {}})
         self.assertEqual((card.included(), card.use.isEnabled(), card.problem()), (False, False, ""))
 
-    def test_no_compare_for_more_than_two_files(self):
-        """Два файла — «было → стало» (первый → второй); три и больше — суммы рядом, без раскраски."""
-        self.assertEqual(build(*_raw(2), auto_mode(_raw(2))).compare, (0, 1))
-        self.assertIsNone(build(*_raw(3), auto_mode(_raw(3))).compare)
 
 if __name__ == "__main__":
     unittest.main()

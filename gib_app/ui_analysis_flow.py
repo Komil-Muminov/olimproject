@@ -4,7 +4,7 @@ import os
 
 from PySide6.QtWidgets import QMessageBox
 
-from analysis_propose import propose_files
+from file_sheets import read_files
 from report_inn_search import clean_inn, filter_title, write_filter_report
 from report_paths import filter_report_path
 from ui_file_card import FileCard
@@ -21,7 +21,7 @@ def start(win, paths: list):
     win.an_paths, win.an_mappings, win.an_file_cards = list(paths), {}, []
     _clear_cards(win)
     win.pages.setCurrentIndex(ANALYSIS_PAGE)
-    _run(win, propose_files, win.an_paths, done=lambda props: _show_cards(win, props))
+    _run(win, read_files, win.an_paths, done=lambda props: _show_cards(win, props))
 
 
 def _clear_cards(win):

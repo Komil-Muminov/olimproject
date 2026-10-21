@@ -6,8 +6,8 @@ from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from report_all_by_inn import _head_row, _rows, _show, _sources, _table_name
 from report_fast import _cell, title_rows
+from report_source import data_rows, head_row, show, sources as table_sources, table_name
 from report_styles import BORDER, CENTER, NUM, fill_color
 from utils import format_money, to_num_safe
 
@@ -38,21 +38,21 @@ def threshold_text(threshold) -> str:
 
 def collect(paths: list, mappings: dict, keep, progress=lambda p, t: None) -> dict:
     """keep(значения, настройка) → брать ли строку. → {"sources", "heads", "hits", "per", "cut"}."""
-    sources, hits, heads, per, cut = _sources(paths, mappings or {}), [], [], [], False
+    sources, hits, heads, per, cut = table_sources(paths, mappings or {}), [], [], [], False
     for src, (p, m) in enumerate(sources):
         progress(int(90 * src / max(len(sources), 1)), f"Ищу в {os.path.basename(p)}…")
-        heads.append(_head_row(p, m))
+        heads.append(head_row(p, m))
         count, total = 0, 0.0
-        for r, values in _rows(p, m):
+        for r, values in data_rows(p, m):
             if not keep(values, m):
                 continue
             count, s = count + 1, row_sum(values, m)
             total += s or 0.0
             if len(hits) < MAX_ROWS:
-                hits.append((src, r, s, [_show(v) if v != "" else None for v in values]))
+                hits.append((src, r, s, [show(v) if v != "" else None for v in values]))
             else:
                 cut = True
-        per.append((_table_name(p, m, sources), count, round(total, 2) if m.get("sums") else None))
+        per.append((table_name(p, m, sources), count, round(total, 2) if m.get("sums") else None))
     return {"sources": sources, "heads": heads, "hits": hits, "per": per, "cut": cut}
 
 

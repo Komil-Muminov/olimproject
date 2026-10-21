@@ -1,4 +1,4 @@
-"""Что не видно в значениях ячеек: скрытые листы и строки, формулы без сохранённого результата. Читается прямо
+"""Что не видно в значениях ячеек: скрытые листы, формулы без сохранённого результата. Читается прямо
 из .xlsx / .xlsm (это zip с xml); для старого .xls таких сведений нет — пусто."""
 import re
 import zipfile
@@ -6,7 +6,6 @@ import zipfile
 from file_format import real_path
 
 SHEET_RE = re.compile(r'<sheet\b[^>]*>')
-ROW_RE = re.compile(r'<row\b[^>]*>')
 CELL_RE = re.compile(r'<c\b[^>]*?\br="([A-Z]+)\d+"[^>]*?(?:/>|>(.*?)</c>)', re.S)
 VALUE_RE = re.compile(r"<v>[^<]")
 FORMULA_SCAN_LIMIT = 20_000_000     # большие листы (реестры) — без поиска формул (долго)
@@ -44,77 +43,17 @@ def workbook_sheets(path: str) -> dict:
     return out
 
 
-def sheet_scan(path: str, sheet: str, formulas: bool = False) -> dict:
-    """{"hidden_rows": {номера строк Excel}, "formulas": {столбец (с 0): сколько формул без значения}}."""
+def empty_formulas(path: str, sheet: str) -> dict:
+    """{столбец (с 0): сколько формул без сохранённого значения}; большой лист или не .xlsx — {}."""
     info = workbook_sheets(path).get(sheet)
     if not info:
-        return {"hidden_rows": set(), "formulas": {}}
+        return {}
     with zipfile.ZipFile(real_path(path)) as z:
-        size = z.getinfo(info["xml"]).file_size
+        if z.getinfo(info["xml"]).file_size > FORMULA_SCAN_LIMIT:
+            return {}
         xml = z.read(info["xml"]).decode("utf-8", "ignore")
-    hidden = {int(_attr(t, "r")) for t in ROW_RE.findall(xml) if _attr(t, "hidden") in ("1", "true") and _attr(t, "r")}
     empty = {}
-    if formulas and size <= FORMULA_SCAN_LIMIT:
-        for col, body in CELL_RE.findall(xml):
-            if body and "<f" in body and not VALUE_RE.search(body):      # формула, а результата нет
-                empty[_col_index(col)] = empty.get(_col_index(col), 0) + 1
-    return {"hidden_rows": hidden, "formulas": empty}
-
-
-HIDDEN_LIST_LIMIT = 2000    # скрытых строк больше — в отчёте только сводка (иначе это весь файл, например фильтр)
-
-
-def hidden_note(path: str, sheet: str, hidden_rows: set) -> dict | None:
-    """Пометка для «Как считали» / экрана итога: скрытый лист и скрытые строки. → None, если скрытого нет."""
-    info = workbook_sheets(path).get(sheet, {})
-    if not info.get("hidden") and not hidden_rows:
-        return None
-    return {"file": path, "sheet": sheet, "hidden_sheet": bool(info.get("hidden")), "hidden_rows": len(hidden_rows),
-            "listed": len(hidden_rows) <= HIDDEN_LIST_LIMIT}
-
-
-WHITE_RE = re.compile(r'<color\b[^>]*\b(?:rgb="(?:[0-9A-F]{2})?FFFFFF"|theme="0")[^>]*/>', re.I)   # «AARRGGBB»
-CELL_TAG_RE = re.compile(r"<c\b([^>]*?)(?<!/)>(.*?)</c>", re.S)        # пустые <c …/> пропускаются
-
-
-def _items(xml: str, block: str, item: str) -> list:
-    """Элементы <item> внутри <block> (fonts → font, fills → fill, cellXfs → xf)."""
-    m = re.search(rf"<{block}\b.*?</{block}>", xml, re.S)
-    return re.findall(rf"<{item}\b[^>]*/>|<{item}\b.*?</{item}>", m.group(0), re.S) if m else []
-
-
-def _white_styles(z) -> set:
-    """Номера стилей ячеек, где шрифт белый, а заливки нет (или она белая) — такой текст в Excel не видно."""
-    styles = z.read("xl/styles.xml").decode("utf-8", "ignore")
-    white_font = {i for i, f in enumerate(_items(styles, "fonts", "font")) if WHITE_RE.search(f)}
-    clear_fill = {i for i, f in enumerate(_items(styles, "fills", "fill"))
-                  if 'patternType="solid"' not in f or re.search(r'<fgColor\b[^>]*rgb="(?:[0-9A-F]{2})?FFFFFF"', f, re.I)}
-    return {i for i, xf in enumerate(_items(styles, "cellXfs", "xf"))
-            if int(_attr(xf, "fontId") or 0) in white_font and int(_attr(xf, "fillId") or 0) in clear_fill}
-
-
-def white_cells(path: str, sheet: str) -> list:
-    """[(ячейка, текст)] — непустые ячейки белым шрифтом (большие листы не проверяются — долго)."""
-    info = workbook_sheets(path).get(sheet)
-    if not info:
-        return []
-    with zipfile.ZipFile(real_path(path)) as z:
-        names = z.namelist()
-        if "xl/styles.xml" not in names or z.getinfo(info["xml"]).file_size > FORMULA_SCAN_LIMIT:
-            return []
-        white = _white_styles(z)
-        if not white:
-            return []
-        cells = [(attrs, body) for attrs, body in CELL_TAG_RE.findall(z.read(info["xml"]).decode("utf-8", "ignore"))
-                 if _attr(attrs, "s") and int(_attr(attrs, "s")) in white]
-        shared = re.findall(r"<si>(.*?)</si>", z.read("xl/sharedStrings.xml").decode("utf-8", "ignore"), re.S) \
-            if cells and "xl/sharedStrings.xml" in names else []
-    out = []
-    for attrs, body in cells:
-        v = re.search(r"<v>([^<]*)</v>", body)
-        text = v.group(1) if v else "".join(re.findall(r"<t[^>]*>([^<]*)</t>", body))
-        if _attr(attrs, "t") == "s" and text.isdigit() and int(text) < len(shared):
-            text = "".join(re.findall(r"<t[^>]*>([^<]*)</t>", shared[int(text)]))
-        if text.strip():
-            out.append((_attr(attrs, "r"), text))
-    return out
+    for col, body in CELL_RE.findall(xml):
+        if body and "<f" in body and not VALUE_RE.search(body):      # формула, а результата нет
+            empty[_col_index(col)] = empty.get(_col_index(col), 0) + 1
+    return empty

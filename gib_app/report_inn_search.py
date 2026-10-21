@@ -4,9 +4,9 @@ import re
 
 from openpyxl import Workbook
 
-from compare_finder import match_key
-from report_all_by_inn import _show
+from inn_keys import match_key
 from report_rows import collect, in_range, row_sum, threshold_text, write_rows_sheet
+from report_source import show
 
 
 def clean_inn(text: str) -> str:
@@ -22,7 +22,7 @@ def inn_pattern(inn: str):
 
 def has_inn(values, pattern) -> bool:
     """ИНН в любой ячейке строки."""
-    return any(pattern.search(str(_show(v))) for v in values if v not in (None, ""))
+    return any(pattern.search(str(show(v))) for v in values if v not in (None, ""))
 
 
 def filter_title(inn: str = "", threshold=None) -> str:

@@ -45,14 +45,3 @@ def one_column(text: str, title: str):
     if len(parts) > 1:
         raise SpecError(f"{title}: нужна одна колонка, а указано {len(parts)}")
     return parts[0] if parts else None
-
-
-def cell_address(text: str):
-    """«E200» → (столбец с 0, строка с 1); пусто → None."""
-    parts = parse(text)
-    if not parts:
-        return None
-    col, row, last = parts[0]
-    if len(parts) > 1 or row is None or last is not None:
-        raise SpecError(f"«{text}» — нужна одна ячейка, например E200")
-    return col, row

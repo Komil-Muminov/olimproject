@@ -24,35 +24,6 @@ def is_total_label(v) -> bool:
     return bool(words) and words[0] in TOTAL_WORDS
 
 
-INVISIBLE = {" ": "⟨неразрывный пробел⟩", "​": "⟨невидимый знак⟩", "‌": "⟨невидимый знак⟩",
-             "‍": "⟨невидимый знак⟩", "﻿": "⟨невидимый знак⟩", "	": "⟨табуляция⟩"}
-
-
-def has_invisible(v) -> bool:
-    """В тексте ИНН лишние пробелы (по краям или между цифрами) или невидимые знаки — в Excel их не видно."""
-    if not isinstance(v, str) or not v:
-        return False
-    return v != v.strip() or any(ch in v for ch in INVISIBLE) or any(
-        v[i] == " " and v[i - 1].isdigit() and v[i + 1].isdigit() for i in range(1, len(v) - 1))
-
-
-def show_invisible(v: str) -> str:
-    """Показать невидимое: «⟨неразрывный пробел⟩», пробел по краям — «␣»."""
-    s = "".join(INVISIBLE.get(ch, ch) for ch in v)
-    lead, trail = len(s) - len(s.lstrip(" ")), len(s) - len(s.rstrip(" "))
-    return "␣" * lead + s.strip(" ") + "␣" * trail
-
-
-def number_as_text(v) -> bool:
-    """Число записано текстом («1 234,56», «'100»): программа его считает, а СУММ в Excel — нет."""
-    return isinstance(v, str) and bool(v.strip()) and to_number(v) is not None
-
-
-def not_a_number(v) -> bool:
-    """В ячейке суммы что-то написано, но это не число («нет», «1.234.56»). Пусто и прочерк — не в счёт."""
-    return v not in (None, "") and to_number(v) is None and str(v).strip() not in ("-", "–", "—", "")
-
-
 def to_num_safe(v) -> float:
     """Возвращает число с плавающей точкой или 0.0."""
     res = to_number(v)
@@ -72,10 +43,3 @@ def find_col(heads: list, prefixes: tuple, after: int = 0) -> int | None:
 def format_money(x) -> str:
     """Форматирует число в денежный вид: 1 234,56."""
     return f"{x:,.2f}".replace(",", " ").replace(".", ",")
-
-
-def cell_val(data, r: int, c: int):
-    """Безопасный доступ к значению в двумерном массиве (1-based index)."""
-    if 0 < r <= len(data) and 0 < c <= len(data[r - 1]):
-        return data[r - 1][c - 1]
-    return None
