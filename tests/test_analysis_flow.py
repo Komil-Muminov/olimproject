@@ -45,7 +45,7 @@ class AnalysisFlowTest(unittest.TestCase):
         win.worker, win.an_run_btn = None, type("B", (), {"setEnabled": lambda s, v: setattr(s, "on", v)})()
         win.an_file_cards = [FileCard(p) for p in props]
         from PySide6.QtWidgets import QLineEdit
-        win.an_min, win.an_max = QLineEdit(), QLineEdit()                  # порог суммы — пусто
+        win.an_inn, win.an_min, win.an_max = QLineEdit("040058284"), QLineEdit(), QLineEdit()   # фильтр: ИНН
         self.started = None
         flow._run = lambda w, func, *args, done: setattr(self, "started", args)
         return win
@@ -64,14 +64,14 @@ class AnalysisFlowTest(unittest.TestCase):
             card.edits["inn"].setText("a")
         win.an_file_cards[1].use.setChecked(False)              # b не берём
         flow.run(win)
-        paths, mappings = self.started
-        self.assertEqual((paths, set(mappings)), ([a, c], {a, c}))
+        _, paths, mappings, inn, threshold = self.started
+        self.assertEqual((paths, set(mappings), inn, threshold), ([a, c], {a, c}, "040058284", None))
 
     def test_not_ready_until_inn_given(self):
         from analysis_propose import propose
         win = self._win([propose(_save("a.xlsx", 5))])
         flow.run(win)
-        self.assertIsNone(self.started)                          # ИНН не вписан — «Анализ» не запускается
+        self.assertIsNone(self.started)                          # колонка ИНН не вписана — поиск не запускается
 
     def test_empty_file_card(self):
         from ui_file_card import FileCard

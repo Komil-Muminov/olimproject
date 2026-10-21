@@ -1,20 +1,19 @@
-"""Глубокий анализ: файлы → у каждого своя карточка с колонками → «Анализ» → чтение в фоне → Excel → итог."""
+"""Фильтр по файлам: файлы → у каждого своя карточка (лист, ИНН, сумма) → ИНН и/или порог суммы →
+«Показать в Excel» → строки как есть из всех файлов. Анализ делает сам пользователь."""
 import os
 
 from PySide6.QtWidgets import QMessageBox
 
-from analysis_jobs import make_report
 from analysis_propose import propose_files
-from analysis_scan import auto_mode, scan_files
-from report_inn_search import clean_inn, write_inn_report
-from report_paths import analysis_report_path, inn_report_path
-from ui_analysis_result import result_view
+from report_inn_search import clean_inn, filter_title, write_filter_report
+from report_paths import filter_report_path
 from ui_file_card import FileCard
 from ui_result import show_result
 from utils import format_money, to_number
 from worker import Worker
 
 ANALYSIS_PAGE = 3
+TITLE = "Фильтр"
 
 
 def start(win, paths: list):
@@ -42,19 +41,18 @@ def _show_cards(win, props: list):
 
 
 def _ready(win) -> bool:
-    """«Анализ» можно: хотя бы один файл взят и у всех взятых колонки указаны."""
+    """Можно искать: хотя бы один файл взят и у всех взятых колонки указаны."""
     cards = getattr(win, "an_file_cards", [])
     return any(c.included() for c in cards) and not any(c.problem() for c in cards)
 
 
 def _update_run(win):
     if not win.worker:
-        for b in (win.an_run_btn, win.an_inn_btn):
-            b.setEnabled(_ready(win))
+        win.an_run_btn.setEnabled(_ready(win))
 
 
 def _run(win, func, *args, done):
-    for b in (win.an_run_btn, win.an_other_btn, win.an_inn_btn):
+    for b in (win.an_run_btn, win.an_other_btn):
         b.setEnabled(False)
     win.an_progress.setVisible(True)
     win.an_progress.setValue(0)
@@ -72,71 +70,46 @@ def _idle(win):
     _update_run(win)
 
 
-def run(win):
-    """«Анализ»: колонки из карточек (только взятые файлы) → чтение в фоне → Excel."""
-    if win.worker or not _ready(win) or (threshold := _threshold(win)) is False:
-        return
-    win.an_mappings, win.an_threshold = _chosen(win), threshold
-    _run(win, scan_files, list(win.an_mappings), win.an_mappings, done=lambda res: _scanned(win, res))
-
-
-def _chosen(win) -> dict:
-    """Колонки из карточек — только взятые файлы."""
-    return {c.path: c.mapping() for c in win.an_file_cards if c.included()}
-
-
 def _threshold(win):
     """Порог суммы с экрана: (от, до) или None; неправильное число — сообщение и False."""
     texts = (win.an_min.text().strip(), win.an_max.text().strip())
     values = [to_number(t) if t else None for t in texts]
     if any(t and v is None for t, v in zip(texts, values)):
-        QMessageBox.information(win, "Порог суммы", "Впишите сумму числом, например 2000 или 2 000,50.")
+        QMessageBox.information(win, TITLE, "Впишите сумму числом, например 2000 или 2 000,50.")
         return False
     lo, hi = values
     if lo is not None and hi is not None and hi < lo:
-        QMessageBox.information(win, "Порог суммы", "«До» меньше, чем «от».")
+        QMessageBox.information(win, TITLE, "«До» меньше, чем «от».")
         return False
     return (lo, hi) if lo is not None or hi is not None else None
 
 
-def search_inn(win):
-    """«Один ИНН во всех файлах»: все его строки из всех взятых файлов → отдельный Excel."""
+def run(win):
+    """«Показать в Excel»: строки всех взятых файлов по фильтру (ИНН и/или сумма) → отдельный Excel."""
+    if win.worker or not _ready(win) or (threshold := _threshold(win)) is False:
+        return
     inn = clean_inn(win.an_inn.text())
-    if win.worker or not _ready(win):
+    if win.an_inn.text().strip() and not 8 <= len(inn) <= 14:
+        QMessageBox.information(win, TITLE, "ИНН — цифрами, например 040058284.")
         return
-    if not 8 <= len(inn) <= 14:
-        QMessageBox.information(win, "Один ИНН во всех файлах", "Введите ИНН цифрами, например 040058284.")
+    if not inn and not threshold:
+        QMessageBox.information(win, TITLE, "Впишите ИНН и/или сумму (от … до …) — по ним покажем строки.")
         return
-    if (threshold := _threshold(win)) is False:
-        return
-    win.an_mappings = _chosen(win)
-    _run(win, write_inn_report, inn_report_path(inn), list(win.an_mappings), win.an_mappings, inn, threshold,
-         done=lambda res: _inn_done(win, res))
+    win.an_mappings = {c.path: c.mapping() for c in win.an_file_cards if c.included()}
+    _run(win, write_filter_report, filter_report_path(filter_title(inn, threshold)), list(win.an_mappings),
+         win.an_mappings, inn, threshold, done=lambda res: _done(win, res))
 
 
-def _inn_done(win, res):
+def _done(win, res):
     if not res["path"]:
-        limit = " с такой суммой" if res.get("threshold") else ""
-        QMessageBox.information(win, "Один ИНН во всех файлах", f"Записей ИНН {res['inn']}{limit} нет ни в одном файле.")
+        QMessageBox.information(win, TITLE, f"По фильтру «{res['title']}» строк нет ни в одном файле.")
         return
     files = [f"{name}: <b>{count}</b> строк" + (f" на <b>{format_money(total)}</b>" if total is not None else "")
              for name, count, total in res["files"]]
-    show_result(win, True, f"✓  ИНН {res['inn']} — {res['rows']} строк", [
+    show_result(win, True, f"✓  {res['title']} — {res['rows']} строк", [
         f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
         f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", ""] + files,
         path=res["path"], note="Исходные файлы не изменены.")
-    win.back_page = ANALYSIS_PAGE
-
-
-def _scanned(win, res):
-    raw = res["raw"]                        # два файла — «было → стало» первый → второй; больше — без сравнения
-    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), None, win.an_mappings, win.an_threshold,
-         done=lambda r: _done(win, r, r["data"]))
-
-
-def _done(win, res, data):
-    lines, chips, errors = result_view(res, data)
-    show_result(win, True, "✓  Анализ готов", lines, path=res["path"], chips=chips, after=errors)
     win.back_page = ANALYSIS_PAGE
 
 

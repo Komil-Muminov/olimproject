@@ -1,4 +1,4 @@
-"""«Один ИНН во всех файлах»: все строки ИНН из всех файлов (колонки — из карточек), без предела по строкам."""
+"""Фильтр по всем файлам: ИНН (в любой колонке) и/или порог суммы — строки как есть, без предела по строкам."""
 import os
 import sys
 import tempfile
@@ -10,7 +10,7 @@ from openpyxl import Workbook, load_workbook  # noqa: E402
 
 from analysis_propose import propose  # noqa: E402
 from column_entry import to_mapping  # noqa: E402
-from report_inn_search import clean_inn, write_inn_report  # noqa: E402
+from report_inn_search import clean_inn, write_filter_report  # noqa: E402
 
 INN = "040058284"
 
@@ -39,13 +39,13 @@ class InnSearchTest(unittest.TestCase):
                                 ["10.01.2024", "630000962", 5, "x"], ["11.01.2024", int(INN), 50, "дивиденд"]])
         maps = {a: _map(a, inn="a", name="b", sums="c"), b: _map(b, inn="b", sums="c")}
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = write_inn_report(out, [a, b], maps, "40058284")              # ноль впереди потерян — не страшно
+        res = write_filter_report(out, [a, b], maps, "40058284")              # ноль впереди потерян — не страшно
         self.assertEqual((res["rows"], res["files"]), (3, [("30 фоиза.xlsx", 1, 39.0), ("M1-4.xlsx", 2, 150.0)]))
         rows = list(load_workbook(out).active.iter_rows(min_row=8, values_only=True))
         self.assertEqual(rows[0][:5], ("Файл", "Лист", "Строка", "Сумма строки", "30 фоиза.xlsx: A РМА"))
         self.assertEqual([r[:3] for r in rows[1:]], [("30 фоиза.xlsx", "Л", 2), ("M1-4.xlsx", "Л", 2), ("M1-4.xlsx", "Л", 4)])
         self.assertIn("дивиденд", rows[-1])
-        res = write_inn_report(os.path.join(tempfile.mkdtemp(), "p.xlsx"), [a, b], maps, INN, threshold=(60, None))
+        res = write_filter_report(os.path.join(tempfile.mkdtemp(), "p.xlsx"), [a, b], maps, INN, threshold=(60, None))
         self.assertEqual(res["files"], [("M1-4.xlsx", 1, 100.0)])           # порог «от 60»: 39 и 50 — мимо
 
     def test_threshold_sheet_in_analysis(self):
@@ -68,12 +68,20 @@ class InnSearchTest(unittest.TestCase):
         a = _save("a.xlsx", [["ИНН", "Сумма", "Основание"], ["630000962", 7, f"за ООО «Шабака» (ИНН {INN})"],
                              ["630000962", 9, "налог 1040058284"]])               # 10 цифр — другой номер
         out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
-        res = write_inn_report(out, [a], {a: _map(a, inn="a", sums="b")}, INN)
+        res = write_filter_report(out, [a], {a: _map(a, inn="a", sums="b")}, INN)
         self.assertEqual(res["files"], [("a.xlsx", 1, 7.0)])
+
+    def test_threshold_only(self):
+        """Без ИНН, только сумма «от 40»: все записи с такой суммой строки из всех файлов."""
+        a = _save("a.xlsx", [["ИНН", "Сумма"], [INN, 39], ["630000962", 45]])
+        b = _save("b.xlsx", [["ИНН", "Сумма"], [INN, 100]])
+        maps = {a: _map(a, inn="a", sums="b"), b: _map(b, inn="a", sums="b")}
+        res = write_filter_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), [a, b], maps, "", (40, None))
+        self.assertEqual((res["title"], res["files"]), ("суммы от 40,00", [("a.xlsx", 1, 45.0), ("b.xlsx", 1, 100.0)]))
 
     def test_not_found(self):
         a = _save("a.xlsx", [["ИНН"], ["630000962"]])
-        self.assertIsNone(write_inn_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), [a], {a: _map(a, inn="a")}, INN)["path"])
+        self.assertIsNone(write_filter_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), [a], {a: _map(a, inn="a")}, INN)["path"])
 
 
 if __name__ == "__main__":

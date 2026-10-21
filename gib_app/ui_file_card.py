@@ -1,21 +1,19 @@
-"""Карточка файла на экране глубокого анализа: лист и четыре колонки, вписанные от руки (C, C5, C5-C300, «G, H»):
-ИНН, Название, Сумма, Итого. Остальные колонки файла программа не разбирает — они видны в отчёте как есть.
+"""Карточка файла на экране фильтра: лист и колонки, вписанные от руки (C, C5, C5-C300, «G, H»): ИНН (какие строки
+читать) и Сумма (для порога и итогов). Остальные колонки файла видны в отчёте как есть.
 Справа — короткий статус; неверное поле обводится красным, полный текст ошибки — при наведении."""
 import os
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout
 
-from column_entry import MAIN, to_mapping
+from column_entry import to_mapping
 from column_spec import SpecError, one_column, parse
 from ui_file_columns import formula_warning
 
-HINTS = {"inn": "напр. C или C5-C300", "name": "напр. B", "sums": "напр. G или G, H", "total": "напр. N"}
+FIELDS = (("inn", "ИНН"), ("sums", "Сумма"))
+HINTS = {"inn": "напр. C или C5-C300", "sums": "напр. G или G, H"}
 TIPS = {"inn": "Колонка с ИНН (обязательно). Строки берутся отсюда: C — вся колонка, C5-C300 — строки 5…300.",
-        "name": "Колонка с названием организации.",
-        "sums": "Колонки с деньгами: G или G, H (в строке складываются).",
-        "total": "Колонка «Итого» в каждой строке: если она не равна сумме колонок «Сумма» — организация "
-                 "подсвечивается в отчёте."}
+        "sums": "Колонки с деньгами: G или G, H (в строке складываются) — для порога суммы и итогов."}
 OK_STYLE, BAD_STYLE, OFF_STYLE = "color:#15803D; font-weight:600;", "color:#C2410C; font-weight:600;", "color:#64748B;"
 BAD_FIELD = "QLineEdit { border: 1px solid #DC2626; border-radius: 6px; }"
 STATUS_WIDTH = 230
@@ -53,7 +51,7 @@ class FileCard(QFrame):
         for name, sh in self.sheets.items():
             self.sheet.addItem(name + ("   (скрытый лист)" if sh.get("hidden") else ""), name)
         self.sheet.currentIndexChanged.connect(self._check)
-        for col, (title, widget) in enumerate([("Лист", self.sheet)] + [(t, self._edit(k)) for k, t in MAIN]):
+        for col, (title, widget) in enumerate([("Лист", self.sheet)] + [(t, self._edit(k)) for k, t in FIELDS]):
             label = QLabel(title)
             label.setObjectName("muted")
             grid.addWidget(label, 0, col)
@@ -90,7 +88,7 @@ class FileCard(QFrame):
         out = {} if self.edits["inn"].text().strip() else {"inn": "Обязательно: колонка с ИНН, например C или C5-C300"}
         for key, edit in self.edits.items():
             try:
-                parse(edit.text()) if key == "sums" else one_column(edit.text(), dict(MAIN)[key])
+                parse(edit.text()) if key == "sums" else one_column(edit.text(), dict(FIELDS)[key])
             except SpecError as e:
                 out[key] = str(e)
         return out

@@ -1,4 +1,5 @@
-"""Экран глубокого анализа: у каждого выбранного файла своя карточка с колонками (ui_file_card), внизу — «Анализ»."""
+"""Экран фильтра: у каждого выбранного файла своя карточка (лист, ИНН, сумма), ниже — фильтр по ИНН и/или сумме
+и кнопка «Показать в Excel». Анализ делает сам пользователь — программа только показывает строки по фильтру."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
@@ -6,13 +7,21 @@ from PySide6.QtWidgets import (
 
 import ui_analysis_flow as flow
 
-ANALYSIS_TIP = ("Excel, лист «Анализ»: каждая организация — строка, суммы по частям.\n"
-                "Цвет строки — что случилось: Новый · Пропал · Вырос · Уменьшился · Без изменений · Появился и пропал.\n"
-                "Оранжевая ячейка — ошибка: двойной платёж, неправильный ИНН, странная дата, повтор ИНН.\n"
-                "В Excel есть легенда; наведите на цвет или заголовок — подсказка.")
 SYNTAX = ("Для каждого файла впишите колонки: C — вся колонка · C5 — с 5-й строки · C5-C300 — строки 5…300 · "
-          "G, H — несколько колонок (суммы складываются). Строки берутся из поля ИНН. "
-          "Исходные файлы не меняются · результат — в папке «Свод по глубокому анализу».")
+          "G, H — несколько колонок (суммы складываются). Исходные файлы не меняются · результат — в папке "
+          "«Свод по глубокому анализу».")
+
+
+def _field(lay, title: str, hint: str, width: int = None) -> QLineEdit:
+    label = QLabel(title)
+    label.setStyleSheet("font-weight:600;")
+    lay.addWidget(label)
+    edit = QLineEdit()
+    edit.setPlaceholderText(hint)
+    if width:
+        edit.setMaximumWidth(width)
+    lay.addWidget(edit)
+    return edit
 
 
 def build_analysis_card(win):
@@ -36,37 +45,14 @@ def build_analysis_card(win):
     scroll.setWidget(holder)
     lay.addWidget(scroll, 1)
 
-    search = QHBoxLayout()                  # один ИНН — все его строки из всех файлов
-    title = QLabel("🔎  Один ИНН во всех файлах:")
-    title.setStyleSheet("font-weight:600;")
-    search.addWidget(title)
-    win.an_inn = QLineEdit()
-    win.an_inn.setPlaceholderText("ИНН, например 040058284")
-    win.an_inn.setMaxLength(20)
-    win.an_inn.returnPressed.connect(lambda: flow.search_inn(win))
-    search.addWidget(win.an_inn, 1)
-    win.an_inn_btn = QPushButton("В Excel")
-    win.an_inn_btn.setToolTip("Все строки, где встречается этот ИНН (в любой колонке), из всех взятых файлов — "
-                              "без предела по строкам")
-    win.an_inn_btn.clicked.connect(lambda: flow.search_inn(win))
-    search.addWidget(win.an_inn_btn)
-    lay.addLayout(search)
-    limit = QHBoxLayout()                   # порог суммы — и для «Анализа» (лист «Суммы …»), и для поиска по ИНН
-    title = QLabel("💰  Порог суммы:   от")
-    title.setStyleSheet("font-weight:600;")
-    limit.addWidget(title)
-    win.an_min, win.an_max = QLineEdit(), QLineEdit()
-    for edit, hint in ((win.an_min, "напр. 2000"), (win.an_max, "без ограничения")):
-        edit.setPlaceholderText(hint)
-        edit.setMaximumWidth(220)
-    limit.addWidget(win.an_min)
-    limit.addWidget(QLabel("до"))
-    limit.addWidget(win.an_max)
-    note = QLabel("записи с такой суммой — отдельным листом; на итоги не влияет")
-    note.setObjectName("muted")
-    limit.addWidget(note)
-    limit.addStretch()
-    lay.addLayout(limit)
+    filters = QHBoxLayout()                 # фильтр: ИНН (в любой колонке) и/или сумма строки от … до …
+    win.an_inn = _field(filters, "🔎  ИНН:", "напр. 040058284 (пусто — все)", 260)
+    win.an_min = _field(filters, "   💰  Сумма от", "напр. 2000", 180)
+    win.an_max = _field(filters, "до", "без ограничения", 180)
+    filters.addStretch()
+    lay.addLayout(filters)
+    for edit in (win.an_inn, win.an_min, win.an_max):
+        edit.returnPressed.connect(lambda: flow.run(win))
 
     win.an_progress = QProgressBar()
     win.an_progress.setVisible(False)
@@ -79,9 +65,9 @@ def build_analysis_card(win):
     win.an_other_btn.clicked.connect(win.choose_file)
     btns.addWidget(win.an_other_btn)
     btns.addStretch()
-    win.an_run_btn = QPushButton("📊  Анализ")
+    win.an_run_btn = QPushButton("🔎  Показать в Excel")
     win.an_run_btn.setObjectName("primary")
-    win.an_run_btn.setToolTip(ANALYSIS_TIP)
+    win.an_run_btn.setToolTip("Строки из всех взятых файлов по фильтру — как есть, со всеми колонками")
     win.an_run_btn.setCursor(Qt.PointingHandCursor)
     win.an_run_btn.clicked.connect(lambda: flow.run(win))
     btns.addWidget(win.an_run_btn)

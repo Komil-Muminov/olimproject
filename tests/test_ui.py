@@ -47,7 +47,7 @@ class TestMainWindow(unittest.TestCase):
         w = MainWindow()
         self.assertIn("Как пользоваться", w.help_btn.text())
         text = HelpDialog(w).text.toPlainText()
-        for part in ("Заполнить ГИБ", "своя карточка", "C5-C300", "Одна орг. во всех файлах", "Ошибки"):
+        for part in ("Заполнить ГИБ", "своя карточка", "C5-C300", "Показать в Excel", "в любой колонке"):
             self.assertIn(part, text)
         w.close()
 

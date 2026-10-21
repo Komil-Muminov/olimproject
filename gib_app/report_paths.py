@@ -18,10 +18,8 @@ def analysis_report_path() -> str:
     return unique_path(os.path.join(analysis_dir(), f"Анализ {datetime.now():%d.%m.%Y %H-%M}"))
 
 
-
-
-
-def inn_report_path(inn: str) -> str:
-    """«ИНН 040058284 20.10.2026 15-30.xlsx» в папке «Свод по глубокому анализу»."""
+def filter_report_path(title: str) -> str:
+    """«ИНН 040058284, суммы от 2 000,00 21.10.2026 09-30.xlsx» в папке «Свод по глубокому анализу»."""
     from datetime import datetime
-    return unique_path(os.path.join(analysis_dir(), f"ИНН {inn} {datetime.now():%d.%m.%Y %H-%M}"))
+    safe = "".join(ch for ch in title if ch not in r'\/:*?"<>|')         # знаки, недопустимые в имени файла
+    return unique_path(os.path.join(analysis_dir(), f"{safe} {datetime.now():%d.%m.%Y %H-%M}"))

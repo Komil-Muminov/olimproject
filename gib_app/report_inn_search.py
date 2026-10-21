@@ -1,6 +1,5 @@
-"""«Один ИНН во всех файлах»: все строки, где встречается этот ИНН — в любой колонке, в том числе внутри текста
-(«… ИНН 040058284»), из всех взятых файлов (лист и строки — из карточек); можно с порогом суммы.
-Отдельный Excel: где нашлось и сумма по файлам, ниже строки как есть."""
+"""Фильтр по всем взятым файлам: ИНН (в любой колонке строки, в том числе внутри текста) и/или порог суммы
+строки (по колонкам «Сумма» из карточки). Отдельный Excel: где нашлось и сумма по файлам, ниже строки как есть."""
 import re
 
 from openpyxl import Workbook
@@ -26,21 +25,32 @@ def has_inn(values, pattern) -> bool:
     return any(pattern.search(str(_show(v))) for v in values if v not in (None, ""))
 
 
-def write_inn_report(path: str, paths: list, mappings: dict, inn: str, threshold=None,
-                     progress=lambda p, t: None) -> dict:
-    """→ {"path" (None — не найден), "inn", "rows", "files": [(таблица, строк, сумма)]}; threshold — (от, до)."""
-    pattern = inn_pattern(inn)
-    found = collect(paths, mappings, lambda values, m: has_inn(values, pattern) and in_range(row_sum(values, m), threshold),
-                    progress)
-    res = {"path": None, "inn": inn, "rows": sum(x[1] for x in found["per"]),
-           "files": [x for x in found["per"] if x[1]], "threshold": threshold}
+def filter_title(inn: str = "", threshold=None) -> str:
+    """«ИНН 040058284», «Суммы от 2 000,00» или вместе."""
+    return ", ".join(x for x in (f"ИНН {inn}" if inn else "", f"суммы {threshold_text(threshold)}" if threshold else "") if x)
+
+
+def write_filter_report(path: str, paths: list, mappings: dict, inn: str = "", threshold=None,
+                        progress=lambda p, t: None) -> dict:
+    """→ {"path" (None — ничего не нашлось), "title", "rows", "files": [(таблица, строк, сумма)]}."""
+    pattern = inn_pattern(inn) if inn else None
+
+    def keep(values, m) -> bool:
+        if pattern and not has_inn(values, pattern):
+            return False
+        return in_range(row_sum(values, m), threshold)
+
+    found = collect(paths, mappings, keep, progress)
+    title = filter_title(inn, threshold)
+    res = {"path": None, "title": title, "rows": sum(x[1] for x in found["per"]),
+           "files": [x for x in found["per"] if x[1]]}
     if not res["rows"]:
         return res
     progress(92, "Сохраняю…")
     wb = Workbook(write_only=True)
-    limit = f", суммы {threshold_text(threshold)}" if threshold else ""
-    write_rows_sheet(wb, f"ИНН {inn}", f"ИНН {inn}{limit} — {res['rows']:,} строк в {len(res['files'])} файлах".replace(",", " "),
-                     "Все строки этого ИНН из выбранных файлов, как есть. Над каждой колонкой — из какого она файла.", found)
+    write_rows_sheet(wb, title[:31], f"{title.upper()} — {res['rows']:,} строк в {len(res['files'])} файлах".replace(",", " "),
+                     "Строки из выбранных файлов, как есть: ИНН — в любой колонке, сумма строки — по колонкам «Сумма». "
+                     "Над каждой колонкой — из какого она файла.", found)
     wb.save(path)
     res["path"] = path
     return res
