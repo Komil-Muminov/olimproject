@@ -63,6 +63,14 @@ class InnSearchTest(unittest.TestCase):
         rows = [r[:4] for r in ws.iter_rows(min_row=9, values_only=True)]
         self.assertEqual(rows, [("a.xlsx", "Л", 3, 45), ("b.xlsx", "Л", 2, 100)])
 
+    def test_inn_in_any_column(self):
+        """ИНН не в колонке ИНН, а в основании — строка тоже находится."""
+        a = _save("a.xlsx", [["ИНН", "Сумма", "Основание"], ["630000962", 7, f"за ООО «Шабака» (ИНН {INN})"],
+                             ["630000962", 9, "налог 1040058284"]])               # 10 цифр — другой номер
+        out = os.path.join(tempfile.mkdtemp(), "r.xlsx")
+        res = write_inn_report(out, [a], {a: _map(a, inn="a", sums="b")}, INN)
+        self.assertEqual(res["files"], [("a.xlsx", 1, 7.0)])
+
     def test_not_found(self):
         a = _save("a.xlsx", [["ИНН"], ["630000962"]])
         self.assertIsNone(write_inn_report(os.path.join(tempfile.mkdtemp(), "r.xlsx"), [a], {a: _map(a, inn="a")}, INN)["path"])

@@ -46,7 +46,8 @@ def build_analysis_card(win):
     win.an_inn.returnPressed.connect(lambda: flow.search_inn(win))
     search.addWidget(win.an_inn, 1)
     win.an_inn_btn = QPushButton("В Excel")
-    win.an_inn_btn.setToolTip("Все строки этого ИНН из всех взятых файлов (колонки — из карточек), без предела по строкам")
+    win.an_inn_btn.setToolTip("Все строки, где встречается этот ИНН (в любой колонке), из всех взятых файлов — "
+                              "без предела по строкам")
     win.an_inn_btn.clicked.connect(lambda: flow.search_inn(win))
     search.addWidget(win.an_inn_btn)
     lay.addLayout(search)
