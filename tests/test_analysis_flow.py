@@ -52,7 +52,7 @@ class AnalysisFlowTest(unittest.TestCase):
         a, b, c = (_save(n, 5) for n in ("a.xlsx", "b.xlsx", "c.xlsx"))
         win = self._win([read_sheets(p) for p in (a, b, c)])
         for card in win.an_file_cards:
-            card.edits["inn"].setText("a")
+            card.rows[0].edits["inn"].setText("a")
         win.an_file_cards[1].use.setChecked(False)              # b не берём
         flow.run(win)
         _, paths, mappings, inn, threshold = self.started
@@ -62,6 +62,29 @@ class AnalysisFlowTest(unittest.TestCase):
         win = self._win([read_sheets(_save("a.xlsx", 5))])
         flow.run(win)
         self.assertIsNone(self.started)                          # колонка ИНН не вписана — поиск не запускается
+
+    def test_sheets_with_checkboxes(self):
+        """Отмечены «Янв» и «Мар»: у «Мар» поля пустые — колонки как у «Янв»; «Фев» не берётся."""
+        import tempfile
+        from ui_file_card import FileCard
+        path = os.path.join(tempfile.mkdtemp(), "год.xlsx")
+        wb = Workbook()
+        for k, name in enumerate(("Янв", "Фев", "Мар")):
+            ws = wb.active if k == 0 else wb.create_sheet()
+            ws.title = name
+            for r in (["ИНН", "Сумма"], [INNS[k], 5]):
+                ws.append(r)
+        wb.save(path)
+        card = FileCard(read_sheets(path))
+        self.assertEqual([r.included() for r in card.rows], [True, False, False])     # сначала — первый лист
+        card.rows[0].edits["inn"].setText("a")
+        card.rows[0].edits["sums"].setText("b")
+        card.rows[2].use.setChecked(True)
+        self.assertEqual(card.problem(), "")
+        self.assertEqual([(m["sheet"], m["sums"]) for m in card.mapping()], [("Янв", [1]), ("Мар", [1])])
+        self.assertEqual(card.rows[2].edits["inn"].placeholderText(), "как у «Янв»")
+        card.rows[0].use.setChecked(False)                                           # колонки взять неоткуда
+        self.assertIn("Мар", card.problem())
 
     def test_empty_file_card(self):
         from ui_file_card import FileCard

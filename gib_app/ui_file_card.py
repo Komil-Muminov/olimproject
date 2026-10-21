@@ -1,21 +1,17 @@
-"""Карточка файла на экране фильтра: лист и колонки, вписанные от руки (C, C5, C5-C300, «G, H»): ИНН (какие строки
-читать) и Сумма (для порога и итогов). Остальные колонки файла видны в отчёте как есть.
-Справа — короткий статус; неверное поле обводится красным, полный текст ошибки — при наведении."""
+"""Карточка файла на экране фильтра: галочки по листам, у каждого отмеченного листа — колонки ИНН (какие строки
+читать) и Сумма (для порога и итогов), вписанные от руки. Пустое поле — как у отмеченного листа выше.
+Остальные колонки видны в отчёте как есть. Справа — короткий статус; полный текст ошибки — при наведении."""
 import os
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from column_entry import to_mapping
 from column_spec import SpecError, one_column, parse
 from ui_file_columns import formula_warning
+from ui_sheet_row import FIELDS, SheetRow, header_row
 
-FIELDS = (("inn", "ИНН"), ("sums", "Сумма"))
-HINTS = {"inn": "напр. C или C5-C300", "sums": "напр. G или G, H"}
-TIPS = {"inn": "Колонка с ИНН (обязательно). Строки берутся отсюда: C — вся колонка, C5-C300 — строки 5…300.",
-        "sums": "Колонки с деньгами: G или G, H (в строке складываются) — для порога суммы и итогов."}
 OK_STYLE, BAD_STYLE, OFF_STYLE = "color:#15803D; font-weight:600;", "color:#C2410C; font-weight:600;", "color:#64748B;"
-BAD_FIELD = "QLineEdit { border: 1px solid #DC2626; border-radius: 6px; }"
 STATUS_WIDTH = 230
 
 
@@ -25,13 +21,13 @@ class FileCard(QFrame):
     def __init__(self, prop: dict):
         super().__init__()
         self.setObjectName("actionBox")
-        self.path, self.sheets = prop["path"], prop["sheets"]
+        self.path, self.sheets, self.rows = prop["path"], prop["sheets"], []
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 12, 16, 12)
         top = QHBoxLayout()
         self.use = QCheckBox(f"📄  {os.path.basename(self.path)}")
         self.use.setStyleSheet("font-weight:700;")
-        self.use.setToolTip("Снимите галочку, чтобы не брать этот файл в анализ")
+        self.use.setToolTip("Снимите галочку, чтобы не брать этот файл")
         top.addWidget(self.use)
         top.addStretch()
         self.status = QLabel()
@@ -45,50 +41,52 @@ class FileCard(QFrame):
             return
         self.use.setChecked(True)
         self.use.toggled.connect(self._check)
-        self.edits = {}
-        grid = QGridLayout()
-        self.sheet = QComboBox()
-        for name, sh in self.sheets.items():
-            self.sheet.addItem(name + ("   (скрытый лист)" if sh.get("hidden") else ""), name)
-        self.sheet.currentIndexChanged.connect(self._check)
-        for col, (title, widget) in enumerate([("Лист", self.sheet)] + [(t, self._edit(k)) for k, t in FIELDS]):
-            label = QLabel(title)
-            label.setObjectName("muted")
-            grid.addWidget(label, 0, col)
-            grid.addWidget(widget, 1, col)
-        lay.addLayout(grid)
+        lay.addLayout(header_row())
+        for k, (name, sheet) in enumerate(self.sheets.items()):
+            row = SheetRow(name, sheet, checked=k == 0)        # сначала отмечен первый лист
+            row.use.setEnabled(len(self.sheets) > 1)            # единственный лист — всегда берётся
+            row.changed.connect(self._check)
+            lay.addWidget(row)
+            self.rows.append(row)
         self._check()
-
-    def _edit(self, key: str) -> QLineEdit:
-        self.edits[key] = QLineEdit()
-        self.edits[key].setPlaceholderText(HINTS[key])
-        self.edits[key].setToolTip(TIPS[key])
-        self.edits[key].textChanged.connect(self._check)
-        return self.edits[key]
 
     def included(self) -> bool:
         return self.use.isChecked()
 
-    def _build(self) -> dict:
-        name = self.sheet.currentData()
-        return to_mapping(name, self.sheets[name], {k: e.text().strip() for k, e in self.edits.items()})
+    def _filled(self) -> list:
+        """[(строка листа, что вписано с учётом листов выше, с какого листа взяты пустые поля)] — отмеченные листы."""
+        out, last, source = [], {}, ""
+        for row in self.rows:
+            if not row.included():
+                continue
+            own = row.typed()
+            typed = {k: own[k] or last.get(k, "") for k, _ in FIELDS}
+            out.append((row, typed, source if any(not own[k] for k, _ in FIELDS) else ""))
+            if any(own.values()):
+                last, source = typed, row.name
+        return out
 
     def problem(self) -> str:
-        """Чего не хватает ("" — всё указано). Не взятый в анализ файл — без проблем."""
+        """Чего не хватает ("" — всё указано). Не взятый файл — без проблем."""
         if not self.included():
             return ""
-        try:
-            self._build()
-            return ""
-        except SpecError as e:
-            return str(e)
-
-    def _field_errors(self) -> dict:
-        """Поле → текст ошибки (для красной рамки и подсказки)."""
-        out = {} if self.edits["inn"].text().strip() else {"inn": "Обязательно: колонка с ИНН, например C или C5-C300"}
-        for key, edit in self.edits.items():
+        filled = self._filled()
+        if not filled:
+            return "Отметьте хотя бы один лист"
+        for row, typed, _ in filled:
             try:
-                parse(edit.text()) if key == "sums" else one_column(edit.text(), dict(FIELDS)[key])
+                to_mapping(row.name, row.sheet, typed)
+            except SpecError as e:
+                return f"Лист «{row.name}»: {e}" if len(self.rows) > 1 else str(e)
+        return ""
+
+    @staticmethod
+    def _field_errors(typed: dict) -> dict:
+        """Поле → текст ошибки (для красной рамки и подсказки)."""
+        out = {} if typed["inn"] else {"inn": "Обязательно: колонка с ИНН, например C или C5-C300"}
+        for key, title in FIELDS:
+            try:
+                parse(typed[key]) if key == "sums" else one_column(typed[key], title)
             except SpecError as e:
                 out[key] = str(e)
         return out
@@ -99,21 +97,21 @@ class FileCard(QFrame):
         self.status.setToolTip(tip or text)
 
     def _check(self):
-        bad = self._field_errors() if self.included() else {}
-        for key, edit in self.edits.items():
-            edit.setStyleSheet(BAD_FIELD if key in bad else "")
-            edit.setToolTip(bad.get(key) or TIPS[key])
+        filled = {row: (typed, source) for row, typed, source in self._filled()} if self.included() else {}
+        for row in self.rows:
+            typed, source = filled.get(row, ({}, ""))
+            row.show_state(source, self._field_errors(typed) if row in filled else {})
         problem = self.problem()
         if not self.included():
-            self._set_status("не берётся в анализ", OFF_STYLE)
+            self._set_status("не берётся", OFF_STYLE)
         elif problem:
             self._set_status("⚠ проверьте поля", BAD_STYLE, problem)
         else:
-            m = self._build()
-            note = formula_warning(m["sheet"], self.sheets[m["sheet"]], {"sums": m.get("sums") or []})
-            self._set_status("⚠ формулы без значений" if note else "✓ готово", BAD_STYLE if note else OK_STYLE, note)
+            notes = [n for m in self.mapping() if (n := formula_warning(m["sheet"], self.sheets[m["sheet"]], m))]
+            self._set_status("⚠ формулы без значений" if notes else "✓ готово", BAD_STYLE if notes else OK_STYLE,
+                             "\n".join(notes))
         self.changed.emit()
 
     def mapping(self) -> list:
-        """Настройка выбранного листа (список — на будущее несколько листов)."""
-        return [self._build()]
+        """Настройки отмеченных листов (по одной на лист)."""
+        return [to_mapping(row.name, row.sheet, typed) for row, typed, _ in self._filled()]

@@ -74,7 +74,7 @@ class TestMainWindow(unittest.TestCase):
         self.assertEqual(w.pages.currentIndex(), ui_analysis_flow.ANALYSIS_PAGE)
         self.assertEqual([os.path.basename(c.path) for c in w.an_file_cards], ["M1-4.xlsx", "M5-8.xlsx"])
         self.assertFalse(w.an_run_btn.isEnabled())               # колонки ещё не вписаны
-        w.an_file_cards[0].edits["inn"].setText("a")
+        w.an_file_cards[0].rows[0].edits["inn"].setText("a")
         self.assertFalse(w.an_run_btn.isEnabled())               # второй файл не заполнен
         w.an_file_cards[1].use.setChecked(False)                 # …и не берётся
         self.assertTrue(w.an_run_btn.isEnabled())
