@@ -1,7 +1,7 @@
 """Глубокий анализ: файлы → у каждого своя карточка с колонками → «Анализ» → чтение в фоне → Excel → итог."""
 import os
 
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from analysis_jobs import make_report
 from analysis_propose import propose_files
@@ -10,7 +10,6 @@ from report_inn_search import clean_inn, write_inn_report
 from report_paths import analysis_report_path, inn_report_path
 from ui_analysis_result import result_view
 from ui_file_card import FileCard
-from ui_pair_dialog import PairDialog, needs_pair
 from ui_result import show_result
 from utils import format_money, to_number
 from worker import Worker
@@ -130,14 +129,8 @@ def _inn_done(win, res):
 
 
 def _scanned(win, res):
-    raw = res["raw"]
-    mode, pair = auto_mode(raw), None       # по умолчанию: первая часть → последняя
-    if needs_pair(raw, mode):
-        dlg = PairDialog(win, raw, mode)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        pair = dlg.pair()
-    _run(win, make_report, analysis_report_path(), raw, mode, pair, win.an_mappings, win.an_threshold,
+    raw = res["raw"]                        # два файла — «было → стало» первый → второй; больше — без сравнения
+    _run(win, make_report, analysis_report_path(), raw, auto_mode(raw), None, win.an_mappings, win.an_threshold,
          done=lambda r: _done(win, r, r["data"]))
 
 

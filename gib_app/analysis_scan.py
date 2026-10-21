@@ -136,6 +136,8 @@ def build(reg, lists, paths, mode: str = FILES, pair=None) -> AnalysisData:
     compare = pair if pair and n > 1 else ((0, n - 1) if n > 1 else None)
     if reg.files and lists.parts:       # реестр + список — разные вещи: сравнения нет (для них — «Сверка»)
         compare = None
+    if len({p.source for p in parts}) > 2 and not pair:     # больше двух файлов — суммы рядом, без «было → стало»
+        compare = None
     months = dict(sorted(reg.months.items())) if reg.files else {}
     return AnalysisData([parts[i] for i in order], ents, details, paths, pairs, compare, mode, months,
                         reg.notes + lists.notes)
