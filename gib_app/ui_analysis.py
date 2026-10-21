@@ -46,7 +46,7 @@ def build_analysis_card(win):
     lay.addWidget(scroll, 1)
 
     filters = QHBoxLayout()                 # фильтр: ИНН (в любой колонке) и/или сумма строки от … до …
-    win.an_inn = _field(filters, "🔎  ИНН:", "напр. 040058284 (пусто — все)", 260)
+    win.an_inn = _field(filters, "🔎  ИНН:", "040058284, 630000962 (пусто — все)", 360)
     win.an_min = _field(filters, "   💰  Сумма от", "напр. 2000", 180)
     win.an_max = _field(filters, "до", "без ограничения", 180)
     filters.addStretch()

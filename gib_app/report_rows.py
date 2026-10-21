@@ -1,4 +1,4 @@
-"""Строки файлов как есть по условию (один ИНН, порог суммы): сбор из всех взятых файлов и лист Excel —
+"""Строки файлов как есть по условию (ИНН, порог суммы): сбор из всех взятых файлов и лист Excel —
 сверху где нашлось и сумма по колонкам «Сумма», ниже строки, каждая колонка подписана «файл: колонка»."""
 import os
 
@@ -37,32 +37,49 @@ def threshold_text(threshold) -> str:
 
 
 def collect(paths: list, mappings: dict, keep, progress=lambda p, t: None) -> dict:
-    """keep(значения, настройка) → брать ли строку. → {"sources", "heads", "hits", "per", "cut"}."""
-    sources, hits, heads, per, cut = table_sources(paths, mappings or {}), [], [], [], False
+    """keep(значения, настройка) → брать ли строку: False — нет, True — да, [метки] — да, с метками (найденные ИНН).
+    → {"sources", "heads", "hits", "per", "by_tag": {(метка, таблица): [строк, сумма]}, "cut"}."""
+    sources, hits, heads, per, by_tag, cut = table_sources(paths, mappings or {}), [], [], [], {}, False
     for src, (p, m) in enumerate(sources):
         progress(int(90 * src / max(len(sources), 1)), f"Ищу в {os.path.basename(p)}…")
         heads.append(head_row(p, m))
         count, total = 0, 0.0
         for r, values in data_rows(p, m):
-            if not keep(values, m):
+            got = keep(values, m)
+            if not got:
                 continue
+            tags = got if isinstance(got, list) else []
             count, s = count + 1, row_sum(values, m)
             total += s or 0.0
+            for t in tags:
+                stat = by_tag.setdefault((t, src), [0, 0.0])
+                stat[0], stat[1] = stat[0] + 1, stat[1] + (s or 0.0)
             if len(hits) < MAX_ROWS:
-                hits.append((src, r, s, [show(v) if v != "" else None for v in values]))
+                hits.append((src, r, s, [show(v) if v != "" else None for v in values], tags))
             else:
                 cut = True
         per.append((table_name(p, m, sources), count, round(total, 2) if m.get("sums") else None))
-    return {"sources": sources, "heads": heads, "hits": hits, "per": per, "cut": cut}
+    return {"sources": sources, "heads": heads, "hits": hits, "per": per, "by_tag": by_tag, "cut": cut}
 
 
-def write_rows_sheet(wb, name: str, title: str, hint: str, found: dict):
-    """Лист: «Где нашлось» (таблица, строк, сумма) и строки как есть."""
+def _tag_rows(found: dict, tags: list) -> list:
+    """Сводка по меткам: (ИНН, таблица, строк, сумма) — в порядке ввода; не найденный — одной строкой."""
+    out = []
+    for t in tags:
+        stats = sorted((src, st) for (tag, src), st in found["by_tag"].items() if tag == t)
+        out += [(t, found["per"][src][0], st[0], round(st[1], 2) if found["sources"][src][1].get("sums") else None)
+                for src, st in stats] or [(t, "не найден ни в одном файле", 0, None)]
+    return out
+
+
+def write_rows_sheet(wb, name: str, title: str, hint: str, found: dict, tags: list | None = None):
+    """Лист: «Где нашлось» (таблица, строк, сумма), по меткам (если tags — несколько ИНН) и строки как есть."""
     sources, heads, hits, per = found["sources"], found["heads"], found["hits"], found["per"]
+    base = BASE[:3] + ["ИНН"] + BASE[3:] if tags else BASE
     widths = [len(h) for h in heads]
-    for src, _, _, values in hits:
+    for src, _, _, values, _ in hits:
         widths[src] = max(widths[src], len(values))
-    labels = BASE + [f"{per[s][0]}: {get_column_letter(m['col0'] + i + 1)}" + (f" {heads[s][i]}" if i < len(heads[s]) and heads[s][i] else "")
+    labels = base + [f"{per[s][0]}: {get_column_letter(m['col0'] + i + 1)}" + (f" {heads[s][i]}" if i < len(heads[s]) and heads[s][i] else "")
                      for s, (_, m) in enumerate(sources) for i in range(widths[s])]
     ws = wb.create_sheet(name)
     ws.sheet_properties.tabColor = "7C3AED"
@@ -75,12 +92,18 @@ def write_rows_sheet(wb, name: str, title: str, hint: str, found: dict):
     for table, count, total in per:
         ws.append([table, count, money(total) if total is not None else "сумма не указана"])
     ws.append([])
+    if tags:
+        head(["ИНН", "Где нашлось", "Строк", "Сумма (колонки «Сумма»)"])
+        for t, table, count, total in _tag_rows(found, tags):
+            ws.append([t, table, count or None, money(total) if total is not None else None])
+        ws.append([])
     head(labels)
-    offsets = [len(BASE) + sum(widths[:s]) for s in range(len(sources))]
-    for src, r, s, values in hits:
+    offsets = [len(base) + sum(widths[:s]) for s in range(len(sources))]
+    for src, r, s, values, row_tags in hits:
         p, m = sources[src]
         line = [None] * len(labels)
-        line[:len(BASE)] = [os.path.basename(p), m["sheet"], r, money(s) if s is not None else None]
+        line[:len(base)] = [os.path.basename(p), m["sheet"], r] + ([", ".join(row_tags)] if tags else []) \
+            + [money(s) if s is not None else None]
         line[offsets[src]:offsets[src] + len(values)] = values
         ws.append(line)
     return ws

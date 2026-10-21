@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import QMessageBox
 
 from file_sheets import read_files
-from report_inn_search import clean_inn, filter_title, write_filter_report
+from report_inn_search import filter_title, parse_inns, write_filter_report
 from report_paths import filter_report_path
 from ui_file_card import FileCard
 from ui_result import show_result
@@ -85,19 +85,20 @@ def _threshold(win):
 
 
 def run(win):
-    """«Показать в Excel»: строки всех взятых файлов по фильтру (ИНН и/или сумма) → отдельный Excel."""
+    """«Показать в Excel»: строки всех взятых файлов по фильтру (ИНН через запятую и/или сумма) → отдельный Excel."""
     if win.worker or not _ready(win) or (threshold := _threshold(win)) is False:
         return
-    inn = clean_inn(win.an_inn.text())
-    if win.an_inn.text().strip() and not 8 <= len(inn) <= 14:
-        QMessageBox.information(win, TITLE, "ИНН — цифрами, например 040058284.")
+    inns, bad = parse_inns(win.an_inn.text())
+    if bad:
+        QMessageBox.information(win, TITLE, f"Не похоже на ИНН: {', '.join(bad)}.\n"
+                                "ИНН — цифрами, несколько — через запятую: 040058284, 630000962.")
         return
-    if not inn and not threshold:
+    if not inns and not threshold:
         QMessageBox.information(win, TITLE, "Впишите ИНН и/или сумму (от … до …) — по ним покажем строки.")
         return
     win.an_mappings = {c.path: c.mapping() for c in win.an_file_cards if c.included()}
-    _run(win, write_filter_report, filter_report_path(filter_title(inn, threshold)), list(win.an_mappings),
-         win.an_mappings, inn, threshold, done=lambda res: _done(win, res))
+    _run(win, write_filter_report, filter_report_path(filter_title(inns, threshold)), list(win.an_mappings),
+         win.an_mappings, inns, threshold, done=lambda res: _done(win, res))
 
 
 def _done(win, res):
@@ -106,10 +107,11 @@ def _done(win, res):
         return
     files = [f"{name}: <b>{count}</b> строк" + (f" на <b>{format_money(total)}</b>" if total is not None else "")
              for name, count, total in res["files"]]
+    missing = f"⚠  Не найдены ни в одном файле: {', '.join(res['missing'])}" if res["missing"] else ""
     show_result(win, True, f"✓  {res['title']} — {res['rows']} строк", [
         f"Создан файл: <b>{os.path.basename(res['path'])}</b>",
         f"<span style='color:#64748B'>Папка: {os.path.dirname(res['path'])}</span>", ""] + files,
-        path=res["path"], note="Исходные файлы не изменены.")
+        warn=missing, path=res["path"], note="Исходные файлы не изменены.")
     win.back_page = ANALYSIS_PAGE
 
 

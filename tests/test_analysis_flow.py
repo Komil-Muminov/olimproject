@@ -56,7 +56,7 @@ class AnalysisFlowTest(unittest.TestCase):
         win.an_file_cards[1].use.setChecked(False)              # b не берём
         flow.run(win)
         _, paths, mappings, inn, threshold = self.started
-        self.assertEqual((paths, set(mappings), inn, threshold), ([a, c], {a, c}, "040058284", None))
+        self.assertEqual((paths, set(mappings), inn, threshold), ([a, c], {a, c}, ["040058284"], None))
 
     def test_not_ready_until_inn_given(self):
         win = self._win([read_sheets(_save("a.xlsx", 5))])
